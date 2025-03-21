@@ -1,7 +1,10 @@
 import { useThree, useFrame } from "@react-three/fiber";
 import { useEffect, useState, useRef } from "react";
 import { useGameStore } from "../store/gameStore";
+import CharacterCloak from "./CharacterCloak";
+import CharacterFace from "./CharacterFace";
 import CharacterHair from "./CharacterHair";
+import CharacterHat from "./CharacterHat";
 import CharacterOutfit from "./CharacterOutfit";
 import CharacterSprite, { AnimationType } from "./CharacterSprite";
 
@@ -264,6 +267,36 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
       />
       <CharacterOutfit position={position} animation={currentAnimation} />
       <CharacterHair
+        position={position}
+        scale={[1, 1, 1]}
+        rows={8}
+        cols={8}
+        animation={currentAnimation}
+      />
+      <CharacterHat
+        position={position}
+        scale={[1, 1, 1]}
+        rows={8}
+        cols={8}
+        animation={currentAnimation}
+      />
+      <CharacterHair
+        position={position}
+        scale={[1, 1, 1]}
+        rows={8}
+        cols={8}
+        animation={currentAnimation}
+      />
+
+      <CharacterCloak
+        position={position}
+        scale={[1, 1, 1]}
+        rows={8}
+        cols={8}
+        animation={currentAnimation}
+      />
+
+      <CharacterFace
         position={position}
         scale={[1, 1, 1]}
         rows={8}

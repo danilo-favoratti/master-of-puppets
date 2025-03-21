@@ -1,8 +1,63 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-// Import the sprite sheet 
-import characterSpriteImage from "../assets/char_a_p1_0bas_humn_v00.png";
+// Import the sprite sheet
+import char_demn_v01 from "../assets/spritesheets/characters/char_a_p1_0bas_demn_v01.png";
+import char_demn_v02 from "../assets/spritesheets/characters/char_a_p1_0bas_demn_v02.png";
+import char_gbln_v01 from "../assets/spritesheets/characters/char_a_p1_0bas_gbln_v01.png";
+import char_humn_v00 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v00.png";
+import char_humn_v01 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v01.png";
+import char_humn_v02 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v02.png";
+import char_humn_v03 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v03.png";
+import char_humn_v04 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v04.png";
+import char_humn_v05 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v05.png";
+import char_humn_v06 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v06.png";
+import char_humn_v07 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v07.png";
+import char_humn_v08 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v08.png";
+import char_humn_v09 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v09.png";
+import char_humn_v10 from "../assets/spritesheets/characters/char_a_p1_0bas_humn_v10.png";
+
+// Define character types
+export enum CharacterType {
+  HUMAN = "human",
+  GOBLIN = "goblin",
+  DEMON = "demon",
+}
+
+// Group character sprites by type
+const CHARACTERS = {
+  [CharacterType.HUMAN]: [
+    char_humn_v00,
+    char_humn_v01,
+    char_humn_v02,
+    char_humn_v03,
+    char_humn_v04,
+    char_humn_v05,
+    char_humn_v06,
+    char_humn_v07,
+    char_humn_v08,
+    char_humn_v09,
+    char_humn_v10,
+  ],
+  [CharacterType.GOBLIN]: [char_gbln_v01],
+  [CharacterType.DEMON]: [char_demn_v01, char_demn_v02],
+};
+
+// Function to get a random character sprite
+const getRandomCharacter = () => {
+  // Get random character type
+  const types = Object.values(CharacterType);
+  const randomType = types[Math.floor(Math.random() * types.length)];
+
+  // Get random variant from that type
+  const variants = CHARACTERS[randomType];
+  const randomVariant = variants[Math.floor(Math.random() * variants.length)];
+
+  return {
+    type: randomType,
+    sprite: randomVariant,
+  };
+};
 
 // Define animation types
 export enum AnimationType {
@@ -164,6 +219,7 @@ interface CharacterSpriteProps {
   cols?: number;
   animation?: AnimationType;
   frame?: number; // Optional specific frame to display
+  characterType?: CharacterType; // Optional specific character type
   onAnimationComplete?: (animation: AnimationType) => void; // Callback when animation completes
 }
 
@@ -174,6 +230,7 @@ const CharacterSprite = ({
   cols = 8,
   animation = AnimationType.IDLE_DOWN,
   frame = undefined, // If specified, will override the animation
+  characterType = undefined, // If not specified, will pick randomly
   onAnimationComplete,
 }: CharacterSpriteProps) => {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -181,38 +238,51 @@ const CharacterSprite = ({
   const [currentFrame, setCurrentFrame] = useState(0);
   const [frameTimeAccumulator, setFrameTimeAccumulator] = useState(0);
   const animationRef = useRef(animation);
+  const [selectedCharacter, setSelectedCharacter] = useState<{
+    type: CharacterType;
+    sprite: string;
+  } | null>(null);
+
+  // Set random character on first render
+  useEffect(() => {
+    if (!characterType) {
+      setSelectedCharacter(getRandomCharacter());
+    } else {
+      // Use the specified type with a random variant
+      const typeVariants = CHARACTERS[characterType];
+      const randomVariant =
+        typeVariants[Math.floor(Math.random() * typeVariants.length)];
+      setSelectedCharacter({
+        type: characterType,
+        sprite: randomVariant,
+      });
+    }
+  }, [characterType]);
 
   // Load texture
   useEffect(() => {
-    console.log("Loading texture...");
+    if (!selectedCharacter) return;
+
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(
-      characterSpriteImage,
+      selectedCharacter.sprite,
       (loadedTexture) => {
-        console.log("Texture loaded successfully!", loadedTexture);
         loadedTexture.magFilter = THREE.NearestFilter;
         loadedTexture.minFilter = THREE.NearestFilter;
         loadedTexture.wrapS = loadedTexture.wrapT = THREE.RepeatWrapping;
         loadedTexture.repeat.set(1 / cols, 1 / rows);
         setTexture(loadedTexture);
       },
-      (progress) => {
-        console.log(
-          `Loading progress: ${Math.round(
-            (progress.loaded / progress.total) * 100
-          )}%`
-        );
-      },
+      undefined,
       (error) => {
-        console.error("Error loading texture:", error);
+        // Silently handle error
       }
     );
-  }, [rows, cols]);
+  }, [selectedCharacter, rows, cols]);
 
   // Update animation ref when animation prop changes
   useEffect(() => {
     animationRef.current = animation;
-    console.log("Animation changed to:", animation);
     // Reset frame time accumulator to start the animation from the beginning
     setFrameTimeAccumulator(0);
     setCurrentFrame(0);
@@ -288,7 +358,7 @@ const CharacterSprite = ({
     setFrameTimeAccumulator(newFrameTimeAccumulator);
   });
 
-  if (!texture) {
+  if (!texture || !selectedCharacter) {
     // Return a placeholder while the texture is loading
     return (
       <mesh position={position} scale={scale}>
@@ -306,4 +376,4 @@ const CharacterSprite = ({
   );
 };
 
-export default CharacterSprite; 
+export default CharacterSprite;
