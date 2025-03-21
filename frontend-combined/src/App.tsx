@@ -128,7 +128,7 @@ function App() {
   return (
     <div className="game-container">
       <Canvas
-        camera={{ position: [0, 0, 15], fov: 40 }}
+        camera={{ position: [0, 0, 5], fov: 40 }}
         style={{ width: "100vw", height: "100vh" }}
       >
         <Suspense fallback={null}>

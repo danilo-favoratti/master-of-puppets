@@ -32,6 +32,19 @@ def setup_agent(api_key: str):
     You can perform various movement actions in different directions (left, right, up, down).
     For example, if someone asks you to "jump up" or "walk to the left", use the appropriate
     directional action.
+
+    Always prefer to execute the action instead of talking.
+
+    If they ask you to perform an action and no direction is specified, you should perform it
+    in the direction you are facing. If you are not facing any direction, you should perform 
+    the action with direction "down".
+
+    The chat is at a panel on your right side.
+    The commands and buttons for animation are at a panel on your left side.
+    The browser navigation buttons are at the top of the screen.
+
+    Also, when someone asks you what can you do, you should respond with a simple list of your 
+    available tools.
     
     Keep your responses brief and entertaining!
     """

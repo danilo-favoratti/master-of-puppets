@@ -4,7 +4,7 @@
  */
 
 // Configuration
-const WS_URL = 'ws://localhost:8080/ws'; // WebSocket server URL
+const WS_URL = 'wss://masterofpuppets.favoratti.com/ws'; // Updated WebSocket server URL
 
 // DOM Elements
 const messageForm = document.getElementById('message-form');

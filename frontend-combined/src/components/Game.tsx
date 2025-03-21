@@ -1,5 +1,5 @@
-import { useThree } from "@react-three/fiber";
-import { useEffect, useState } from "react";
+import { useThree, useFrame } from "@react-three/fiber";
+import { useEffect, useState, useRef } from "react";
 import { useGameStore } from "../store/gameStore";
 import CharacterHair from "./CharacterHair";
 import CharacterOutfit from "./CharacterOutfit";
@@ -23,9 +23,41 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
   const [isPulling, setIsPulling] = useState(false);
   const [isJumping, setIsJumping] = useState(false);
 
-  // Speed of character movement
-  const walkSpeed = 0.05;
-  const runSpeed = 0.1;
+  // Speed constants
+  const walkSpeed = 0.05; // unused now
+  const runSpeed = 0.1;   // unused now
+
+  // Movement interpolation ref
+  const movementRef = useRef<null | { start: [number, number, number], end: [number, number, number], duration: number, elapsedTime: number }>(null);
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+  const animateMovement = (delta: number, duration: number, direction: string) => {
+    const currentPos = position;
+    let dx = 0, dy = 0, dz = 0;
+    if (direction === "up") dy = delta;
+    else if (direction === "down") dy = -delta;
+    else if (direction === "left") dx = -delta;
+    else if (direction === "right") dx = delta;
+    const target: [number, number, number] = [currentPos[0] + dx, currentPos[1] + dy, currentPos[2] + dz];
+    movementRef.current = { start: currentPos, end: target, duration: duration, elapsedTime: 0 };
+  };
+
+  // Smoothly update position based on movementRef using useFrame
+  useFrame((_, delta) => {
+    if (movementRef.current) {
+      movementRef.current.elapsedTime += delta;
+      let t = movementRef.current.elapsedTime / movementRef.current.duration;
+      if (t > 1) t = 1;
+      setPosition([
+        lerp(movementRef.current.start[0], movementRef.current.end[0], t),
+        lerp(movementRef.current.start[1], movementRef.current.end[1], t),
+        lerp(movementRef.current.start[2], movementRef.current.end[2], t)
+      ]);
+      if (t === 1) {
+        movementRef.current = null;
+      }
+    }
+  });
 
   // Execute animation commands received from websocket
   useEffect(() => {
@@ -34,74 +66,57 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
       jump: (params) => {
         const direction = params?.direction || "down";
         let animation: AnimationType;
-
+        const originalPos = position;
         switch (direction) {
           case "up":
             animation = AnimationType.JUMP_UP;
-            // Move character up slightly when jumping
-            setPosition(([x, y, z]) => [x, y + 0.2, z]);
-            setTimeout(() => setPosition(([x, y, z]) => [x, y - 0.2, z]), 500);
+            animateMovement(0.2, 0.5, "up");
             break;
           case "left":
             animation = AnimationType.JUMP_LEFT;
-            // Move character left slightly when jumping
-            setPosition(([x, y, z]) => [x - 0.2, y, z]);
-            setTimeout(() => setPosition(([x, y, z]) => [x + 0.2, y, z]), 500);
+            animateMovement(0.2, 0.5, "left");
             break;
           case "right":
             animation = AnimationType.JUMP_RIGHT;
-            // Move character right slightly when jumping
-            setPosition(([x, y, z]) => [x + 0.2, y, z]);
-            setTimeout(() => setPosition(([x, y, z]) => [x - 0.2, y, z]), 500);
+            animateMovement(0.2, 0.5, "right");
             break;
           default:
             animation = AnimationType.JUMP_DOWN;
-            // Move character down slightly when jumping
-            setPosition(([x, y, z]) => [x, y - 0.2, z]);
-            setTimeout(() => setPosition(([x, y, z]) => [x, y + 0.2, z]), 500);
+            animateMovement(0.2, 0.5, "down");
         }
-
         setAnimation(animation);
         setIsJumping(true);
-
-        // Reset after animation completes (roughly 1 second)
+        // After first phase (0.5 sec), animate back to original position
         setTimeout(() => {
+          movementRef.current = { start: position, end: originalPos, duration: 0.5, elapsedTime: 0 };
           setIsJumping(false);
-        }, 1000);
+        }, 500);
       },
 
       walk: (params) => {
         const direction = params?.direction || "down";
         let animation: AnimationType;
         const moveDistance = 1.0; // Distance to move
-
         switch (direction) {
           case "up":
             animation = AnimationType.WALK_UP;
-            // Move character up
-            setPosition(([x, y, z]) => [x, y + moveDistance, z]);
+            animateMovement(1.0, 1.0, "up");
             break;
           case "left":
             animation = AnimationType.WALK_LEFT;
-            // Move character left
-            setPosition(([x, y, z]) => [x - moveDistance, y, z]);
+            animateMovement(1.0, 1.0, "left");
             break;
           case "right":
             animation = AnimationType.WALK_RIGHT;
-            // Move character right
-            setPosition(([x, y, z]) => [x + moveDistance, y, z]);
+            animateMovement(1.0, 1.0, "right");
             break;
           default:
             animation = AnimationType.WALK_DOWN;
-            // Move character down
-            setPosition(([x, y, z]) => [x, y - moveDistance, z]);
+            animateMovement(1.0, 1.0, "down");
         }
-
         setAnimation(animation);
-
-        // Reset after walking (roughly 1 second)
+        // After walking duration, revert to idle animation
         setTimeout(() => {
-          // Set to idle in the same direction
           if (animation === AnimationType.WALK_UP) {
             setAnimation(AnimationType.IDLE_UP);
           } else if (animation === AnimationType.WALK_LEFT) {
@@ -117,35 +132,27 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
       run: (params) => {
         const direction = params?.direction || "down";
         let animation: AnimationType;
-        const moveDistance = 2.0; // Distance to move (faster than walking)
-
+        const moveDistance = 2.0; // Distance to move when running
         switch (direction) {
           case "up":
             animation = AnimationType.RUN_UP;
-            // Move character up fast
-            setPosition(([x, y, z]) => [x, y + moveDistance, z]);
+            animateMovement(2.0, 0.6, "up");
             break;
           case "left":
             animation = AnimationType.RUN_LEFT;
-            // Move character left fast
-            setPosition(([x, y, z]) => [x - moveDistance, y, z]);
+            animateMovement(2.0, 0.6, "left");
             break;
           case "right":
             animation = AnimationType.RUN_RIGHT;
-            // Move character right fast
-            setPosition(([x, y, z]) => [x + moveDistance, y, z]);
+            animateMovement(2.0, 0.6, "right");
             break;
           default:
             animation = AnimationType.RUN_DOWN;
-            // Move character down fast
-            setPosition(([x, y, z]) => [x, y - moveDistance, z]);
+            animateMovement(2.0, 0.6, "down");
         }
-
         setAnimation(animation);
-
-        // Reset after running (roughly 0.6 seconds)
+        // After running, revert to idle
         setTimeout(() => {
-          // Set to idle in the same direction
           if (animation === AnimationType.RUN_UP) {
             setAnimation(AnimationType.IDLE_UP);
           } else if (animation === AnimationType.RUN_LEFT) {
@@ -157,11 +164,11 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
           }
         }, 600);
       },
-
+      
+      // Other commands (push, pull) remain unchanged
       push: (params) => {
         const direction = params?.direction || "down";
         let animation: AnimationType;
-
         switch (direction) {
           case "up":
             animation = AnimationType.PUSH_UP;
@@ -175,14 +182,10 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
           default:
             animation = AnimationType.PUSH_DOWN;
         }
-
         setAnimation(animation);
         setIsPushing(true);
-
-        // Reset after animation (roughly 0.8 seconds)
         setTimeout(() => {
           setIsPushing(false);
-          // Set to idle in the same direction
           if (animation === AnimationType.PUSH_UP) {
             setAnimation(AnimationType.IDLE_UP);
           } else if (animation === AnimationType.PUSH_LEFT) {
@@ -194,11 +197,10 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
           }
         }, 800);
       },
-
+      
       pull: (params) => {
         const direction = params?.direction || "down";
         let animation: AnimationType;
-
         switch (direction) {
           case "up":
             animation = AnimationType.PULL_UP;
@@ -212,14 +214,10 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
           default:
             animation = AnimationType.PULL_DOWN;
         }
-
         setAnimation(animation);
         setIsPulling(true);
-
-        // Reset after animation (roughly 0.8 seconds)
         setTimeout(() => {
           setIsPulling(false);
-          // Set to idle in the same direction
           if (animation === AnimationType.PULL_UP) {
             setAnimation(AnimationType.IDLE_UP);
           } else if (animation === AnimationType.PULL_LEFT) {
@@ -232,8 +230,7 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
         }, 800);
       },
     };
-
-    // Create command handler
+    
     const handleCommand = (command: string, result: string, params: any) => {
       if (commandMap[command]) {
         commandMap[command](params);
@@ -241,19 +238,13 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
         console.warn("Unknown command received:", command);
       }
     };
-
-    // Register our command handler with the parent App component
+    
     registerCommandHandler(handleCommand);
-
+    
     return () => {
       // Cleanup
     };
-  }, [executeCommand, setAnimation, registerCommandHandler]);
-
-  // Handle animation completion
-  const handleAnimationComplete = (animation: AnimationType) => {
-    // Animation completed handler
-  };
+  }, [executeCommand, setAnimation, registerCommandHandler, position]);
 
   // Make camera follow the character
   useEffect(() => {
@@ -269,7 +260,7 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
         rows={8}
         cols={8}
         animation={currentAnimation}
-        onAnimationComplete={handleAnimationComplete}
+        onAnimationComplete={() => {}}
       />
       <CharacterOutfit position={position} animation={currentAnimation} />
       <CharacterHair

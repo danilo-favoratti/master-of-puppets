@@ -3,9 +3,8 @@ import { useGameStore } from "../store/gameStore";
 import { AnimationType } from "./CharacterSprite";
 
 const GameUI = () => {
-  const score = useGameStore((state) => state.score);
-  const health = useGameStore((state) => state.health);
-  const highScore = useGameStore((state) => state.highScore);
+  // Score, health, and high score have been removed
+
   const startGame = useGameStore((state) => state.startGame);
   const resetGame = useGameStore((state) => state.resetGame);
   const setAnimation = useGameStore((state) => state.setAnimation);
@@ -74,9 +73,6 @@ const GameUI = () => {
   return (
     <div className="game-ui">
       <div className="game-stats">
-        <p>Score: {score}</p>
-        <p>Health: {health}</p>
-        <p>High Score: {highScore}</p>
         <p>Current Animation: {formatAnimationName(currentAnimation)}</p>
         <p>
           <span
@@ -88,8 +84,6 @@ const GameUI = () => {
       </div>
 
       <div className="game-actions">
-        <button onClick={() => startGame()}>Start Game</button>
-        <button onClick={() => resetGame()}>Reset Game</button>
         <button onClick={() => setShowAnimations(!showAnimations)}>
           {showAnimations ? "Hide Animations" : "Show Animations"}
         </button>
