@@ -1,0 +1,271 @@
+/* General styles */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #1e1e2e;
+    color: #e0def4;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+header h1 {
+    color: #c4a7e7;
+    margin-bottom: 10px;
+}
+
+header p {
+    color: #9ccfd8;
+}
+
+/* Character area */
+.character-area {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 20px;
+    height: 150px;
+}
+
+.character {
+    position: relative;
+    width: 100px;
+    height: 100px;
+}
+
+.character-sprite {
+    width: 100%;
+    height: 100%;
+    background-color: #ebbcba;
+    border-radius: 50%;
+    position: relative;
+    transition: transform 0.3s ease;
+}
+
+.character-face {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 60%;
+    height: 60%;
+}
+
+.eyes {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 25%;
+}
+
+.eyes::before,
+.eyes::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background-color: #1e1e2e;
+    border-radius: 50%;
+}
+
+.mouth {
+    width: 20px;
+    height: 8px;
+    background-color: #1e1e2e;
+    border-radius: 0 0 10px 10px;
+    margin: 10px auto 0;
+}
+
+/* Jump animation */
+@keyframes jump {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-50px); }
+}
+
+.jumping {
+    animation: jump 0.5s ease;
+}
+
+/* Talk animation */
+@keyframes talk {
+    0%, 100% { height: 8px; width: 20px; }
+    50% { height: 12px; width: 15px; }
+}
+
+.talking .mouth {
+    animation: talk 0.3s infinite;
+}
+
+/* Messages area */
+.messages {
+    flex-grow: 1;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #2a273f;
+    border-radius: 10px;
+    min-height: 300px;
+    max-height: 400px;
+}
+
+.message {
+    margin-bottom: 15px;
+    padding: 10px;
+    border-radius: 8px;
+    max-width: 80%;
+}
+
+.user-message {
+    background-color: #3e8fb0;
+    align-self: flex-end;
+    margin-left: auto;
+}
+
+.character-message {
+    background-color: #6e6a86;
+}
+
+.command-message {
+    font-style: italic;
+    color: #c4a7e7;
+    text-align: center;
+    margin: 10px 0;
+}
+
+.welcome-message {
+    text-align: center;
+    color: #9ccfd8;
+    margin-bottom: 20px;
+}
+
+/* Input area */
+.input-area {
+    margin-bottom: 20px;
+    position: relative;
+}
+
+#message-form {
+    display: flex;
+    gap: 10px;
+}
+
+#message-input {
+    flex-grow: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 5px;
+    background-color: #2a273f;
+    color: #e0def4;
+    font-size: 16px;
+}
+
+#message-input:focus {
+    outline: 2px solid #c4a7e7;
+}
+
+button {
+    border: none;
+    border-radius: 5px;
+    padding: 12px 20px;
+    background-color: #3e8fb0;
+    color: #e0def4;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #3a7a99;
+}
+
+.voice-button {
+    background-color: #eb6f92;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.voice-button:hover {
+    background-color: #d16277;
+}
+
+.voice-button.recording {
+    background-color: #f6c177;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.recording-indicator {
+    position: absolute;
+    bottom: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #f6c177;
+    font-size: 14px;
+    display: none;
+}
+
+.recording-indicator.active {
+    display: block;
+}
+
+/* Connection status */
+.connection-status {
+    text-align: center;
+    padding: 5px;
+    border-radius: 20px;
+    background-color: #393552;
+    color: #e0def4;
+    font-size: 14px;
+    transition: background-color 0.3s;
+}
+
+.connection-status.connected {
+    background-color: #31748f;
+}
+
+.connection-status.disconnected {
+    background-color: #eb6f92;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .container {
+        padding: 10px;
+    }
+    
+    .messages {
+        min-height: 200px;
+    }
+    
+    #message-form {
+        flex-wrap: wrap;
+    }
+    
+    #message-input {
+        flex-basis: 100%;
+        margin-bottom: 10px;
+    }
+    
+    button {
+        flex: 1;
+    }
+} 

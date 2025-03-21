@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Character Control</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Game Character Control</h1>
+            <p>Talk to the funny, ironic, non-binary character using text or voice commands!</p>
+        </header>
+        
+        <div class="character-area">
+            <div class="character">
+                <div class="character-sprite" id="character-sprite">
+                    <div class="character-face">
+                        <div class="eyes"></div>
+                        <div class="mouth"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="messages" id="messages">
+            <div class="welcome-message">
+                <p>Hey there, I'm your quirky game character! Try telling me to jump or say something funny!</p>
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <form id="message-form">
+                <input type="text" id="message-input" placeholder="Type your message...">
+                <button type="submit" id="send-button">Send</button>
+                <button type="button" id="voice-button" class="voice-button">
+                    <span class="voice-icon">🎤</span>
+                    <span class="voice-label">Voice</span>
+                </button>
+            </form>
+            <div class="recording-indicator" id="recording-indicator">Recording...</div>
+        </div>
+        
+        <div class="connection-status" id="connection-status">Disconnected</div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html> 
