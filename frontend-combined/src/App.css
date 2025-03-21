@@ -1,0 +1,98 @@
+.game-container {
+  width: 100vw;
+  height: 100vh;
+  background-color: #000;
+  position: relative;
+  background-image: url('/src/assets/tile-grass.png');
+  background-repeat: repeat;
+  background-size: auto;
+}
+
+/* Game UI styles */
+.game-ui {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 10;
+  background-color: rgba(0, 0, 0, 0.7);
+  padding: 15px;
+  border-radius: 10px;
+  max-width: 300px;
+  color: white;
+  font-family: 'Arial', sans-serif;
+}
+
+.game-stats {
+  margin-bottom: 15px;
+}
+
+.game-stats p {
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+.control-mode {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+
+.control-mode.auto {
+  background-color: #4a90e2;
+}
+
+.control-mode.manual {
+  background-color: #e24a4a;
+}
+
+.game-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.game-actions button,
+.animation-buttons button {
+  background-color: #333;
+  color: white;
+  border: 1px solid #555;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.2s;
+}
+
+.game-actions button:hover,
+.animation-buttons button:hover {
+  background-color: #444;
+}
+
+.animation-buttons button.active {
+  background-color: #4a90e2;
+  border-color: #2a70c2;
+}
+
+.animation-controls {
+  margin-top: 15px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.animation-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.animation-group h4 {
+  margin: 5px 0;
+  font-size: 14px;
+}
+
+.animation-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+} 

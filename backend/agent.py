@@ -5,7 +5,7 @@ import os
 from typing import Dict, Any, List
 
 from openai import OpenAI
-from tools import jump, talk
+from tools import jump, talk, walk, run, push, pull
 
 
 def setup_agent(api_key: str):
@@ -29,6 +29,10 @@ def setup_agent(api_key: str):
     1. With a simple text response when having a conversation
     2. By using one of your available tools/actions when asked to perform specific tasks
     
+    You can perform various movement actions in different directions (left, right, up, down).
+    For example, if someone asks you to "jump up" or "walk to the left", use the appropriate
+    directional action.
+    
     Keep your responses brief and entertaining!
     """
     
@@ -37,10 +41,24 @@ def setup_agent(api_key: str):
         name="Game Character",
         instructions=system_prompt,
         tools=[
-            {"type": "function", "function": {"name": "jump", "description": "Makes the character jump"}},
+            {"type": "function", "function": {"name": "jump", "description": "Makes the character jump", 
+                                             "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
+                                                           "required": []}}},
             {"type": "function", "function": {"name": "talk", "description": "Makes the character say something", 
-                                            "parameters": {"type": "object", "properties": {"message": {"type": "string"}}, 
-                                                            "required": ["message"]}}}
+                                             "parameters": {"type": "object", "properties": {"message": {"type": "string"}}, 
+                                                           "required": ["message"]}}},
+            {"type": "function", "function": {"name": "walk", "description": "Makes the character walk in a specific direction", 
+                                             "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
+                                                           "required": ["direction"]}}},
+            {"type": "function", "function": {"name": "run", "description": "Makes the character run in a specific direction", 
+                                             "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
+                                                           "required": ["direction"]}}},
+            {"type": "function", "function": {"name": "push", "description": "Makes the character push in a specific direction", 
+                                             "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
+                                                           "required": ["direction"]}}},
+            {"type": "function", "function": {"name": "pull", "description": "Makes the character pull in a specific direction", 
+                                             "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
+                                                           "required": ["direction"]}}}
         ],
         model="gpt-4o"
     )
@@ -101,10 +119,13 @@ def process_user_input(agent_data: Dict, user_input: str, conversation_history: 
         for tool_call in run.required_action.submit_tool_outputs.tool_calls:
             function_name = tool_call.function.name
             arguments = tool_call.function.arguments
+            import json
+            args = json.loads(arguments)
             
             # Execute the appropriate tool
             if function_name == "jump":
-                result = jump()
+                direction = args.get("direction")
+                result = jump(direction)
                 tool_outputs.append({
                     "tool_call_id": tool_call.id,
                     "output": result
@@ -114,12 +135,11 @@ def process_user_input(agent_data: Dict, user_input: str, conversation_history: 
                 response = {
                     "type": "command",
                     "name": "jump",
-                    "result": result
+                    "result": result,
+                    "params": {"direction": direction}
                 }
                 
             elif function_name == "talk":
-                import json
-                args = json.loads(arguments)
                 message = args.get("message", "")
                 result = talk(message)
                 tool_outputs.append({
@@ -132,6 +152,70 @@ def process_user_input(agent_data: Dict, user_input: str, conversation_history: 
                     "type": "command",
                     "name": "talk",
                     "result": result
+                }
+                
+            elif function_name == "walk":
+                direction = args.get("direction")
+                result = walk(direction)
+                tool_outputs.append({
+                    "tool_call_id": tool_call.id,
+                    "output": result
+                })
+                
+                # Prepare response for the client
+                response = {
+                    "type": "command",
+                    "name": "walk",
+                    "result": result,
+                    "params": {"direction": direction}
+                }
+                
+            elif function_name == "run":
+                direction = args.get("direction")
+                result = run(direction)
+                tool_outputs.append({
+                    "tool_call_id": tool_call.id,
+                    "output": result
+                })
+                
+                # Prepare response for the client
+                response = {
+                    "type": "command",
+                    "name": "run",
+                    "result": result,
+                    "params": {"direction": direction}
+                }
+                
+            elif function_name == "push":
+                direction = args.get("direction")
+                result = push(direction)
+                tool_outputs.append({
+                    "tool_call_id": tool_call.id,
+                    "output": result
+                })
+                
+                # Prepare response for the client
+                response = {
+                    "type": "command",
+                    "name": "push",
+                    "result": result,
+                    "params": {"direction": direction}
+                }
+                
+            elif function_name == "pull":
+                direction = args.get("direction")
+                result = pull(direction)
+                tool_outputs.append({
+                    "tool_call_id": tool_call.id,
+                    "output": result
+                })
+                
+                # Prepare response for the client
+                response = {
+                    "type": "command",
+                    "name": "pull",
+                    "result": result,
+                    "params": {"direction": direction}
                 }
         
         # Submit the tool outputs back to the assistant

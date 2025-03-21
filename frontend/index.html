@@ -30,6 +30,13 @@
             </div>
         </div>
         
+        <div class="thinking-indicator" id="thinking-indicator">
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+            <span>Thinking</span>
+        </div>
+        
         <div class="input-area">
             <form id="message-form">
                 <input type="text" id="message-input" placeholder="Type your message...">
@@ -39,7 +46,12 @@
                     <span class="voice-label">Voice</span>
                 </button>
             </form>
-            <div class="recording-indicator" id="recording-indicator">Recording...</div>
+            <div class="recording-indicator" id="recording-indicator">
+                Recording...
+                <div class="voice-level-container">
+                    <div class="voice-level" id="voice-level"></div>
+                </div>
+            </div>
         </div>
         
         <div class="connection-status" id="connection-status">Disconnected</div>
