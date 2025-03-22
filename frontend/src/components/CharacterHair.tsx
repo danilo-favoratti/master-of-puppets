@@ -97,7 +97,7 @@ export enum HairStyle {
 }
 
 // Import animation types from CharacterSprite
-import { AnimationType } from "../../../frontend-char/src/components/CharacterSprite";
+import { AnimationType } from "./CharacterSprite.tsx";
 
 // Group hair sprites by style
 const HAIRSTYLES = {

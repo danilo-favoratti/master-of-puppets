@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AnimationType } from '../components/CharacterSprite';
+import { AnimationType } from "../components/CharacterSprite";
 
 export enum GameState {
   MENU,

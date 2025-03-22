@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useGameStore } from "../store/gameStore";
-import { AnimationType } from "./CharacterSprite";
+import { AnimationType } from "../components/CharacterSprite";
 
 const GameUI = () => {
   // Score, health, and high score have been removed

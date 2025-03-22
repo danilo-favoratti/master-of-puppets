@@ -40,7 +40,7 @@ import pfdrV04 from "../assets/spritesheets/1out/char_a_p1_1out_pfdr_v04.png";
 import pfdrV05 from "../assets/spritesheets/1out/char_a_p1_1out_pfdr_v05.png";
 
 // Import animation types from CharacterSprite
-import { AnimationType } from "../../../frontend-char/src/components/CharacterSprite";
+import { AnimationType } from "./CharacterSprite.tsx";
 
 // Define outfit types
 export enum OutfitStyle {

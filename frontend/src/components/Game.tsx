@@ -1,3 +1,4 @@
+import React from 'react';
 import { useThree, useFrame } from "@react-three/fiber";
 import { useEffect, useState, useRef } from "react";
 import { useGameStore } from "../store/gameStore";
@@ -273,14 +274,8 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
         cols={8}
         animation={currentAnimation}
       />
+      
       <CharacterHat
-        position={position}
-        scale={[1, 1, 1]}
-        rows={8}
-        cols={8}
-        animation={currentAnimation}
-      />
-      <CharacterHair
         position={position}
         scale={[1, 1, 1]}
         rows={8}

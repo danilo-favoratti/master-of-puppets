@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 // Import animation types from CharacterSprite
-import { AnimationType } from "../../../frontend-char/src/components/CharacterSprite";
+import { AnimationType } from "./CharacterSprite.tsx";
 
 // Import all face sprites
 // Goggles (gogl)
