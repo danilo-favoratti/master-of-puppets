@@ -1,0 +1,29 @@
+# Cursor Rules Configuration for the Fullstack Project
+#
+# This file provides rules for the Cursor tool to identify and prioritize relevant
+# source files in the fullstack project. It includes essential file extensions,
+# directories, and excludes non-essential code, documentation, and build artifacts.
+#
+# [General]
+# Union of common frontend and backend file extensions.
+extensions = html, js, jsx, ts, tsx, css, scss, sass, less, json, py, go, java, rb, php
+#
+# [Directories]
+# Combined directories for both backend and frontend code.
+include_dirs = src, app, controllers, routes, models, services, config, public, components, assets, styles
+#
+# [Exclusions]
+# Directories and files to be ignored.
+exclude_dirs = node_modules, vendor, tests, coverage, logs, dist, build, .git
+exclude_files = *.spec.js, *.test.js, *.min.js, *.d.ts, *.bundle.js, *.lock, .env
+#
+# [Priority]
+# Files that are considered as primary entry points for the project.
+priority_files = server.js, app.js, index.js, main.ts, app.py, index.html, App.js, main.tsx
+#
+# [General Rules]
+# 1. Always use the latest version of the language, framework, library, tool, database, and operating system.
+# 2. Check for conflicts when adding new languages, frameworks, libraries, tools, databases, and operating systems.
+# 3. Always write code that is clean, readable, secure, and maintainable.
+# 4. Think about the user experience when writing code.
+# 5. Plan first, ask follow-up questions, and then write code.

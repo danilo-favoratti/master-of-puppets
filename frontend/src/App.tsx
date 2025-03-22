@@ -1,13 +1,20 @@
 import { OrbitControls } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import React, { Suspense, useEffect, useState, useRef, useCallback } from "react";
 import "./App.css";
-import Chat from "./components/Chat";
 import Game from "./components/Game";
 import GameUI from "./components/GameUI";
+import Chat from "./components/Chat";
 
-// WebSocket configuration
-const WS_URL = "ws://localhost:8080/ws";
+// @ts-ignore: Property 'env' does not exist on type 'ImportMeta'.
+const WS_URL = (import.meta.env as any).VITE_WS_URL || 'wss://masterofpuppets.favoratti.com/ws';
+
+// Global variables to maintain a single WebSocket connection across component mounts
+let globalSocket: WebSocket | null = null;
+let globalReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+let globalSocketInitialized = false;
+let hasLoggedConnection = false;
+let globalWelcomeReceived = false;
 
 function App() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -15,13 +22,7 @@ function App() {
   const [isThinking, setIsThinking] = useState(false);
   const [messages, setMessages] = useState<
     Array<{ content: string; sender: string; isError?: boolean }>
-  >([
-    {
-      content:
-        "Hey there, I'm your quirky game character! Try telling me to jump or say something funny!",
-      sender: "character",
-    },
-  ]);
+  >([]);
 
   // Create a ref to store the real executeCommand implementation from Game
   const gameCommandHandlerRef = useRef<
@@ -36,13 +37,24 @@ function App() {
     []
   );
 
-  // Connect to WebSocket
+  // Connect to WebSocket using global variables to ensure a singleton connection
   useEffect(() => {
+    let isMounted = true;
+
+    // Reset thinking state whenever WebSocket connection changes
+    setIsThinking(false);
+
     const connectWebSocket = () => {
+      if (!isMounted) return;
       const ws = new WebSocket(WS_URL);
+      globalSocket = ws;
+      globalSocketInitialized = true;
 
       ws.addEventListener("open", () => {
-        console.log("WebSocket connection established");
+        if (!hasLoggedConnection) {
+          console.log("WebSocket connection established");
+          hasLoggedConnection = true;
+        }
         setIsConnected(true);
       });
 
@@ -50,9 +62,11 @@ function App() {
         console.log("WebSocket connection closed");
         setIsConnected(false);
         setIsThinking(false);
-
-        // Try to reconnect after 3 seconds
-        setTimeout(connectWebSocket, 3000);
+        if (isMounted) {
+          globalReconnectTimeout = setTimeout(() => {
+            connectWebSocket();
+          }, 3000);
+        }
       });
 
       ws.addEventListener("error", (error) => {
@@ -63,28 +77,49 @@ function App() {
 
       ws.addEventListener("message", (event) => {
         setIsThinking(false);
-        const data = JSON.parse(event.data);
-        handleServerMessage(data);
+        try {
+          const data = JSON.parse(event.data);
+          handleServerMessage(data);
+        } catch (e) {
+          // Non-JSON message handled in Chat component
+        }
       });
 
       setSocket(ws);
     };
 
-    connectWebSocket();
+    if (!globalSocketInitialized) {
+      connectWebSocket();
+    } else {
+      setSocket(globalSocket);
+    }
 
-    // Cleanup on unmount
+    // Cleanup on unmount: do not close globalSocket to preserve the connection
     return () => {
-      if (socket) {
-        socket.close();
-      }
+      isMounted = false;
+      if (globalReconnectTimeout) clearTimeout(globalReconnectTimeout);
     };
+  }, []);
+
+  // Reset thinking state on component mount
+  useEffect(() => {
+    console.log("Resetting thinking state on App mount");
+    setIsThinking(false);
   }, []);
 
   // Handle messages from the server
   const handleServerMessage = (data: any) => {
     switch (data.type) {
       case "text":
-        addMessage(data.content, "character");
+        // Check if this is the welcome message
+        if (data.content === "Hey there, I'm your quirky game character! Speak to me or send me a text message.") {
+          if (!globalWelcomeReceived) {
+            globalWelcomeReceived = true;
+            addMessage(data.content, "character");
+          }
+        } else {
+          addMessage(data.content, "character");
+        }
         break;
 
       case "command":
@@ -96,8 +131,19 @@ function App() {
         addMessage(`Error: ${data.content}`, "character", true);
         break;
 
+      case "transcription":
+        // Add the transcribed text to the chat as a user message
+        addMessage(data.content, "user");
+        break;
+        
+      case "user_message":
+        // Handle the new user_message type (for voice input)
+        addMessage(data.content, "user");
+        break;
+
       default:
-        console.warn("Unknown message type:", data.type);
+        // Ignore other message types like audio metadata
+        break;
     }
   };
 
@@ -121,7 +167,6 @@ function App() {
     };
 
     socket.send(JSON.stringify(data));
-    addMessage(message, "user");
   };
 
   // Execute a command from the character
@@ -138,7 +183,7 @@ function App() {
   return (
     <div className="game-container">
       <Canvas
-        camera={{ position: [0, 0, 5], fov: 40 }}
+        camera={{ position: [0, 0, 15], fov: 40 }}
         style={{ width: "100vw", height: "100vh" }}
       >
         <Suspense fallback={null}>
@@ -167,6 +212,7 @@ function App() {
         sendTextMessage={sendTextMessage}
         isThinking={isThinking}
         isConnected={isConnected}
+        websocket={socket}
       />
     </div>
   );

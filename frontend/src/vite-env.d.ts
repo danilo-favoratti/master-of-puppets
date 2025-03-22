@@ -5,18 +5,17 @@ declare module '*.jpg';
 declare module '*.jpeg';
 declare module '*.gif';
 
-interface Window {
-  // Remove all test-related functions
-}
-
-// Add process.env definition for development environment checks
 interface ImportMetaEnv {
-  readonly NODE_ENV: string;
+  readonly VITE_WS_URL: string;
   // more env variables...
 }
 
 interface ImportMeta {
   readonly env: ImportMetaEnv;
+}
+
+interface Window {
+  // Remove all test-related functions
 }
 
 declare module "*.png" {
