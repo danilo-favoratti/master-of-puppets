@@ -2,6 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import React, { useEffect, useRef, useState } from "react";
 import { useGameStore } from "../store/gameStore";
 import CharacterSprite, { AnimationType, Point } from "./CharacterSprite";
+import Entity from "./Entity";
 import MapDisplay from "./MapDisplay";
 
 interface GameProps {
@@ -290,7 +291,7 @@ const Game = ({
 
   return (
     <>
-      <ambientLight intensity={0} />
+      <ambientLight intensity={1} />
       <pointLight
         position={[position[0], position[1], 2]}
         intensity={lightIntensity}
@@ -298,10 +299,18 @@ const Game = ({
         decay={lightDecay}
       />
 
+      <Entity
+        id="travelers-camp-tent"
+        type="structure"
+        name="Travelers Camp Tent"
+        position={{ x: 1, y: 1 }}
+        imageUrl="/src/assets/travelers_camp_tent.png"
+      />
+
       <CharacterSprite
         ref={characterRef}
         position={position}
-        scale={[1, 1, 1]}
+        scale={[2, 2, 2]}
         rows={8}
         cols={8}
         animation={currentAnimation}
