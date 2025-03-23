@@ -1,0 +1,41 @@
+{
+  "board": {
+    "width": 3,
+    "height": 3,
+    "squares": [
+      {"position": {"x": 0, "y": 0}, "contains_entity": true},
+      {"position": {"x": 1, "y": 0}, "contains_entity": false},
+      {"position": {"x": 2, "y": 0}, "contains_entity": false},
+      {"position": {"x": 0, "y": 1}, "contains_entity": true},
+      {"position": {"x": 1, "y": 1}, "contains_entity": false},
+      {"position": {"x": 2, "y": 1}, "contains_entity": false},
+      {"position": {"x": 0, "y": 2}, "contains_entity": false},
+      {"position": {"x": 1, "y": 2}, "contains_entity": false},
+      {"position": {"x": 2, "y": 2}, "contains_entity": false}
+    ]
+  },
+  "entities": [
+    {
+      "id": "player_001",
+      "type": "player",
+      "name": "Player",
+      "position": {"x": 0, "y": 0},
+      "strength": 5,
+      "inventory": [],
+      "can_perform": ["walk", "run", "jump", "push", "pull", "use"],
+      "description": "The main character controlled by the player"
+    },
+    {
+      "id": "container_001",
+      "type": "container",
+      "name": "Movable Box",
+      "position": {"x": 0, "y": 1},
+      "is_movable": true,
+      "is_open": true,
+      "capacity": 5,
+      "contents": [],
+      "weight": 3,
+      "description": "A wooden box that can be pushed around"
+    }
+  ]
+} 

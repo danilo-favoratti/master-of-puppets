@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-multipart
+openai
+openai-agents
+termcolor
+aiofiles
+colorama
+tensorflow 
