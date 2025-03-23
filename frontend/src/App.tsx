@@ -1,13 +1,12 @@
-import { OrbitControls } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
-import React, { Suspense, useEffect, useState, useRef, useCallback } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
-import Game from "./components/Game";
-import GameUI from "./components/GameUI";
 import Chat from "./components/Chat";
+import GameContainer from "./components/GameContainer";
 
 // @ts-ignore: Property 'env' does not exist on type 'ImportMeta'.
-const WS_URL = (import.meta.env as any).VITE_WS_URL || 'wss://masterofpuppets.favoratti.com/ws';
+const WS_URL =
+  (import.meta.env as any).VITE_WS_URL ||
+  "wss://masterofpuppets.favoratti.com/ws";
 
 // Global variables to maintain a single WebSocket connection across component mounts
 let globalSocket: WebSocket | null = null;
@@ -36,6 +35,8 @@ function App() {
     },
     []
   );
+
+  const characterRef = useRef(null);
 
   // Connect to WebSocket using global variables to ensure a singleton connection
   useEffect(() => {
@@ -112,7 +113,10 @@ function App() {
     switch (data.type) {
       case "text":
         // Check if this is the welcome message
-        if (data.content === "Hey there, I'm your quirky game character! Speak to me or send me a text message.") {
+        if (
+          data.content ===
+          "Hey there, I'm your quirky game character! Speak to me or send me a text message."
+        ) {
           if (!globalWelcomeReceived) {
             globalWelcomeReceived = true;
             addMessage(data.content, "character");
@@ -139,7 +143,7 @@ function App() {
         addMessage(data.content, "user");
         setIsWaitingForResponse(false);
         break;
-        
+
       case "user_message":
         // Handle the new user_message type (for voice input)
         addMessage(data.content, "user");
@@ -187,32 +191,13 @@ function App() {
   };
 
   return (
-    <div className="game-container">
-      <Canvas
-        camera={{ position: [0, 0, 15], fov: 40 }}
-        style={{ width: "100vw", height: "100vh" }}
-      >
-        <Suspense fallback={null}>
-          <ambientLight intensity={0.5} />
-          <directionalLight position={[10, 10, 5]} intensity={1} />
-          <OrbitControls
-            enableRotate={false}
-            enableZoom={true}
-            maxZoom={20}
-            minZoom={5}
-            zoomSpeed={0.5}
-            enablePan={true}
-            panSpeed={0.5}
-          />
-          <Game
-            executeCommand={executeCommand}
-            registerCommandHandler={registerGameCommandHandler}
-          />
-        </Suspense>
-      </Canvas>
-
-      <GameUI />
-
+    <div className="flex flex-col h-screen">
+      <div className="flex-1 relative">
+        <GameContainer
+          executeCommand={executeCommand}
+          registerCommandHandler={registerGameCommandHandler}
+        />
+      </div>
       <Chat
         messages={messages}
         sendTextMessage={sendTextMessage}

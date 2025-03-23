@@ -86,13 +86,16 @@ const ForestTile = ({
     );
   }
   return (
-    <mesh
-      ref={meshRef}
-      position={new THREE.Vector3(...adjustedPosition)}
-      scale={new THREE.Vector3(...finalScale)}
-    >
+    <mesh ref={meshRef} position={adjustedPosition} scale={finalScale}>
       <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial map={texture} transparent={true} />
+      <meshStandardMaterial
+        map={texture}
+        transparent={true}
+        side={THREE.DoubleSide}
+        receiveShadow={true}
+        roughness={0.8}
+        metalness={0.2}
+      />
     </mesh>
   );
 };

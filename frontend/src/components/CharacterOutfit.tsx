@@ -40,6 +40,7 @@ import pfdrV04 from "../assets/spritesheets/1out/char_a_p1_1out_pfdr_v04.png";
 import pfdrV05 from "../assets/spritesheets/1out/char_a_p1_1out_pfdr_v05.png";
 
 // Import animation types from CharacterSprite
+import React from "react";
 import { AnimationType } from "./CharacterSprite.tsx";
 
 // Define outfit types
@@ -354,7 +355,7 @@ const CharacterOutfit = ({
   const adjustedPosition: [number, number, number] = [
     position[0],
     position[1],
-    position[2] + zOffset,
+    zOffset,
   ];
 
   return (

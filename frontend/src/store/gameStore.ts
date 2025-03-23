@@ -61,6 +61,10 @@ interface GameStore {
   updateSquare: (x: number, y: number, containsEntity: boolean) => void;
   updateEntities: (entities: Entity[]) => void;
   moveEntity: (entityId: string, newPosition: Position) => void;
+  
+  // New properties
+  position: [number, number, number];
+  setPosition: (position: [number, number, number]) => void;
 }
 
 const INITIAL_HEALTH = 3;
@@ -150,5 +154,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     );
     
     return { entities: newEntities };
-  })
+  }),
+  
+  // New properties
+  position: [0, 0, 0],
+  setPosition: (position: [number, number, number]) => set({ position })
 })); 

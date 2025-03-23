@@ -417,7 +417,7 @@ const CharacterHat = ({
   const adjustedPosition: [number, number, number] = [
     position[0],
     position[1],
-    position[2] + zOffset,
+    zOffset,
   ];
 
   return (

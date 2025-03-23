@@ -1,6 +1,18 @@
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useRef, useState } from "react";
+import React, {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import * as THREE from "three";
+// Declare module for image imports
+declare module "*.png" {
+  const value: string;
+  export default value;
+}
+
 // Import the sprite sheet
 import char_demn_v01 from "../assets/spritesheets/characters/char_a_p1_0bas_demn_v01.png";
 import char_demn_v02 from "../assets/spritesheets/characters/char_a_p1_0bas_demn_v02.png";
@@ -212,6 +224,19 @@ export const ANIMATIONS: Record<AnimationType, AnimationConfig> = {
   },
 };
 
+// Add these new interfaces
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface MovementState {
+  path: Point[];
+  currentPathIndex: number;
+  isMoving: boolean;
+}
+
+// Add these new props to CharacterSpriteProps
 interface CharacterSpriteProps {
   position?: [number, number, number];
   scale?: [number, number, number];
@@ -221,159 +246,289 @@ interface CharacterSpriteProps {
   frame?: number; // Optional specific frame to display
   characterType?: CharacterType; // Optional specific character type
   onAnimationComplete?: (animation: AnimationType) => void; // Callback when animation completes
+  speed?: number;
+  gridSize?: number;
+  onMoveComplete?: () => void;
+  setPosition?: (position: [number, number, number]) => void;
+  setAnimation?: (animation: AnimationType) => void;
+  zOffset?: number;
 }
 
-const CharacterSprite = ({
-  position = [0, 0, 0],
-  scale = [1, 1, 1],
-  rows = 8,
-  cols = 8,
-  animation = AnimationType.IDLE_DOWN,
-  frame = undefined, // If specified, will override the animation
-  characterType = undefined, // If not specified, will pick randomly
-  onAnimationComplete,
-}: CharacterSpriteProps) => {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const [texture, setTexture] = useState<THREE.Texture | null>(null);
-  const [currentFrame, setCurrentFrame] = useState(0);
-  const [frameTimeAccumulator, setFrameTimeAccumulator] = useState(0);
-  const animationRef = useRef(animation);
-  const [selectedCharacter, setSelectedCharacter] = useState<{
-    type: CharacterType;
-    sprite: string;
-  } | null>(null);
+const CharacterSprite = forwardRef<
+  { moveAlongPath: (path: Point[]) => void },
+  CharacterSpriteProps
+>(
+  (
+    {
+      position = [0, 0, 0],
+      scale = [1, 1, 1],
+      rows = 8,
+      cols = 8,
+      animation = AnimationType.IDLE_DOWN,
+      frame = undefined, // If specified, will override the animation
+      characterType = undefined, // If not specified, will pick randomly
+      onAnimationComplete,
+      speed = 2, // Units per second
+      gridSize = 1,
+      onMoveComplete,
+      setPosition,
+      setAnimation,
+      zOffset = 0.1,
+    },
+    ref
+  ) => {
+    const meshRef = useRef<THREE.Mesh>(null);
+    const [texture, setTexture] = useState<THREE.Texture | null>(null);
+    const [currentFrame, setCurrentFrame] = useState(0);
+    const [frameTimeAccumulator, setFrameTimeAccumulator] = useState(0);
+    const animationRef = useRef(animation);
+    const [selectedCharacter, setSelectedCharacter] = useState<{
+      type: CharacterType;
+      sprite: string;
+    } | null>(null);
+    const [movementState, setMovementState] = useState<MovementState>({
+      path: [],
+      currentPathIndex: 0,
+      isMoving: false,
+    });
 
-  // Set random character on first render
-  useEffect(() => {
-    if (!characterType) {
-      setSelectedCharacter(getRandomCharacter());
-    } else {
-      // Use the specified type with a random variant
-      const typeVariants = CHARACTERS[characterType];
-      const randomVariant =
-        typeVariants[Math.floor(Math.random() * typeVariants.length)];
-      setSelectedCharacter({
-        type: characterType,
-        sprite: randomVariant,
-      });
-    }
-  }, [characterType]);
-
-  // Load texture
-  useEffect(() => {
-    if (!selectedCharacter) return;
-
-    const textureLoader = new THREE.TextureLoader();
-    textureLoader.load(
-      selectedCharacter.sprite,
-      (loadedTexture) => {
-        loadedTexture.magFilter = THREE.NearestFilter;
-        loadedTexture.minFilter = THREE.NearestFilter;
-        loadedTexture.wrapS = loadedTexture.wrapT = THREE.RepeatWrapping;
-        loadedTexture.repeat.set(1 / cols, 1 / rows);
-        setTexture(loadedTexture);
-      },
-      undefined,
-      (error) => {
-        // Silently handle error
+    // Set random character on first render
+    useEffect(() => {
+      if (!characterType) {
+        setSelectedCharacter(getRandomCharacter());
+      } else {
+        // Use the specified type with a random variant
+        const typeVariants = CHARACTERS[characterType];
+        const randomVariant =
+          typeVariants[Math.floor(Math.random() * typeVariants.length)];
+        setSelectedCharacter({
+          type: characterType,
+          sprite: randomVariant,
+        });
       }
-    );
-  }, [selectedCharacter, rows, cols]);
+    }, [characterType]);
 
-  // Update animation ref when animation prop changes
-  useEffect(() => {
-    animationRef.current = animation;
-    // Reset frame time accumulator to start the animation from the beginning
-    setFrameTimeAccumulator(0);
-    setCurrentFrame(0);
-  }, [animation]);
+    // Load texture
+    useEffect(() => {
+      if (!selectedCharacter) return;
 
-  // Helper function to set texture offset based on frame number
-  const setTextureOffsetFromFrame = (frameNumber: number) => {
-    if (!texture) return;
+      const textureLoader = new THREE.TextureLoader();
+      textureLoader.load(
+        selectedCharacter.sprite,
+        (loadedTexture) => {
+          loadedTexture.magFilter = THREE.NearestFilter;
+          loadedTexture.minFilter = THREE.NearestFilter;
+          loadedTexture.wrapS = loadedTexture.wrapT = THREE.RepeatWrapping;
+          loadedTexture.repeat.set(1 / cols, 1 / rows);
+          setTexture(loadedTexture);
+        },
+        undefined,
+        (error) => {
+          // Silently handle error
+        }
+      );
+    }, [selectedCharacter, rows, cols]);
 
-    // Calculate row and column from frame number
-    const row = Math.floor(frameNumber / cols);
-    const col = frameNumber % cols;
+    // Update animation ref when animation prop changes
+    useEffect(() => {
+      animationRef.current = animation;
+      // Reset frame time accumulator to start the animation from the beginning
+      setFrameTimeAccumulator(0);
+      setCurrentFrame(0);
+    }, [animation]);
 
-    // Set texture offset
-    texture.offset.set(col / cols, 1 - (row + 1) / rows);
-  };
+    // Helper function to set texture offset based on frame number
+    const setTextureOffsetFromFrame = (frameNumber: number) => {
+      if (!texture) return;
 
-  useFrame((_, delta) => {
-    if (!texture) return;
+      // Calculate row and column from frame number
+      const row = Math.floor(frameNumber / cols);
+      const col = frameNumber % cols;
 
-    // Handle single frame case (for specific frame or idle animations)
-    if (frame !== undefined) {
-      setTextureOffsetFromFrame(frame);
-      return;
-    }
+      // Set texture offset
+      texture.offset.set(col / cols, 1 - (row + 1) / rows);
+    };
 
-    // Get current animation config
-    const animationConfig = ANIMATIONS[animationRef.current];
-    if (!animationConfig || !animationConfig.frames.length) return;
+    // Expor moveAlongPath através da ref
+    useImperativeHandle(ref, () => ({
+      moveAlongPath: (path: Point[]) => {
+        console.log("Iniciando movimento com path:", path); // Debug
+        setMovementState({
+          path,
+          currentPathIndex: 0,
+          isMoving: true,
+        });
+      },
+    }));
 
-    const animationFrames = animationConfig.frames;
-    const frameTiming =
-      animationConfig.frameTiming || animationFrames.map(() => 150);
-    const shouldLoop = animationConfig.loop !== false; // Default to true if not specified
+    // Update movement in the animation frame
+    useFrame((_, delta) => {
+      if (!meshRef.current || !movementState.isMoving) return;
 
-    // For single frame animations, just show the frame
-    if (animationFrames.length === 1) {
-      setTextureOffsetFromFrame(animationFrames[0]);
-      return;
-    }
+      const currentPos = meshRef.current.position;
+      const currentPathIndex = movementState.currentPathIndex;
 
-    // Update frame using delta time
-    let newFrameTimeAccumulator = frameTimeAccumulator + delta * 1000;
+      if (currentPathIndex >= movementState.path.length) {
+        setMovementState((prev) => ({ ...prev, isMoving: false }));
+        if (setPosition) {
+          setPosition([currentPos.x, currentPos.y, currentPos.z]);
+        }
+        if (onMoveComplete) onMoveComplete();
+        return;
+      }
 
-    // Check if we need to advance to the next frame
-    if (newFrameTimeAccumulator >= frameTiming[currentFrame]) {
-      // Reset accumulator
-      newFrameTimeAccumulator -= frameTiming[currentFrame];
+      const target = movementState.path[currentPathIndex];
+      const targetPos = new THREE.Vector3(target.x, target.y, currentPos.z);
+      const distance = currentPos.distanceTo(targetPos);
 
-      // Advance to next frame
-      let newFrame = currentFrame + 1;
+      // Determinar a direção do movimento e atualizar a animação
+      const dx = targetPos.x - currentPos.x;
+      const dy = targetPos.y - currentPos.y;
 
-      // Check if animation is complete
-      if (newFrame >= animationFrames.length) {
-        if (shouldLoop) {
-          // Loop back to the beginning
-          newFrame = 0;
+      // Determinar a direção predominante e atualizar a animação global
+      let newAnimation: AnimationType;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        // Movimento horizontal
+        if (dx > 0) {
+          newAnimation = AnimationType.WALK_RIGHT;
         } else {
-          // Animation is complete, stay at the last frame
-          newFrame = animationFrames.length - 1;
-
-          // Notify that animation is complete
-          if (onAnimationComplete) {
-            onAnimationComplete(animationRef.current);
-          }
+          newAnimation = AnimationType.WALK_LEFT;
+        }
+      } else {
+        // Movimento vertical
+        if (dy > 0) {
+          newAnimation = AnimationType.WALK_UP;
+        } else {
+          newAnimation = AnimationType.WALK_DOWN;
         }
       }
 
-      setCurrentFrame(newFrame);
-      setTextureOffsetFromFrame(animationFrames[newFrame]);
+      // Atualizar a animação apenas se mudou
+      if (newAnimation !== animationRef.current) {
+        animationRef.current = newAnimation;
+        if (setAnimation) {
+          setAnimation(newAnimation);
+        }
+      }
+
+      if (distance < 0.1) {
+        if (setPosition) {
+          setPosition([target.x, target.y, currentPos.z]);
+        }
+        setMovementState((prev) => ({
+          ...prev,
+          currentPathIndex: prev.currentPathIndex + 1,
+        }));
+        return;
+      }
+
+      // Calculate movement direction
+      const direction = new THREE.Vector3()
+        .subVectors(targetPos, currentPos)
+        .normalize();
+
+      // Move towards target
+      const movement = direction.multiplyScalar(speed * delta);
+      currentPos.add(movement);
+
+      if (setPosition) {
+        setPosition([currentPos.x, currentPos.y, currentPos.z]);
+      }
+    });
+
+    useFrame((_, delta) => {
+      if (!texture) return;
+
+      // Handle single frame case (for specific frame or idle animations)
+      if (frame !== undefined) {
+        setTextureOffsetFromFrame(frame);
+        return;
+      }
+
+      // Get current animation config
+      const animationConfig = ANIMATIONS[animationRef.current];
+      if (!animationConfig || !animationConfig.frames.length) return;
+
+      const animationFrames = animationConfig.frames;
+      const frameTiming =
+        animationConfig.frameTiming || animationFrames.map(() => 150);
+      const shouldLoop = animationConfig.loop !== false; // Default to true if not specified
+
+      // For single frame animations, just show the frame
+      if (animationFrames.length === 1) {
+        setTextureOffsetFromFrame(animationFrames[0]);
+        return;
+      }
+
+      // Update frame using delta time
+      let newFrameTimeAccumulator = frameTimeAccumulator + delta * 1000;
+
+      // Check if we need to advance to the next frame
+      if (newFrameTimeAccumulator >= frameTiming[currentFrame]) {
+        // Reset accumulator
+        newFrameTimeAccumulator -= frameTiming[currentFrame];
+
+        // Advance to next frame
+        let newFrame = currentFrame + 1;
+
+        // Check if animation is complete
+        if (newFrame >= animationFrames.length) {
+          if (shouldLoop) {
+            // Loop back to the beginning
+            newFrame = 0;
+          } else {
+            // Animation is complete, stay at the last frame
+            newFrame = animationFrames.length - 1;
+
+            // Notify that animation is complete
+            if (onAnimationComplete) {
+              onAnimationComplete(animationRef.current);
+            }
+          }
+        }
+
+        setCurrentFrame(newFrame);
+        setTextureOffsetFromFrame(animationFrames[newFrame]);
+      }
+
+      setFrameTimeAccumulator(newFrameTimeAccumulator);
+    });
+
+    if (!texture || !selectedCharacter) {
+      // Return a placeholder while the texture is loading
+      return (
+        <mesh position={position} scale={scale}>
+          <boxGeometry args={[1, 1, 0.1]} />
+          <meshStandardMaterial color="lightblue" />
+        </mesh>
+      );
     }
 
-    setFrameTimeAccumulator(newFrameTimeAccumulator);
-  });
+    const adjustedPosition: [number, number, number] = [
+      position[0],
+      position[1],
+      zOffset,
+    ];
 
-  if (!texture || !selectedCharacter) {
-    // Return a placeholder while the texture is loading
     return (
-      <mesh position={position} scale={scale}>
-        <boxGeometry args={[1, 1, 0.1]} />
-        <meshStandardMaterial color="lightblue" />
+      <mesh
+        ref={meshRef}
+        position={new THREE.Vector3(...adjustedPosition)}
+        scale={scale}
+      >
+        <planeGeometry args={[1, 1]} />
+        <meshStandardMaterial
+          map={texture}
+          transparent={true}
+          roughness={0.5}
+          metalness={0.0}
+          side={THREE.DoubleSide}
+        />
       </mesh>
     );
   }
+);
 
-  return (
-    <mesh ref={meshRef} position={position} scale={scale}>
-      <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial map={texture} transparent={true} />
-    </mesh>
-  );
-};
-
+// Exportar tudo em uma única linha
+export type { MovementState, Point };
 export default CharacterSprite;

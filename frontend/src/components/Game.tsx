@@ -1,12 +1,7 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import React, { useEffect, useRef, useState } from "react";
 import { useGameStore } from "../store/gameStore";
-import CharacterCloak from "./CharacterCloak";
-import CharacterFace from "./CharacterFace";
-import CharacterHair from "./CharacterHair";
-import CharacterHat from "./CharacterHat";
-import CharacterOutfit from "./CharacterOutfit";
-import CharacterSprite, { AnimationType } from "./CharacterSprite";
+import CharacterSprite, { AnimationType, Point } from "./CharacterSprite";
 import MapDisplay from "./MapDisplay";
 
 interface GameProps {
@@ -14,11 +9,23 @@ interface GameProps {
   registerCommandHandler: (
     handler: (cmd: string, result: string, params: any) => void
   ) => void;
+  characterRef: React.RefObject<{ moveAlongPath: (path: Point[]) => void }>;
+  lightIntensity: number;
+  lightDistance: number;
+  lightDecay: number;
 }
 
-const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
+const Game = ({
+  executeCommand,
+  registerCommandHandler,
+  characterRef,
+  lightIntensity,
+  lightDistance,
+  lightDecay,
+}: GameProps) => {
   const { camera } = useThree();
-  const [position, setPosition] = useState<[number, number, number]>([0, 0, 0]);
+  const position = useGameStore((state) => state.position);
+  const setPosition = useGameStore((state) => state.setPosition);
   const currentAnimation = useGameStore((state) => state.currentAnimation);
   const setAnimation = useGameStore((state) => state.setAnimation);
   const isManualAnimation = useGameStore((state) => state.isManualAnimation);
@@ -283,46 +290,70 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
 
   return (
     <>
+      <ambientLight intensity={0} />
+      <pointLight
+        position={[position[0], position[1], 2]}
+        intensity={lightIntensity}
+        distance={lightDistance}
+        decay={lightDecay}
+      />
+
       <CharacterSprite
+        ref={characterRef}
         position={position}
         scale={[1, 1, 1]}
         rows={8}
         cols={8}
         animation={currentAnimation}
-        onAnimationComplete={() => {}}
+        setAnimation={setAnimation}
+        setPosition={setPosition}
+        onMoveComplete={() => {
+          console.log("Movimento completo");
+          // Converter a animação de movimento para a respectiva animação idle
+          switch (currentAnimation) {
+            case AnimationType.WALK_UP:
+              setAnimation(AnimationType.IDLE_UP);
+              break;
+            case AnimationType.WALK_LEFT:
+              setAnimation(AnimationType.IDLE_LEFT);
+              break;
+            case AnimationType.WALK_RIGHT:
+              setAnimation(AnimationType.IDLE_RIGHT);
+              break;
+            default:
+              setAnimation(AnimationType.IDLE_DOWN);
+          }
+        }}
+        zOffset={0.01}
       />
-      <CharacterOutfit position={position} animation={currentAnimation} />
+      {/* <CharacterOutfit
+        position={position}
+        animation={currentAnimation}
+        zOffset={0.02}
+      />
       <CharacterHair
         position={position}
-        scale={[1, 1, 1]}
-        rows={8}
-        cols={8}
         animation={currentAnimation}
+        zOffset={0.03}
       />
 
       <CharacterHat
         position={position}
-        scale={[1, 1, 1]}
-        rows={8}
-        cols={8}
         animation={currentAnimation}
+        zOffset={0.03}
       />
 
       <CharacterCloak
         position={position}
-        scale={[1, 1, 1]}
-        rows={8}
-        cols={8}
         animation={currentAnimation}
+        zOffset={0.03}
       />
 
       <CharacterFace
         position={position}
-        scale={[1, 1, 1]}
-        rows={8}
-        cols={8}
         animation={currentAnimation}
-      />
+        zOffset={0.03}
+      /> */}
 
       <MapDisplay />
     </>

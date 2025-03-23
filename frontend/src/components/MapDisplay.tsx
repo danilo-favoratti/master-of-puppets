@@ -39,7 +39,7 @@ const MapDisplay: React.FC = () => {
             key={`${x}-${y}`}
             tileX={tile.tileX}
             tileY={tile.tileY}
-            size={0.48}
+            size={1}
             gridX={x}
             gridY={y}
           />
