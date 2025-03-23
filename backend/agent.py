@@ -5,7 +5,7 @@ import os
 from typing import Dict, Any, List
 
 from openai import OpenAI
-from tools import jump, talk, walk, run, push, pull
+from tools import jump, walk, run as run_action, push, pull
 
 
 def setup_agent(api_key: str):
@@ -57,9 +57,6 @@ def setup_agent(api_key: str):
             {"type": "function", "function": {"name": "jump", "description": "Makes the character jump", 
                                              "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
                                                            "required": []}}},
-            {"type": "function", "function": {"name": "talk", "description": "Makes the character say something", 
-                                             "parameters": {"type": "object", "properties": {"message": {"type": "string"}}, 
-                                                           "required": ["message"]}}},
             {"type": "function", "function": {"name": "walk", "description": "Makes the character walk in a specific direction", 
                                              "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
                                                            "required": ["direction"]}}},
@@ -152,21 +149,6 @@ def process_user_input(agent_data: Dict, user_input: str, conversation_history: 
                     "params": {"direction": direction}
                 }
                 
-            elif function_name == "talk":
-                message = args.get("message", "")
-                result = talk(message)
-                tool_outputs.append({
-                    "tool_call_id": tool_call.id,
-                    "output": result
-                })
-                
-                # Prepare response for the client
-                response = {
-                    "type": "command",
-                    "name": "talk",
-                    "result": result
-                }
-                
             elif function_name == "walk":
                 direction = args.get("direction")
                 result = walk(direction)
@@ -185,7 +167,7 @@ def process_user_input(agent_data: Dict, user_input: str, conversation_history: 
                 
             elif function_name == "run":
                 direction = args.get("direction")
-                result = run(direction)
+                result = run_action(direction)
                 tool_outputs.append({
                     "tool_call_id": tool_call.id,
                     "output": result

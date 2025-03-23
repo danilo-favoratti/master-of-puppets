@@ -11,7 +11,7 @@ import traceback
 import logging
 
 # Import tools for the character's actions
-from tools import jump, talk, walk, run, push, pull
+from tools import jump, walk, run as run_action, push, pull
 
 # Configure logging with more detail
 logging.basicConfig(
@@ -155,9 +155,6 @@ class RealtimeAgent:
                             {"name": "jump", "description": "Makes the character jump", 
                              "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
                                           "required": []}},
-                            {"name": "talk", "description": "Makes the character say something", 
-                             "parameters": {"type": "object", "properties": {"message": {"type": "string"}}, 
-                                          "required": ["message"]}},
                             {"name": "walk", "description": "Makes the character walk in a specific direction", 
                              "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
                                           "required": ["direction"]}},
@@ -427,17 +424,13 @@ class RealtimeAgent:
                 direction = params.get("direction")
                 result = jump(direction)
                 
-            elif tool_name == "talk":
-                message = params.get("message", "")
-                result = talk(message)
-                
             elif tool_name == "walk":
                 direction = params.get("direction")
                 result = walk(direction)
                 
             elif tool_name == "run":
                 direction = params.get("direction")
-                result = run(direction)
+                result = run_action(direction)
                 
             elif tool_name == "push":
                 direction = params.get("direction")

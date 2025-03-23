@@ -120,29 +120,35 @@ function App() {
         } else {
           addMessage(data.content, "character");
         }
+        setIsWaitingForResponse(false);
         break;
 
       case "command":
         executeCommand(data.name, data.result, data.params);
+        setIsWaitingForResponse(false);
         break;
 
       case "error":
         console.error("Server error:", data.content);
         addMessage(`Error: ${data.content}`, "character", true);
+        setIsWaitingForResponse(false);
         break;
 
       case "transcription":
         // Add the transcribed text to the chat as a user message
         addMessage(data.content, "user");
+        setIsWaitingForResponse(false);
         break;
         
       case "user_message":
         // Handle the new user_message type (for voice input)
         addMessage(data.content, "user");
+        setIsWaitingForResponse(false);
         break;
 
       default:
         // Ignore other message types like audio metadata
+        setIsWaitingForResponse(false);
         break;
     }
   };

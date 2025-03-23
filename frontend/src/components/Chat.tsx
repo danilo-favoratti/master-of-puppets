@@ -24,6 +24,7 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
   
   // Audio playback
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const hasPlayedAudioRef = useRef(false); // Added hasPlayedAudio ref at top-level
   const [isPlaying, setIsPlaying] = useState(false);
   
   // Add a debug flag near the top
@@ -47,9 +48,12 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
   // Add a ref to track if we've explicitly started processing
   const hasStartedProcessingRef = useRef<boolean>(false);
   
+  // Initialize muted state to false so audio plays by default
+  const [isMuted, setIsMuted] = useState(false);
+  
   // Initialize audio player
   useEffect(() => {
-    console.log("Initializing audio player");
+    console.log("Initializing audio player, starting muted:", isMuted);
     
     // Create audio element if not exists
     if (!audioPlayerRef.current) {
@@ -65,10 +69,12 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
       
       // Initialize volume
       audio.volume = 1.0;
-      audio.muted = false;
+      
+      // IMPORTANT: Start with the correct mute state
+      audio.muted = isMuted;
+      console.log(`Created new Audio element with muted=${isMuted} (actual: ${audio.muted})`);
       
       audioPlayerRef.current = audio;
-      console.log("Created new Audio element with autoplay=false and preload=auto");
       
       // Try to unlock audio on first user interaction
       const unlockAudio = () => {
@@ -80,6 +86,10 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
               // Stop playing the silent audio immediately
               audioPlayerRef.current?.pause();
               audioPlayerRef.current!.currentTime = 0;
+              
+              // Make sure mute state is applied after unlocking
+              audioPlayerRef.current!.muted = isMuted;
+              console.log(`Re-applied mute state after unlock: ${isMuted}`);
             })
             .catch(err => {
               console.log("Could not unlock audio:", err);
@@ -100,6 +110,16 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
     const onPlay = () => {
       console.log("Audio playback started");
       setIsPlaying(true);
+      
+      // Ensure audio respects mute state when it starts playing
+      if (audioPlayerRef.current) {
+        if (audioPlayerRef.current.muted !== isMuted) {
+          console.log(`Correcting audio mute state on play: setting to ${isMuted}`);
+          audioPlayerRef.current.muted = isMuted;
+        } else {
+          console.log(`Audio mute state on play is correct: ${isMuted}`);
+        }
+      }
     };
     
     const onEnded = () => {
@@ -138,6 +158,9 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
       audioPlayerRef.current.addEventListener('ended', onEnded);
       audioPlayerRef.current.addEventListener('pause', onPause);
       audioPlayerRef.current.addEventListener('error', onError);
+      
+      // Apply the current mute setting to ensure consistency
+      audioPlayerRef.current.muted = isMuted;
     }
     
     // Clean up
@@ -152,7 +175,7 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
         audioPlayerRef.current.src = '';
       }
     };
-  }, []);
+  }, [isMuted]); // Add isMuted as a dependency to re-run when it changes
   
   // Reset all UI state indicators on component mount
   useEffect(() => {
@@ -206,6 +229,7 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
   // Set up WebSocket listeners for audio
   useEffect(() => {
     if (!websocket) return;
+    websocket.binaryType = 'arraybuffer';
     
     let audioChunks: Uint8Array[] = [];
     let isReceivingAudio = false;
@@ -225,36 +249,21 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
             const data = JSON.parse(event.data);
             console.log("WebSocket received JSON message:", data.type);
             
-            // When we receive a text or transcription response, audio processing is complete
-            if (data.type === 'text' || data.type === 'user_message') {
-              if (data.type === 'user_message') {
-                // When we get a transcription, end processing state and start waiting
-                if (isProcessingAudio) {
-                  console.log("Audio transcription received, ending processing state and starting waiting state");
-                  setIsProcessingAudio(false);
-                  startWaitingWithTimeout();
-                }
-              } else if (data.type === 'text') {
-                // When we get a text response from the agent, end waiting
-                console.log("Got response from agent");
-                setIsWaitingForResponse(false);
-              }
-            }
-            
-            // Handle audio metadata
             if (data.type === 'audio_start') {
               console.log("WebSocket: Received audio_start signal");
               isReceivingAudio = true;
               audioStartReceived = true;
+              hasPlayedAudioRef.current = false; // Reset flag on new audio session
               audioChunks = [];
             } 
             else if (data.type === 'audio_end') {
               console.log(`WebSocket: Received audio_end JSON signal, chunks: ${audioChunks.length}, audioStartReceived: ${audioStartReceived}`);
               
-              // Only try to play if we have both audio_start and chunks
-              if (audioStartReceived && audioChunks.length > 0) {
+              // Only play if we've received audio_start, have chunks, and haven't played yet
+              if (audioStartReceived && audioChunks.length > 0 && !hasPlayedAudioRef.current) {
                 console.log(`Playing audio: ${audioChunks.length} chunks totaling ${audioChunks.reduce((acc, chunk) => acc + chunk.length, 0)} bytes`);
                 playBufferedAudio(audioChunks);
+                hasPlayedAudioRef.current = true;
               } else {
                 if (!audioStartReceived) {
                   console.warn("Received audio_end but no audio_start was received");
@@ -267,10 +276,8 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
               // Reset state
               isReceivingAudio = false;
               audioStartReceived = false;
-              // Clear chunks after failed attempt
               audioChunks = [];
-            }
-            // Handle error messages - also end processing state
+            } 
             else if (data.type === 'error') {
               console.error("Received error from server:", data.content);
               setIsProcessingAudio(false);
@@ -284,62 +291,44 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
         else if (event.data instanceof ArrayBuffer) {
           console.log(`WebSocket: Received binary data, size: ${event.data.byteLength} bytes, isReceiving: ${isReceivingAudio}, audioStartReceived: ${audioStartReceived}`);
           
-          // Only process binary data if we've received an audio_start
           if (isReceivingAudio && audioStartReceived) {
             try {
               const arrayBuf = new Uint8Array(event.data);
-              
-              // Check if it's the audio end marker
               const isEndMarker = arrayBuf.length === 12;
               if (isEndMarker) {
-                // Convert to string for comparison
                 let endMarkerString = '';
                 for (let i = 0; i < arrayBuf.length; i++) {
                   endMarkerString += String.fromCharCode(arrayBuf[i]);
                 }
-                
                 if (endMarkerString === '__AUDIO_END__') {
                   console.log(`WebSocket: Received __AUDIO_END__ binary marker, chunks: ${audioChunks.length}`);
                   isReceivingAudio = false;
-                  
-                  if (audioChunks.length > 0) {
+                  if (audioChunks.length > 0 && !hasPlayedAudioRef.current) {
                     console.log(`Playing audio from binary __AUDIO_END__: ${audioChunks.length} chunks totaling ${audioChunks.reduce((acc, chunk) => acc + chunk.length, 0)} bytes`);
                     playBufferedAudio(audioChunks);
+                    hasPlayedAudioRef.current = true;
                   } else {
                     console.warn("No audio chunks to play after __AUDIO_END__", new Error().stack);
                   }
-                  
-                  // Reset state
                   audioStartReceived = false;
-                  // Clear chunks after attempt
                   audioChunks = [];
                 } else {
-                  // Regular audio chunk
                   audioChunks.push(arrayBuf);
                   console.log(`Added audio chunk: ${arrayBuf.length} bytes, total chunks: ${audioChunks.length}`);
                 }
               } else {
-                // Regular audio chunk - perform a detailed log of the first chunk
                 if (audioChunks.length === 0) {
                   console.log(`Added FIRST audio chunk: ${arrayBuf.length} bytes, first 30 bytes:`, 
-                             Array.from(arrayBuf.slice(0, 30)).map(b => b.toString(16).padStart(2, '0')).join(' '));
-                  
-                  // Verify this looks like an MP3 header (most MP3s start with ID3 or FF FB)
+                    Array.from(arrayBuf.slice(0, 30)).map(b => b.toString(16).padStart(2, '0')).join(' '));
                   const potentialHeader = Array.from(arrayBuf.slice(0, 3)).map(b => b.toString(16).padStart(2, '0')).join(' ');
                   console.log(`MP3 header check: ${potentialHeader}`);
-                  
-                  // For safety, check the chunk isn't suspiciously small
                   if (arrayBuf.length < 100) {
                     console.warn(`Suspiciously small first audio chunk: ${arrayBuf.length} bytes`);
                   }
                 } else {
                   console.log(`Added audio chunk: ${arrayBuf.length} bytes, total chunks: ${audioChunks.length + 1}`);
                 }
-                
-                // Add the chunk to our collection
                 audioChunks.push(arrayBuf);
-                
-                // Log the accumulated size periodically
                 if (audioChunks.length % 5 === 0) {
                   const totalSize = audioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
                   console.log(`Accumulated ${audioChunks.length} chunks, total size: ${totalSize} bytes`);
@@ -617,7 +606,7 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
     return 'audio/mpeg';
   };
 
-  // Add a function to play buffered audio
+  // New playBufferedAudio function:
   const playBufferedAudio = (chunks: Uint8Array[]) => {
     if (DEBUG) console.log("Playing buffered audio, chunks:", chunks.length);
     
@@ -627,85 +616,19 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
     }
     
     try {
-      // Log first few bytes for debugging
       let mimeType = 'audio/mpeg';
       if (chunks.length > 0 && chunks[0].length > 0) {
-        const firstChunk = chunks[0];
-        const headerBytes = Array.from(firstChunk.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
-        console.log(`First 16 bytes of audio data: ${headerBytes}`);
-        
-        // Auto-detect audio format
-        mimeType = detectAudioFormat(firstChunk);
+        mimeType = detectAudioFormat(chunks[0]);
       }
       
-      // Create a new Blob from the audio chunks with detected MIME type
       const blob = new Blob(chunks, { type: mimeType });
-      console.log(`Created audio blob with type ${mimeType}, size: ${blob.size}`);
+      if (DEBUG) console.log(`Created audio blob with type ${mimeType}, size: ${blob.size}`);
       
-      // Create a URL for the blob
       const url = URL.createObjectURL(blob);
-      console.log("Created URL for audio blob:", url);
+      if (DEBUG) console.log("Created URL for audio blob:", url);
       
-      // Save blob to file (for debugging)
-      if (DEBUG) {
-        try {
-          const debugLink = document.createElement('a');
-          debugLink.href = url;
-          debugLink.download = `audio_debug_${Date.now()}.mp3`;
-          document.body.appendChild(debugLink);
-          debugLink.click();
-          document.body.removeChild(debugLink);
-          console.log("Saved debug audio file");
-        } catch (e) {
-          console.error("Error saving debug audio:", e);
-        }
-      }
-      
-      // Try with main audio player first for more reliable playback
+      // Use only the main audio player for playback
       tryPlayWithMainAudio(url);
-      
-      // Also try with an invisible audio element as backup
-      const invisibleAudio = document.createElement('audio');
-      invisibleAudio.setAttribute('playsinline', '');
-      invisibleAudio.setAttribute('controls', '');
-      invisibleAudio.style.display = 'none';
-      invisibleAudio.src = url;
-      document.body.appendChild(invisibleAudio);
-      
-      // Add event listeners for debugging
-      invisibleAudio.addEventListener('play', () => {
-        console.log('Invisible audio started playing');
-        setIsPlaying(true);
-      });
-      
-      invisibleAudio.addEventListener('ended', () => {
-        console.log('Invisible audio finished playing');
-        setIsPlaying(false);
-        document.body.removeChild(invisibleAudio);
-      });
-      
-      invisibleAudio.addEventListener('error', (e) => {
-        console.error('Invisible audio error:', e);
-        
-        if (invisibleAudio.error) {
-          console.error(`Error code: ${invisibleAudio.error.code}, Message: ${invisibleAudio.error.message}`);
-        }
-        
-        setIsPlaying(false);
-        document.body.removeChild(invisibleAudio);
-      });
-      
-      // Try to play the backup audio element
-      setTimeout(() => {
-        try {
-          invisibleAudio.play()
-            .catch(err => {
-              console.log('Invisible audio play failed:', err);
-            });
-        } catch (e) {
-          console.log('Auto-play attempt failed:', e);
-        }
-      }, 500);
     } catch (error) {
       console.error("Error in playBufferedAudio:", error);
     }
@@ -714,14 +637,18 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
   // Helper function to try playing with the main audio player
   const tryPlayWithMainAudio = (url: string) => {
     try {
-      console.log("Trying with main audio player");
+      console.log(`Trying with main audio player (current mute state: ${isMuted})`);
       if (!audioPlayerRef.current) {
         console.error("Audio player not initialized yet");
         const audio = new Audio();
         audio.autoplay = false;
         audio.preload = "auto";
+        
+        // Important: Apply the mute setting immediately to the new audio element
+        audio.muted = isMuted;
+        console.log(`Created new Audio element with muted=${isMuted}`);
+        
         audioPlayerRef.current = audio;
-        console.log("Created new Audio element on-the-fly");
       }
       
       // Reset the audio element
@@ -736,23 +663,39 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
       audioPlayerRef.current.src = url;
       audioPlayerRef.current.preload = "auto";
       
-      // Force unmute the audio element
-      audioPlayerRef.current.muted = false;
+      // Forcefully apply the mute state before trying to play
+      audioPlayerRef.current.muted = isMuted;
       audioPlayerRef.current.volume = 1.0;
+      
+      console.log(`Audio player setup complete: src=${url}, muted=${audioPlayerRef.current.muted}, volume=${audioPlayerRef.current.volume}`);
       
       // Let the browser know we want to play audio
       audioPlayerRef.current.load();
       
-      console.log("Attempting to play with main audio player...");
+      console.log(`Attempting to play with main audio player... (muted: ${isMuted}, audioPlayer.muted: ${audioPlayerRef.current.muted})`);
       
       // Add a retry mechanism
       let retryCount = 0;
       const maxRetries = 3;
       
       const attemptPlay = () => {
+        // Double-check mute state right before playing
+        if (audioPlayerRef.current && audioPlayerRef.current.muted !== isMuted) {
+          console.log(`Fixing mute state discrepancy right before playing: ${isMuted} vs ${audioPlayerRef.current.muted}`);
+          audioPlayerRef.current.muted = isMuted;
+        }
+        
         audioPlayerRef.current!.play()
           .then(() => {
             console.log("Main audio player playback started successfully");
+            
+            // One last check after play starts
+            setTimeout(() => {
+              if (audioPlayerRef.current && audioPlayerRef.current.muted !== isMuted) {
+                console.log(`Post-playback mute correction: setting to ${isMuted}`);
+                audioPlayerRef.current.muted = isMuted;
+              }
+            }, 100);
           })
           .catch(err => {
             console.error(`Error playing with main audio player (attempt ${retryCount + 1}/${maxRetries}):`, err);
@@ -852,6 +795,25 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
     return () => clearTimeout(forceResetTimer);
   }, []);
   
+  // Function to ensure active audio playback respects the current mute setting
+  const applyMuteStateToAudio = () => {
+    if (audioPlayerRef.current) {
+      // Check if the current mute state matches what we expect
+      if (audioPlayerRef.current.muted !== isMuted) {
+        console.log(`Audio player mute state (${audioPlayerRef.current.muted}) doesn't match expected state (${isMuted}), correcting...`);
+        audioPlayerRef.current.muted = isMuted;
+      } else {
+        console.log(`Audio player mute state already matches expected state (${isMuted})`);
+      }
+    }
+  };
+
+  // Update audio player mute state when isMuted changes
+  useEffect(() => {
+    console.log(`isMuted state changed to: ${isMuted} - updating audio player state`);
+    applyMuteStateToAudio();
+  }, [isMuted]);
+  
   return (
     <div className="chat-container">
       <div className="chat-header">
@@ -909,13 +871,6 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
           </div>
         )}
         
-        {isPlaying && (
-          <div className="audio-indicator">
-            <div className="audio-wave"></div>
-            <span>Speaking</span>
-          </div>
-        )}
-        
         {/* Empty spacer div to ensure padding at bottom */}
         <div className="messages-end-spacer"></div>
         
@@ -925,6 +880,58 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
       
       <div className="input-area">
         <form onSubmit={handleSubmit}>
+          <button 
+            type="button" 
+            className={`mute-button ${isMuted ? 'muted' : 'unmuted'}`}
+            onClick={() => {
+              const newMutedState = !isMuted;
+              console.log(`Mute button clicked: changing from ${isMuted ? 'muted' : 'unmuted'} to ${newMutedState ? 'muted' : 'unmuted'}`);
+              
+              // Update React state
+              setIsMuted(newMutedState);
+              
+              // Immediately apply mute setting to currently playing audio
+              if (audioPlayerRef.current) {
+                // Force mute state change
+                audioPlayerRef.current.muted = newMutedState;
+                console.log(`Applied mute setting to audio player: ${newMutedState} (actual: ${audioPlayerRef.current.muted})`);
+                
+                // Force browser to recognize the mute state change by manipulating volume slightly
+                const currentVolume = audioPlayerRef.current.volume;
+                audioPlayerRef.current.volume = currentVolume > 0.5 ? currentVolume - 0.01 : currentVolume + 0.01;
+                audioPlayerRef.current.volume = currentVolume;
+                
+                // Force a check of the player state
+                setTimeout(() => {
+                  if (audioPlayerRef.current) {
+                    if (audioPlayerRef.current.muted !== newMutedState) {
+                      console.error(`Mute state mismatch after click: expected ${newMutedState}, got ${audioPlayerRef.current.muted}`);
+                      // Force it again with a different approach
+                      audioPlayerRef.current.muted = newMutedState;
+                      // Try toggling pause/play to refresh audio state if currently playing
+                      if (!audioPlayerRef.current.paused) {
+                        const currentTime = audioPlayerRef.current.currentTime;
+                        audioPlayerRef.current.pause();
+                        setTimeout(() => {
+                          if (audioPlayerRef.current) {
+                            audioPlayerRef.current.currentTime = currentTime;
+                            audioPlayerRef.current.play().catch(e => console.error("Error resuming after mute toggle:", e));
+                          }
+                        }, 50);
+                      }
+                    } else {
+                      console.log(`Mute state confirmed after click: ${audioPlayerRef.current.muted}`);
+                    }
+                  }
+                }, 50);
+              } else {
+                console.warn("No audio player available to mute/unmute");
+              }
+            }}
+            disabled={!isConnected}
+          >
+            <span>{isMuted ? '🔇' : '🔊'}</span>
+          </button>
           <input 
             type="text" 
             value={message}
@@ -932,7 +939,7 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
             placeholder="Type your message..." 
             disabled={!isConnected}
           />
-          <button type="submit" disabled={!isConnected}>Send</button>
+          <button type="submit" className="send-button" disabled={!isConnected}>Send</button>
           <button 
             type="button" 
             className={`voice-button ${isRecording ? 'recording' : ''}`}

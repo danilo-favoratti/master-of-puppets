@@ -203,59 +203,39 @@ async def websocket_endpoint(websocket: WebSocket):
                                 session_data["conversation_history"]
                             )
                             
-                            # Extract text content and command info
                             if response_data["type"] == "text":
+                                voice = agent.voice
                                 response_text = response_data["content"]
+
                                 await on_response(response_text)
-                                
-                                # Generate TTS for the text response
-                                speech_response = agent.openai_client.audio.speech.create(
-                                    model="tts-1",
-                                    voice=agent.voice,
-                                    input=response_text
-                                )
-                                
-                                # Reset audio metadata state
-                                session_data["audio_sent_metadata"] = False
-                                
-                                # Send audio to client
-                                collected_audio = bytearray()
-                                for chunk in speech_response.iter_bytes():
-                                    collected_audio.extend(chunk)
-                                    await on_audio(chunk)
-                                
-                                # Send audio end marker
-                                await on_audio(b"__AUDIO_END__")
-                                
                             elif response_data["type"] == "command":
+                                voice = "shimmer"
                                 response_text = response_data["result"]
-                                await on_response(response_text)
-                                
-                                # Send the command to the frontend
+
                                 await send_command(
                                     response_data["name"],
                                     response_data.get("params", {})
                                 )
-                                
-                                # Generate TTS for the command response
-                                speech_response = agent.openai_client.audio.speech.create(
-                                    model="tts-1",
-                                    voice=agent.voice,
-                                    input=response_text
-                                )
+
+                                # Generate TTS for the text response
+                            speech_response = agent.openai_client.audio.speech.create(
+                                model="tts-1",
+                                voice=voice,
+                                input=response_text
+                            )
                                 
                                 # Reset audio metadata state
-                                session_data["audio_sent_metadata"] = False
+                            session_data["audio_sent_metadata"] = False
                                 
                                 # Send audio to client
-                                collected_audio = bytearray()
-                                for chunk in speech_response.iter_bytes():
-                                    collected_audio.extend(chunk)
-                                    await on_audio(chunk)
+                            collected_audio = bytearray()
+                            for chunk in speech_response.iter_bytes():
+                                collected_audio.extend(chunk)
+                                await on_audio(chunk)
                                 
                                 # Send audio end marker
-                                await on_audio(b"__AUDIO_END__")
-                            
+                            await on_audio(b"__AUDIO_END__")
+                                
                         except Exception as e:
                             print(f"Error processing text input: {e}")
                             import traceback

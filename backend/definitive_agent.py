@@ -12,7 +12,7 @@ import traceback
 from openai import OpenAI
 from deepgram import DeepgramClient, PrerecordedOptions, FileSource
 
-from tools import jump, talk, walk, run, push, pull
+from tools import jump, walk, run as run_action, push, pull
 
 
 class DefinitiveAgent:
@@ -106,9 +106,6 @@ class DefinitiveAgent:
                 {"type": "function", "function": {"name": "jump", "description": "Makes the character jump", 
                                                 "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
                                                             "required": []}}},
-                {"type": "function", "function": {"name": "talk", "description": "Makes the character say something", 
-                                                "parameters": {"type": "object", "properties": {"message": {"type": "string"}}, 
-                                                            "required": ["message"]}}},
                 {"type": "function", "function": {"name": "walk", "description": "Makes the character walk in a specific direction", 
                                                 "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
                                                             "required": ["direction"]}}},
@@ -148,9 +145,9 @@ class DefinitiveAgent:
             # Configure Deepgram transcription options optimized for speed
             # No intents detection to keep it fast
             options = PrerecordedOptions(
-                model="nova-2",  # Using faster model
+                model="nova-2",  # nova-2 is faster
                 smart_format=True,
-                punctuate=True,
+                punctuate=False,
                 intents=False,  # Disable intent detection for speed
                 utterances=False,
                 language="en"
@@ -265,21 +262,22 @@ class DefinitiveAgent:
             command_info = {"name": "", "params": {}}
             
             if response_data["type"] == "text":
+                voice = self.voice
                 response_text = response_data["content"]
                 await on_response(response_text)
             elif response_data["type"] == "command":
+                voice = "shimmer"
                 response_text = response_data["result"]
                 command_info = {
                     "name": response_data["name"],
                     "params": response_data.get("params", {})
                 }
-                await on_response(response_text)
-            
+
             # Generate speech from the text response
             print(f"Generating speech for response: '{response_text}'")
             speech_response = self.openai_client.audio.speech.create(
                 model="tts-1",
-                voice=self.voice,
+                voice=voice,
                 input=response_text
             )
             
@@ -290,10 +288,10 @@ class DefinitiveAgent:
                 await on_audio(chunk)
             
             # Save the output audio for debugging
-            output_filename = "output.mp3"
-            with open(output_filename, "wb") as f:
-                f.write(collected_audio)
-            print(f"Audio saved to {output_filename}, total size: {len(collected_audio)} bytes")
+            # output_filename = "output.mp3"
+            # with open(output_filename, "wb") as f:
+            #     f.write(collected_audio)
+            # print(f"Audio saved to {output_filename}, total size: {len(collected_audio)} bytes")
             
             # Send the audio end marker
             print("Sending __AUDIO_END__ marker")
@@ -343,26 +341,26 @@ class DefinitiveAgent:
         )
         
         # Run the assistant on the thread
-        run = client.beta.threads.runs.create(
+        run_response = client.beta.threads.runs.create(
             thread_id=agent_data["thread_id"],
             assistant_id=assistant.id
         )
         
         # Wait for the run to complete
-        while run.status in ["queued", "in_progress"]:
-            run = client.beta.threads.runs.retrieve(
+        while run_response.status in ["queued", "in_progress"]:
+            run_response = client.beta.threads.runs.retrieve(
                 thread_id=agent_data["thread_id"],
-                run_id=run.id
+                run_id=run_response.id
             )
-            if run.status in ["queued", "in_progress"]:
+            if run_response.status in ["queued", "in_progress"]:
                 await asyncio.sleep(0.5)
         
         # Handle tool calls if any
-        if run.status == "requires_action":
+        if run_response.status == "requires_action":
             tool_outputs = []
             response = None
             
-            for tool_call in run.required_action.submit_tool_outputs.tool_calls:
+            for tool_call in run_response.required_action.submit_tool_outputs.tool_calls:
                 function_name = tool_call.function.name
                 arguments = tool_call.function.arguments
                 args = json.loads(arguments)
@@ -384,21 +382,6 @@ class DefinitiveAgent:
                         "params": {"direction": direction}
                     }
                     
-                elif function_name == "talk":
-                    message = args.get("message", "")
-                    result = talk(message)
-                    tool_outputs.append({
-                        "tool_call_id": tool_call.id,
-                        "output": result
-                    })
-                    
-                    # Prepare response for the client
-                    response = {
-                        "type": "command",
-                        "name": "talk",
-                        "result": result
-                    }
-                    
                 elif function_name == "walk":
                     direction = args.get("direction")
                     result = walk(direction)
@@ -417,7 +400,7 @@ class DefinitiveAgent:
                     
                 elif function_name == "run":
                     direction = args.get("direction")
-                    result = run(direction)
+                    result = run_action(direction)
                     tool_outputs.append({
                         "tool_call_id": tool_call.id,
                         "output": result
@@ -465,19 +448,19 @@ class DefinitiveAgent:
             
             # Submit the tool outputs back to the assistant
             if tool_outputs:
-                run = client.beta.threads.runs.submit_tool_outputs(
+                run_response = client.beta.threads.runs.submit_tool_outputs(
                     thread_id=agent_data["thread_id"],
-                    run_id=run.id,
+                    run_id=run_response.id,
                     tool_outputs=tool_outputs
                 )
                 
                 # Wait for processing to complete
-                while run.status in ["queued", "in_progress"]:
-                    run = client.beta.threads.runs.retrieve(
+                while run_response.status in ["queued", "in_progress"]:
+                    run_response = client.beta.threads.runs.retrieve(
                         thread_id=agent_data["thread_id"],
-                        run_id=run.id
+                        run_id=run_response.id
                     )
-                    if run.status in ["queued", "in_progress"]:
+                    if run_response.status in ["queued", "in_progress"]:
                         await asyncio.sleep(0.5)
             
             if response:
