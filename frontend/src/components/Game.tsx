@@ -1,6 +1,5 @@
-import React from 'react';
-import { useThree, useFrame } from "@react-three/fiber";
-import { useEffect, useState, useRef } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import React, { useEffect, useRef, useState } from "react";
 import { useGameStore } from "../store/gameStore";
 import CharacterCloak from "./CharacterCloak";
 import CharacterFace from "./CharacterFace";
@@ -8,6 +7,7 @@ import CharacterHair from "./CharacterHair";
 import CharacterHat from "./CharacterHat";
 import CharacterOutfit from "./CharacterOutfit";
 import CharacterSprite, { AnimationType } from "./CharacterSprite";
+import MapDisplay from "./MapDisplay";
 
 interface GameProps {
   executeCommand: (commandName: string, result: string, params: any) => void;
@@ -29,21 +29,41 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
 
   // Speed constants
   const walkSpeed = 0.05; // unused now
-  const runSpeed = 0.1;   // unused now
+  const runSpeed = 0.1; // unused now
 
   // Movement interpolation ref
-  const movementRef = useRef<null | { start: [number, number, number], end: [number, number, number], duration: number, elapsedTime: number }>(null);
+  const movementRef = useRef<null | {
+    start: [number, number, number];
+    end: [number, number, number];
+    duration: number;
+    elapsedTime: number;
+  }>(null);
   const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-  const animateMovement = (delta: number, duration: number, direction: string) => {
+  const animateMovement = (
+    delta: number,
+    duration: number,
+    direction: string
+  ) => {
     const currentPos = position;
-    let dx = 0, dy = 0, dz = 0;
+    let dx = 0,
+      dy = 0,
+      dz = 0;
     if (direction === "up") dy = delta;
     else if (direction === "down") dy = -delta;
     else if (direction === "left") dx = -delta;
     else if (direction === "right") dx = delta;
-    const target: [number, number, number] = [currentPos[0] + dx, currentPos[1] + dy, currentPos[2] + dz];
-    movementRef.current = { start: currentPos, end: target, duration: duration, elapsedTime: 0 };
+    const target: [number, number, number] = [
+      currentPos[0] + dx,
+      currentPos[1] + dy,
+      currentPos[2] + dz,
+    ];
+    movementRef.current = {
+      start: currentPos,
+      end: target,
+      duration: duration,
+      elapsedTime: 0,
+    };
   };
 
   // Smoothly update position based on movementRef using useFrame
@@ -55,7 +75,7 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
       setPosition([
         lerp(movementRef.current.start[0], movementRef.current.end[0], t),
         lerp(movementRef.current.start[1], movementRef.current.end[1], t),
-        lerp(movementRef.current.start[2], movementRef.current.end[2], t)
+        lerp(movementRef.current.start[2], movementRef.current.end[2], t),
       ]);
       if (t === 1) {
         movementRef.current = null;
@@ -92,7 +112,12 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
         setIsJumping(true);
         // After first phase (0.5 sec), animate back to original position
         setTimeout(() => {
-          movementRef.current = { start: position, end: originalPos, duration: 0.5, elapsedTime: 0 };
+          movementRef.current = {
+            start: position,
+            end: originalPos,
+            duration: 0.5,
+            elapsedTime: 0,
+          };
           setIsJumping(false);
         }, 500);
       },
@@ -168,7 +193,7 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
           }
         }, 600);
       },
-      
+
       // Other commands (push, pull) remain unchanged
       push: (params) => {
         const direction = params?.direction || "down";
@@ -201,7 +226,7 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
           }
         }, 800);
       },
-      
+
       pull: (params) => {
         const direction = params?.direction || "down";
         let animation: AnimationType;
@@ -234,7 +259,7 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
         }, 800);
       },
     };
-    
+
     const handleCommand = (command: string, result: string, params: any) => {
       if (commandMap[command]) {
         commandMap[command](params);
@@ -242,9 +267,9 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
         console.warn("Unknown command received:", command);
       }
     };
-    
+
     registerCommandHandler(handleCommand);
-    
+
     return () => {
       // Cleanup
     };
@@ -274,7 +299,7 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
         cols={8}
         animation={currentAnimation}
       />
-      
+
       <CharacterHat
         position={position}
         scale={[1, 1, 1]}
@@ -298,6 +323,8 @@ const Game = ({ executeCommand, registerCommandHandler }: GameProps) => {
         cols={8}
         animation={currentAnimation}
       />
+
+      <MapDisplay />
     </>
   );
 };

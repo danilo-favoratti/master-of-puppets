@@ -7,6 +7,35 @@ export enum GameState {
   GAME_OVER
 }
 
+// Define interfaces for the board data
+interface Position {
+  x: number;
+  y: number;
+}
+
+interface Square {
+  position: Position;
+  contains_entity: boolean;
+}
+
+interface Entity {
+  id: string;
+  type: string;
+  name: string;
+  position: Position | null;
+  strength: number;
+  inventory: string[];
+  can_perform: string[];
+  description: string;
+  // Add other entity properties as needed
+}
+
+interface Board {
+  width: number;
+  height: number;
+  squares: Square[];
+}
+
 interface GameStore {
   score: number;
   health: number;
@@ -14,6 +43,11 @@ interface GameStore {
   highScore: number;
   currentAnimation: AnimationType;
   isManualAnimation: boolean;
+  // Add board and entities
+  board: Board;
+  entities: Entity[];
+  
+  // Existing functions
   incrementScore: () => void;
   decrementHealth: () => void;
   startGame: () => void;
@@ -21,9 +55,28 @@ interface GameStore {
   resetGame: () => void;
   setAnimation: (animation: AnimationType) => void;
   setManualAnimation: (isManual: boolean) => void;
+  
+  // New functions for board management
+  updateBoard: (board: Board) => void;
+  updateSquare: (x: number, y: number, containsEntity: boolean) => void;
+  updateEntities: (entities: Entity[]) => void;
+  moveEntity: (entityId: string, newPosition: Position) => void;
 }
 
 const INITIAL_HEALTH = 3;
+
+// Default board configuration
+const DEFAULT_BOARD: Board = {
+  width: 20,
+  height: 20,
+  squares: Array(400).fill(null).map((_, index) => ({
+    position: { 
+      x: index % 5, 
+      y: Math.floor(index / 5) 
+    },
+    contains_entity: false
+  }))
+};
 
 export const useGameStore = create<GameStore>((set, get) => ({
   score: 0,
@@ -32,7 +85,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   highScore: 0,
   currentAnimation: AnimationType.IDLE_DOWN,
   isManualAnimation: false,
+  // Initialize board and entities
+  board: DEFAULT_BOARD,
+  entities: [],
   
+  // Existing methods
   incrementScore: () => set(state => ({ score: state.score + 1 })),
   
   decrementHealth: () => set(state => ({ health: state.health - 1 })),
@@ -66,5 +123,32 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setManualAnimation: (isManual: boolean) => set({
     isManualAnimation: isManual
+  }),
+
+  // New methods for board management
+  updateBoard: (board: Board) => set({ board }),
+  
+  updateSquare: (x: number, y: number, containsEntity: boolean) => set(state => {
+    const newSquares = [...state.board.squares];
+    const index = y * state.board.width + x;
+    if (index >= 0 && index < newSquares.length) {
+      newSquares[index] = { 
+        ...newSquares[index], 
+        contains_entity: containsEntity 
+      };
+    }
+    return { board: { ...state.board, squares: newSquares } };
+  }),
+  
+  updateEntities: (entities: Entity[]) => set({ entities }),
+  
+  moveEntity: (entityId: string, newPosition: Position) => set(state => {
+    const newEntities = state.entities.map(entity => 
+      entity.id === entityId 
+        ? { ...entity, position: newPosition }
+        : entity
+    );
+    
+    return { entities: newEntities };
   })
 })); 
