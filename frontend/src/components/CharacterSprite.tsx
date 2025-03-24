@@ -1,3 +1,4 @@
+import { Text } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import React, {
   forwardRef,
@@ -291,6 +292,15 @@ const CharacterSprite = forwardRef<
           metalness={0.0}
           side={THREE.DoubleSide}
         />
+        <Text
+          position={[0, -0.25, 0]}
+          fontSize={0.08}
+          color="white"
+          anchorX="center"
+          anchorY="middle"
+        >
+          {animationRef.current}
+        </Text>
       </mesh>
     );
   }

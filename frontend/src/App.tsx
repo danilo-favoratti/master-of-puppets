@@ -20,8 +20,14 @@ function App() {
   const [isThinking, setIsThinking] = useState(false);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [isChatVisible, setIsChatVisible] = useState(false);
+  const [themeIsSelected, setThemeIsSelected] = useState(false);
   const [messages, setMessages] = useState<
-    Array<{ content: string; sender: string; isError?: boolean; options?: string[] }>
+    Array<{
+      content: string;
+      sender: string;
+      isError?: boolean;
+      options?: string[];
+    }>
   >([]);
 
   // Create a ref to store the real executeCommand implementation from Game
@@ -127,7 +133,12 @@ function App() {
           if (Array.isArray(data.answers)) {
             data.answers.forEach((answer: any) => {
               if (answer.type === "text") {
-                addMessage(answer.description, "character", false, answer.options || []);
+                addMessage(
+                  answer.description,
+                  "character",
+                  false,
+                  answer.options || []
+                );
               }
             });
           } else {
@@ -168,8 +179,13 @@ function App() {
   };
 
   // Add a message to the chat
-  const addMessage = (content: string, sender: string, isError: boolean = false, options?: string[]) => {
-    setMessages(prev => [...prev, { content, sender, isError, options }]);
+  const addMessage = (
+    content: string,
+    sender: string,
+    isError: boolean = false,
+    options?: string[]
+  ) => {
+    setMessages((prev) => [...prev, { content, sender, isError, options }]);
   };
 
   // Send a text message to the server
@@ -198,7 +214,11 @@ function App() {
     if (commandName === "create_map" && params.map_data) {
       // Send the map data to the game container
       if (gameCommandHandlerRef.current) {
-        gameCommandHandlerRef.current("update_map", "Map updated", params.map_data);
+        gameCommandHandlerRef.current(
+          "update_map",
+          "Map updated",
+          params.map_data
+        );
       }
     }
     // Forward other commands to the game component if the handler is registered
@@ -211,6 +231,100 @@ function App() {
   const toggleChat = () => {
     setIsChatVisible(!isChatVisible);
   };
+
+  const themeSelect = (theme: string) => {
+    setThemeIsSelected(!themeIsSelected);
+  };
+
+  if (!themeIsSelected) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100vh",
+          width: "100vw",
+        }}
+      >
+        <div style={{ flex: 1, position: "relative" }}>
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              opacity: 0.5,
+              zIndex: 10,
+            }}
+          ></div>
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexDirection: "column",
+              zIndex: 20,
+            }}
+          >
+            <div>
+              <h2>Select a Game Theme</h2>
+            </div>
+            <button
+              onClick={() => themeSelect("Lost Island")}
+              style={{
+                backgroundColor: "#3B82F6",
+                color: "white",
+                padding: "0.5rem 1rem",
+                borderRadius: "0.375rem",
+                border: "none",
+                cursor: "pointer",
+                marginBottom: "1rem",
+                fontSize: "1.2rem",
+              }}
+            >
+              Lost Island
+            </button>
+            <button
+              onClick={() => themeSelect("Treasure Island")}
+              style={{
+                backgroundColor: "#3B82F6",
+                color: "white",
+                padding: "0.5rem 1rem",
+                borderRadius: "0.375rem",
+                border: "none",
+                cursor: "pointer",
+                marginBottom: "1rem",
+                fontSize: "1.2rem",
+              }}
+            >
+              Treasure Island
+            </button>
+            <button
+              onClick={() => themeSelect("Zombie Apocalypse")}
+              style={{
+                backgroundColor: "#3B82F6",
+                color: "white",
+                padding: "0.5rem 1rem",
+                borderRadius: "0.375rem",
+                border: "none",
+                cursor: "pointer",
+                marginBottom: "1rem",
+                fontSize: "1.2rem",
+              }}
+            >
+              Zombie Apocalypse
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen">
