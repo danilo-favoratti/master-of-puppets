@@ -1,12 +1,13 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Set, Tuple
-from model.entity import Entity, Position
-from model.game_object import GameObject, Container
+from entity import Entity, Position
+from game_object import GameObject, Container
 
 @dataclass
 class Person(Entity):
     """A person/character that can perform actions in the game."""
     inventory: Container = None
+    wearable_items: List[GameObject] = field(default_factory=list)  # Items currently being worn
     strength: int = 5  # Determines ability to move heavy objects
     
     def __post_init__(self):
@@ -397,4 +398,87 @@ class Person(Entity):
         return {
             "success": True,
             "message": f"{self.name} says: {message}"
-        } 
+        }
+    
+    def wear_item(self, item_id: str) -> Dict[str, Any]:
+        """Put on a wearable item from inventory.
+        
+        Args:
+            item_id: The ID of the item to wear
+            
+        Returns:
+            Dict containing:
+                success: Whether the action was successful
+                message: Description of what happened
+        """
+        # Find item in inventory
+        item = None
+        for inventory_item in self.inventory.contents:
+            if inventory_item.id == item_id:
+                item = inventory_item
+                break
+                
+        if not item:
+            return {"success": False, "message": f"Item {item_id} not found in inventory"}
+            
+        # Check if item is wearable
+        if not item.is_wearable:
+            return {"success": False, "message": f"{item.name} is not wearable"}
+            
+        # Remove item from inventory
+        result = self.inventory.remove_item(item_id)
+        if not result["success"]:
+            return result
+            
+        # Add to wearable items
+        self.wearable_items.append(item)
+        
+        return {"success": True, "message": f"{self.name} put on {item.name}"}
+    
+    def remove_item(self, item_id: str) -> Dict[str, Any]:
+        """Remove a wearable item and put it back in inventory.
+        
+        Args:
+            item_id: The ID of the item to remove
+            
+        Returns:
+            Dict containing:
+                success: Whether the action was successful
+                message: Description of what happened
+        """
+        # Find item in wearable items
+        item = None
+        for wearable_item in self.wearable_items:
+            if wearable_item.id == item_id:
+                item = wearable_item
+                break
+                
+        if not item:
+            return {"success": False, "message": f"Item {item_id} is not being worn"}
+            
+        # Remove from wearable items
+        self.wearable_items.remove(item)
+        
+        # Add back to inventory
+        self.inventory.add_item(item)
+        
+        return {"success": True, "message": f"{self.name} removed {item.name}"}
+    
+    def get_worn_items(self) -> List[GameObject]:
+        """Get a list of all items currently being worn.
+        
+        Returns:
+            List of wearable items
+        """
+        return self.wearable_items.copy()
+    
+    def is_wearing(self, item_id: str) -> bool:
+        """Check if a specific item is being worn.
+        
+        Args:
+            item_id: The ID of the item to check
+            
+        Returns:
+            bool: Whether the item is being worn
+        """
+        return any(item.id == item_id for item in self.wearable_items) 

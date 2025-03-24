@@ -4,9 +4,14 @@ import shlex
 from colorama import init, Fore, Style
 from typing import Dict, Any, List, Tuple
 
-from model.person import Person
-from model.game_object import Container, GameObject
-from model.entity import Position
+import sys
+import os
+
+# Add the parent directory to the path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import model
+from model import Person, Container, GameObject, Position
 
 # Initialize colorama for cross-platform colored terminal output
 init()

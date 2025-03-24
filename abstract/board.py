@@ -1,6 +1,6 @@
 from typing import Dict, List, Set, Tuple, Optional, Any
-from model.entity import Entity, Position
-from model.game_object import GameObject
+from entity import Entity, Position
+from game_object import GameObject
 from collections import defaultdict
 
 class Board:

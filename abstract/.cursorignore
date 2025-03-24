@@ -1,0 +1,7 @@
+.idea # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+.venv # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+.git # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+.gitignore # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+.cursorignore # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+.cursorrules # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
+.cursorignore # Add directories or file patterns to ignore during indexing (e.g. foo/ or *.csv)
