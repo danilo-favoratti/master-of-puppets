@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import "./App.css";
 import Chat from "./components/Chat";
 import GameContainer from "./components/GameContainer";
 
@@ -20,6 +19,7 @@ function App() {
   const [isConnected, setIsConnected] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
   const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+  const [isChatVisible, setIsChatVisible] = useState(false);
   const [messages, setMessages] = useState<
     Array<{ content: string; sender: string; isError?: boolean; options?: string[] }>
   >([]);
@@ -116,7 +116,7 @@ function App() {
         // Check if this is the welcome message
         if (
           data.content ===
-          "Hey there, I'm your quirky game character! Let's play a game together? Give me a Theme..."
+          "Hey there, I'm your quirky game character! Speak to me or send me a text message."
         ) {
           if (!globalWelcomeReceived) {
             globalWelcomeReceived = true;
@@ -207,6 +207,11 @@ function App() {
     }
   };
 
+  // Toggle chat visibility
+  const toggleChat = () => {
+    setIsChatVisible(!isChatVisible);
+  };
+
   return (
     <div className="flex flex-col h-screen">
       <div className="flex-1 relative">
@@ -215,13 +220,34 @@ function App() {
           registerCommandHandler={registerGameCommandHandler}
         />
       </div>
-      <Chat
-        messages={messages}
-        sendTextMessage={sendTextMessage}
-        isThinking={isThinking}
-        isConnected={isConnected}
-        websocket={socket}
-      />
+      <button
+        onClick={toggleChat}
+        style={{
+          position: "absolute",
+          bottom: "1.25rem",
+          left: "1.25rem",
+          backgroundColor: "#3b82f6",
+          color: "white",
+          fontWeight: "bold",
+          padding: "0.5rem 1rem",
+          borderRadius: "0.25rem",
+          zIndex: 10,
+          cursor: "pointer",
+        }}
+        onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")}
+        onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#3b82f6")}
+      >
+        {isChatVisible ? "Hide Chat" : "Show Chat"}
+      </button>
+      {isChatVisible && (
+        <Chat
+          messages={messages}
+          sendTextMessage={sendTextMessage}
+          isThinking={isThinking}
+          isConnected={isConnected}
+          websocket={socket}
+        />
+      )}
     </div>
   );
 }

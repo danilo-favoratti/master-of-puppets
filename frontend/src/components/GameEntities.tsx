@@ -1,0 +1,138 @@
+import { ThreeEvent } from "@react-three/fiber";
+import React from "react";
+import { GameEntity } from "../types/entities";
+import { CampFireSprite } from "./entities/CampFireSprite";
+import { ChestSprite } from "./entities/ChestSprite";
+import { PigSprite } from "./entities/PigSprite";
+import { PotSprite } from "./entities/PotSprite";
+
+interface GameEntitiesProps {
+  entities: GameEntity[];
+  onEntityStateChange?: (entityId: string, newState: string) => void;
+  onEntityClick?: (entityId: string, event: React.MouseEvent) => void;
+}
+
+export const GameEntities: React.FC<GameEntitiesProps> = ({
+  entities,
+  onEntityStateChange,
+  onEntityClick,
+}) => {
+  const renderEntity = (entity: GameEntity) => {
+    const commonProps = {
+      position: entity.position,
+      onStateChange: (newState: string) => {
+        if (onEntityStateChange) {
+          onEntityStateChange(entity.id, newState);
+        }
+      },
+      onClick: (event: React.MouseEvent) => {
+        if (onEntityClick) {
+          onEntityClick(entity.id, event);
+        }
+      },
+    };
+
+    // Create an adapter for ThreeEvent click handler
+    const handleThreeClick =
+      (entityId: string) => (event: ThreeEvent<MouseEvent>) => {
+        if (onEntityClick) {
+          // Pass the native MouseEvent from the ThreeEvent
+          onEntityClick(
+            entityId,
+            event.nativeEvent as unknown as React.MouseEvent
+          );
+        }
+      };
+
+    switch (entity.type) {
+      case "pot":
+        return (
+          <PotSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            variant={entity.variant}
+            entity={{
+              is_movable: true,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "campfire":
+        return (
+          <CampFireSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "pig":
+        return (
+          <PigSprite
+            key={entity.id}
+            position={entity.position}
+            state={entity.state}
+            canMove={entity.canMove}
+            moveInterval={entity.moveInterval}
+            onStateChange={(newState) => {
+              if (onEntityStateChange) {
+                onEntityStateChange(entity.id, newState);
+              }
+            }}
+            onClick={handleThreeClick(entity.id)}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "chest":
+        return (
+          <ChestSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            variant={entity.variant}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
+  return <>{entities.map(renderEntity)}</>;
+};
+
+export default GameEntities;

@@ -16,9 +16,10 @@ const GameContainer: React.FC<GameContainerProps> = ({
   registerCommandHandler,
 }) => {
   const characterRef = useRef<{ moveAlongPath: (path: Point[]) => void }>(null);
-  const [lightIntensity, setLightIntensity] = useState(1);
-  const [lightDistance, setLightDistance] = useState(5);
-  const [lightDecay, setLightDecay] = useState(2);
+  const [lightIntensity, setLightIntensity] = useState(1.3);
+  const [lightDistance, setLightDistance] = useState(4);
+  const [lightDecay, setLightDecay] = useState(0.5);
+  const [ambientLightIntensity, setAmbientLightIntensity] = useState(0);
 
   return (
     <div className="relative w-full h-full">
@@ -40,6 +41,7 @@ const GameContainer: React.FC<GameContainerProps> = ({
           lightIntensity={lightIntensity}
           lightDistance={lightDistance}
           lightDecay={lightDecay}
+          ambientLightIntensity={ambientLightIntensity}
         />
       </Canvas>
       <GameUI
@@ -47,9 +49,11 @@ const GameContainer: React.FC<GameContainerProps> = ({
         lightIntensity={lightIntensity}
         lightDistance={lightDistance}
         lightDecay={lightDecay}
+        ambientLightIntensity={ambientLightIntensity}
         onLightIntensityChange={setLightIntensity}
         onLightDistanceChange={setLightDistance}
         onLightDecayChange={setLightDecay}
+        onAmbientLightIntensityChange={setAmbientLightIntensity}
       />
     </div>
   );

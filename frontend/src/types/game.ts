@@ -1,3 +1,5 @@
+import { GameEntity } from "./entities";
+
 export interface Position {
   x: number;
   y: number;
@@ -23,4 +25,46 @@ export interface Board {
   width: number;
   height: number;
   squares: Square[];
+}
+
+export type GameObjectType = 'pig' | 'campfire' | 'tree' | 'rock' | 'chest';
+
+export type GameObjectState = 'unlit' | 'burning' | 'dying' | 'extinguished' | 'idle' | 'walking' | 'running';
+
+export interface GameObject {
+  id: string;
+  type: GameObjectType;
+  variant: string;
+  position: Position;
+  state: GameObjectState;
+  entity: Entity;
+  onClick?: (event: React.MouseEvent) => void;
+  onStateChange?: (newState: GameObjectState) => void;
+}
+
+export interface GameObjectConfig {
+  id: string;
+  type: GameObjectType;
+  name: string;
+  imageUrl: string;
+  spritesheetSize: {
+    columns: number;
+    rows: number;
+  };
+  animationConfig: Record<GameObjectState, {
+    frame?: { x: number; y: number };
+    frames?: Array<{ x: number; y: number }>;
+    frameDuration: number;
+  }>;
+  defaultState: GameObjectState;
+  size?: number;
+}
+
+export interface GameData {
+  map: {
+    size: number;
+    border_size: number;
+    grid: number[][];
+  };
+  entities: GameEntity[];
 } 

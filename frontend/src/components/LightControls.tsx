@@ -4,25 +4,49 @@ interface LightControlsProps {
   intensity?: number;
   distance?: number;
   decay?: number;
+  ambientLightIntensity?: number;
   onIntensityChange: (value: number) => void;
   onDistanceChange: (value: number) => void;
   onDecayChange: (value: number) => void;
+  onAmbientLightIntensityChange?: (value: number) => void;
 }
 
 const LightControls: React.FC<LightControlsProps> = ({
   intensity = 1,
   distance = 5,
   decay = 2,
+  ambientLightIntensity = 0,
   onIntensityChange,
   onDistanceChange,
   onDecayChange,
+  onAmbientLightIntensityChange,
 }) => {
   return (
     <div className="flex flex-col gap-2 p-2 bg-black/70 rounded-lg">
       <div className="text-white text-sm">Controles de Luz</div>
 
+      {onAmbientLightIntensityChange && (
+        <div className="flex flex-col gap-1">
+          <label className="text-white text-xs">Luz Ambiente</label>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={ambientLightIntensity}
+            onChange={(e) =>
+              onAmbientLightIntensityChange(Number(e.target.value))
+            }
+            className="w-full"
+          />
+          <span className="text-white text-xs">
+            {ambientLightIntensity?.toFixed(2) || "0.00"}
+          </span>
+        </div>
+      )}
+
       <div className="flex flex-col gap-1">
-        <label className="text-white text-xs">Intensidade</label>
+        <label className="text-white text-xs">Intensidade (Lanterna)</label>
         <input
           type="range"
           min="0"
@@ -36,7 +60,6 @@ const LightControls: React.FC<LightControlsProps> = ({
           {intensity?.toFixed(1) || "1.0"}
         </span>
       </div>
-
       <div className="flex flex-col gap-1">
         <label className="text-white text-xs">Distância</label>
         <input

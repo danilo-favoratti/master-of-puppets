@@ -1,8 +1,18 @@
+import { OrbitControls } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import React, { useEffect, useRef, useState } from "react";
+import gameDataJSON from "../config/gameData.json";
 import { useGameStore } from "../store/gameStore";
-import CharacterSprite, { AnimationType, Point } from "./CharacterSprite";
-import Entity from "./Entity";
+import { AnimationType } from "../types/animations";
+import {
+  CampFireEntity,
+  GameEntity,
+  PigEntity,
+  PotEntity,
+} from "../types/entities";
+import { GameData } from "../types/game";
+import CharacterSprite, { Point } from "./CharacterSprite";
+import GameEntities from "./GameEntities";
 import MapDisplay from "./MapDisplay";
 
 interface GameProps {
@@ -14,6 +24,7 @@ interface GameProps {
   lightIntensity: number;
   lightDistance: number;
   lightDecay: number;
+  ambientLightIntensity?: number;
 }
 
 const Game = ({
@@ -23,6 +34,7 @@ const Game = ({
   lightIntensity,
   lightDistance,
   lightDecay,
+  ambientLightIntensity = 0,
 }: GameProps) => {
   const { camera } = useThree();
   const position = useGameStore((state) => state.position);
@@ -35,6 +47,8 @@ const Game = ({
   const [isPulling, setIsPulling] = useState(false);
   const [isJumping, setIsJumping] = useState(false);
 
+  const [gameData, setGameData] = useState<GameData>(gameDataJSON as GameData);
+  const [entities, setEntities] = useState<GameEntity[]>(gameData.entities);
   // Speed constants
   const walkSpeed = 0.05; // unused now
   const runSpeed = 0.1; // unused now
@@ -287,11 +301,40 @@ const Game = ({
   useEffect(() => {
     camera.position.x = position[0];
     camera.position.y = position[1];
+    // Don't reset the z position to preserve zoom level
   }, [camera, position]);
+
+  const handleEntityStateChange = (entityId: string, newState: string) => {
+    setEntities((prevEntities) =>
+      prevEntities.map((entity) => {
+        if (entity.id === entityId) {
+          switch (entity.type) {
+            case "pot":
+              return { ...entity, state: newState as PotEntity["state"] };
+            case "campfire":
+              return { ...entity, state: newState as CampFireEntity["state"] };
+            case "pig":
+              return { ...entity, state: newState as PigEntity["state"] };
+            default:
+              return entity;
+          }
+        }
+        return entity;
+      })
+    );
+  };
+
+  const handleEntityClick = (entityId: string, event: React.MouseEvent) => {
+    const entity = entities.find((e) => e.id === entityId);
+    if (entity) {
+      console.log(`Clicked entity: ${entity.name}`);
+      // Handle entity click logic here
+    }
+  };
 
   return (
     <>
-      <ambientLight intensity={1} />
+      <ambientLight intensity={ambientLightIntensity} />
       <pointLight
         position={[position[0], position[1], 2]}
         intensity={lightIntensity}
@@ -299,12 +342,20 @@ const Game = ({
         decay={lightDecay}
       />
 
-      <Entity
-        id="travelers-camp-tent"
-        type="structure"
-        name="Travelers Camp Tent"
-        position={{ x: 1, y: 1 }}
-        imageUrl="/src/assets/travelers_camp_tent.png"
+      <OrbitControls
+        enableZoom={true}
+        enablePan={true}
+        enableRotate={false}
+        minDistance={5}
+        maxDistance={20}
+        target={[position[0], position[1], 0]}
+        makeDefault
+      />
+
+      <GameEntities
+        entities={entities}
+        onEntityStateChange={handleEntityStateChange}
+        onEntityClick={handleEntityClick}
       />
 
       <CharacterSprite
@@ -335,36 +386,8 @@ const Game = ({
         }}
         zOffset={0.01}
       />
-      {/* <CharacterOutfit
-        position={position}
-        animation={currentAnimation}
-        zOffset={0.02}
-      />
-      <CharacterHair
-        position={position}
-        animation={currentAnimation}
-        zOffset={0.03}
-      />
 
-      <CharacterHat
-        position={position}
-        animation={currentAnimation}
-        zOffset={0.03}
-      />
-
-      <CharacterCloak
-        position={position}
-        animation={currentAnimation}
-        zOffset={0.03}
-      />
-
-      <CharacterFace
-        position={position}
-        animation={currentAnimation}
-        zOffset={0.03}
-      /> */}
-
-      <MapDisplay />
+      <MapDisplay mapGridData={gameData.map.grid} />
     </>
   );
 };

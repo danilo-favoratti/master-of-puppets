@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AnimationType } from "../components/CharacterSprite";
+import { AnimationType } from "../types/animations";
 
 export enum GameState {
   MENU,
@@ -157,6 +157,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   }),
   
   // New properties
-  position: [0, 0, 0],
+  position: [30, 30, 0],
   setPosition: (position: [number, number, number]) => set({ position })
 })); 

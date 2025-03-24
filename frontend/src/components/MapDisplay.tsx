@@ -5,7 +5,7 @@ import { Vector3 } from "three";
 import { useGameStore } from "../store/gameStore";
 import ForestTile from "./ForestTile";
 
-const MapDisplay: React.FC = () => {
+const MapDisplay: React.FC<{ mapGridData: number[][] }> = ({ mapGridData }) => {
   const { board } = useGameStore();
 
   const terrainMap = useMemo(() => {
@@ -14,16 +14,14 @@ const MapDisplay: React.FC = () => {
     const noise2D = createNoise2D(prng);
     const scale = 0.1;
 
-    const map = Array.from({ length: board.height }).map((_, y) =>
-      Array.from({ length: board.width }).map((_, x) => {
+    const map = Array.from({ length: mapGridData.length }).map((_, y) =>
+      Array.from({ length: mapGridData.length }).map((_, x) => {
         const noiseValue = noise2D(x * scale, y * scale);
 
-        if (noiseValue < -0.4) {
-          return { tileX: 2, tileY: 9 }; // water
-        } else if (noiseValue < 0.4) {
+        if (mapGridData[x][y] === 1) {
           return { tileX: 2, tileY: 6 }; // grass
         } else {
-          return { tileX: 1, tileY: 1 }; // soil
+          return { tileX: 1, tileY: 9 }; // soil
         }
       })
     );
