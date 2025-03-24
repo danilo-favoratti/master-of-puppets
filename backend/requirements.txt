@@ -2,6 +2,11 @@ fastapi==0.110.0
 uvicorn==0.27.0.post1
 websockets==12.0
 openai==1.14.0
+openai-agents
+aiofiles
+colorama>=0.4.6
+tensorflow
+termcolor
 python-dotenv==1.0.1
 pydantic==2.6.1
 numpy>=2.2.0,<3.0.0

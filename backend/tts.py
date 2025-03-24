@@ -3,6 +3,7 @@ Text-to-speech synthesis using OpenAI's API.
 """
 from io import BytesIO
 from typing import Optional
+
 from openai import OpenAI
 
 

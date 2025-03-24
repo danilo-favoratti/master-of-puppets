@@ -1,3 +1,3 @@
 """
-Game character WebSocket backend package.
+Backend package for the game.
 """ 

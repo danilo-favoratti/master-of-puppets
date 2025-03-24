@@ -1,7 +1,9 @@
-from typing import Dict, List, Set, Tuple, Optional, Any
-from entity import Entity, Position
-from game_object import GameObject
 from collections import defaultdict
+from typing import List, Optional
+
+from .entity import Entity, Position
+from .game_object import GameObject
+
 
 class Board:
     """The game board representing the 2D world."""

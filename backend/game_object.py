@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
-from typing import Set, Dict, Any, List, Optional
-from entity import Entity, Position
-import random
+from typing import Set, Dict, Any, List
+
+from entity import Entity
+
 
 @dataclass
 class GameObject(Entity):

@@ -1,14 +1,14 @@
 import asyncio
 import os
-from colorama import init, Fore, Style
-from typing import Dict, Any
 
 from agents import Runner, trace
-from agent.agent_person import GameState, create_person_agent
-from model.person import Person
-from model.game_object import Container, GameObject
-from model.entity import Position
+from colorama import init, Fore, Style
 from model.board import Board  # Import the model's Board class
+from model.entity import Position
+from model.game_object import Container, GameObject
+from model.person import Person
+
+from agent.agent_person import GameState, create_person_agent
 
 # Initialize colorama for cross-platform colored terminal output
 init()

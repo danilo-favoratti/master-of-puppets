@@ -2,15 +2,15 @@
 Definitive agent that combines Deepgram for transcription with OpenAI for agent-based responses.
 This agent handles both text and audio inputs and processes them through OpenAI's assistant API.
 """
-import os
 import asyncio
-from typing import Dict, Any, List, Callable, Awaitable, Tuple, Optional
-import tempfile
 import json
+import os
+import tempfile
 import traceback
+from typing import Dict, Any, List, Callable, Awaitable, Tuple
 
-from openai import OpenAI
 from deepgram import DeepgramClient, PrerecordedOptions, FileSource
+from openai import OpenAI
 
 from tools import jump, walk, run as run_action, push, pull
 
@@ -37,7 +37,10 @@ class DefinitiveAgent:
         """
         self.openai_key = openai_api_key
         self.voice = voice
-        self.openai_client = OpenAI(api_key=openai_api_key)
+        # Initialize OpenAI client without proxy settings
+        self.openai_client = OpenAI(
+            api_key=openai_api_key,
+        )
         
         # Initialize the agent data with the OpenAI client and assistant
         self.agent_data = self.setup_agent(openai_api_key)
@@ -68,12 +71,13 @@ class DefinitiveAgent:
             Dict: Agent data containing client and assistant
         """
         # Create OpenAI client
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(
+            api_key=api_key,
+        )
         
         # Define the character's personality in the system prompt
         system_prompt = """
 # MISSION
-
 You are a funny, ironic, non-binary videogame character called Jan "The Man" with a witty personality and great knowledge at storytelling.
 
 You're missing is to guide me through a RPG game.
@@ -93,7 +97,7 @@ You can't touch or interact with them, but you know:
 Also, when someone asks you what can you do, you should respond with a simple list of your available tools.
 
 # INSTRUCTIONS
-1. Ask me for a [THEME] to the main story.
+1. Ask me for a [THEME] to the main story. The stage will be always The Island of the Least!
 2. Once you have a [THEME], create an [ENVIRONMENT] using your tools based on the [THEME].
 3. Once you have a [ENVIRONMENT], select 8 [ENTITIES] that can be interactable. Do not tell me what they are upfront. Entities have [ACTIONS]:
     - [ACTIONS] can be enabled or disabled;
@@ -665,7 +669,24 @@ This detailed markdown explanation provides a complete reference to all objects,
                                                             "required": ["direction"]}}},
                 {"type": "function", "function": {"name": "pull", "description": "Makes the character pull in a specific direction", 
                                                 "parameters": {"type": "object", "properties": {"direction": {"type": "string", "enum": ["left", "right", "up", "down"]}}, 
-                                                            "required": ["direction"]}}}
+                                                            "required": ["direction"]}}},
+                {"type": "function", "function": {"name": "create_map", "description": "Creates a new game map and sends it to the frontend", 
+                                                "parameters": {"type": "object", "properties": {
+                                                    "map_size": {"type": "integer", "description": "Size of the map (square)", "default": 20},
+                                                    "border_size": {"type": "integer", "description": "Size of the water border", "default": 2},
+                                                    "chest_count": {"type": "integer", "description": "Number of chests to place", "default": 5},
+                                                    "camp_count": {"type": "integer", "description": "Number of camps to place", "default": 3},
+                                                    "obstacle_count": {"type": "integer", "description": "Number of land obstacles to place", "default": 10},
+                                                    "campfire_count": {"type": "integer", "description": "Number of campfires to place", "default": 4},
+                                                    "backpack_count": {"type": "integer", "description": "Number of backpacks to place", "default": 3},
+                                                    "firewood_count": {"type": "integer", "description": "Number of firewood to place", "default": 6},
+                                                    "tent_count": {"type": "integer", "description": "Number of tents to place", "default": 2},
+                                                    "bedroll_count": {"type": "integer", "description": "Number of bedrolls to place", "default": 3},
+                                                    "log_stool_count": {"type": "integer", "description": "Number of log stools to place", "default": 4},
+                                                    "campfire_spit_count": {"type": "integer", "description": "Number of campfire spits to place", "default": 2},
+                                                    "campfire_pot_count": {"type": "integer", "description": "Number of campfire pots to place", "default": 2},
+                                                    "pot_count": {"type": "integer", "description": "Number of pots to place", "default": 5}
+                                                }, "required": []}}}
             ],
             model="gpt-4o"
         )
@@ -993,6 +1014,48 @@ This detailed markdown explanation provides a complete reference to all objects,
                         "result": result,
                         "params": {"direction": direction}
                     }
+                    
+                elif function_name == "create_map":
+                    # Import the create_game function
+                    from factory_game import create_game
+                    
+                    # Create a new game world with the provided parameters
+                    world = create_game(
+                        map_size=args.get("map_size", 20),
+                        border_size=args.get("border_size", 2),
+                        chest_count=args.get("chest_count", 5),
+                        camp_count=args.get("camp_count", 3),
+                        obstacle_count=args.get("obstacle_count", 10),
+                        campfire_count=args.get("campfire_count", 4),
+                        backpack_count=args.get("backpack_count", 3),
+                        firewood_count=args.get("firewood_count", 6),
+                        tent_count=args.get("tent_count", 2),
+                        bedroll_count=args.get("bedroll_count", 3),
+                        log_stool_count=args.get("log_stool_count", 4),
+                        campfire_spit_count=args.get("campfire_spit_count", 2),
+                        campfire_pot_count=args.get("campfire_pot_count", 2),
+                        pot_count=args.get("pot_count", 5)
+                    )
+                    
+                    # Create a GameFactory instance to get the UI JSON
+                    from factory_game import GameFactory
+                    factory = GameFactory()
+                    ui_json = factory.export_world_ui_json()
+                    
+                    # Prepare response for the client
+                    response = {
+                        "type": "command",
+                        "name": "create_map",
+                        "result": "Created a new game map",
+                        "params": {
+                            "map_data": ui_json
+                        }
+                    }
+                    
+                    tool_outputs.append({
+                        "tool_call_id": tool_call.id,
+                        "output": "Successfully created a new game map"
+                    })
             
             # Submit the tool outputs back to the assistant
             if tool_outputs:

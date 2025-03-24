@@ -4,7 +4,8 @@ Game Loader - Utility for loading and displaying games from JSON files
 
 import json
 import os
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any
+
 
 class GameLoader:
     """Utility class to load and parse game data from JSON files"""

@@ -4,7 +4,6 @@ Tests all aspects of container functionality including capacity limits, weight l
 """
 import os
 import sys
-from typing import Dict, List, Any, Tuple, Optional
 
 # Add parent directory to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +17,7 @@ from model.entity import Position
 from model.board import Board
 from model.game_object import GameObject, Container
 from model.person import Person
-from game_engine import GameEngine
+
 
 def create_game_from_engine(engine):
     """Create a Game instance from the GameEngine's data"""

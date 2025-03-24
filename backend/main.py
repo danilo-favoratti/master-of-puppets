@@ -1,13 +1,13 @@
 """
 FastAPI WebSocket server for the game character control system using OpenAI Agents SDK.
 """
-import os
-import json
 import asyncio
+import json
+import os
 import time
-from typing import Dict, Any, List
-from dotenv import load_dotenv
+from typing import Dict, Any
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 

@@ -4,7 +4,6 @@ Simpler version for Windows compatibility.
 """
 import os
 import sys
-from typing import Dict, List, Any, Tuple, Optional
 
 # Add parent directory to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))

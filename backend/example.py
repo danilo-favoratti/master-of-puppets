@@ -1,6 +1,5 @@
 from .game import Game
-from .entity import Position
-from .game_object import GameObject, Container
+
 
 def run_example():
     """Run a simple example to demonstrate game functionality."""

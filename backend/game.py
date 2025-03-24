@@ -1,10 +1,12 @@
-from typing import Dict, List, Any, Optional, Union, Tuple
-from board import Board
-from entity import Entity, Position
-from game_object import GameObject, Container
-from person import Person
-from factory import WeatherSystem, WeatherFactory, WeatherType, WeatherParameters
 import uuid
+from typing import Dict, List, Any
+
+from .board import Board
+from .entity import Entity, Position
+from .factory_game import WeatherSystem, WeatherFactory, WeatherType, WeatherParameters
+from .game_object import GameObject, Container
+from .person import Person
+
 
 class Game:
     """Main game class that manages the game state and logic."""

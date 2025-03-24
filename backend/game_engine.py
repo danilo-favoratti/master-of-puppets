@@ -3,8 +3,7 @@ Game Engine - loads games from JSON files and provides a simple API
 """
 
 import json
-import random
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, Any, Optional
 
 class GameEngine:
     """A simple game engine that can load games from JSON files"""

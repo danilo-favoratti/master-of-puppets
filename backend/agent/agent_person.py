@@ -1,18 +1,17 @@
 import asyncio
-from typing import Optional, Tuple, Dict, Any, List
-from typing_extensions import TypedDict
+from typing import Optional, Tuple, Dict, Any
 
 from agents import (
-    Agent, 
-    Runner, 
-    function_tool, 
-    RunContextWrapper, 
+    Agent,
+    Runner,
+    function_tool,
+    RunContextWrapper,
     trace
 )
 
-from model.person import Person
-from model.game_object import Container
-from model.entity import Position
+from person import Person
+from ..game_object import Container
+
 
 class DirectionHelper:
     """Helper class for handling relative directions."""

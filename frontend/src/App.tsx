@@ -19,8 +19,9 @@ function App() {
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
   const [messages, setMessages] = useState<
-    Array<{ content: string; sender: string; isError?: boolean }>
+    Array<{ content: string; sender: string; isError?: boolean; options?: string[] }>
   >([]);
 
   // Create a ref to store the real executeCommand implementation from Game
@@ -115,14 +116,23 @@ function App() {
         // Check if this is the welcome message
         if (
           data.content ===
-          "Hey there, I'm your quirky game character! Speak to me or send me a text message."
+          "Hey there, I'm your quirky game character! Let's play a game together? Give me a Theme..."
         ) {
           if (!globalWelcomeReceived) {
             globalWelcomeReceived = true;
             addMessage(data.content, "character");
           }
         } else {
-          addMessage(data.content, "character");
+          // Handle text messages with options
+          if (Array.isArray(data.answers)) {
+            data.answers.forEach((answer: any) => {
+              if (answer.type === "text") {
+                addMessage(answer.description, "character", false, answer.options || []);
+              }
+            });
+          } else {
+            addMessage(data.content, "character");
+          }
         }
         setIsWaitingForResponse(false);
         break;
@@ -158,8 +168,8 @@ function App() {
   };
 
   // Add a message to the chat
-  const addMessage = (content: string, sender: string, isError = false) => {
-    setMessages((prev) => [...prev, { content, sender, isError }]);
+  const addMessage = (content: string, sender: string, isError: boolean = false, options?: string[]) => {
+    setMessages(prev => [...prev, { content, sender, isError, options }]);
   };
 
   // Send a text message to the server
@@ -184,8 +194,15 @@ function App() {
     // Add the command result to chat
     addMessage(result, "command");
 
-    // Forward to the game component if the handler is registered
-    if (gameCommandHandlerRef.current) {
+    // Handle create_map command
+    if (commandName === "create_map" && params.map_data) {
+      // Send the map data to the game container
+      if (gameCommandHandlerRef.current) {
+        gameCommandHandlerRef.current("update_map", "Map updated", params.map_data);
+      }
+    }
+    // Forward other commands to the game component if the handler is registered
+    else if (gameCommandHandlerRef.current) {
       gameCommandHandlerRef.current(commandName, result, params);
     }
   };

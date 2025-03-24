@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import './Chat.css';
 
 interface ChatProps {
-  messages: Array<{content: string, sender: string, isError?: boolean}>;
+  messages: Array<{content: string, sender: string, isError?: boolean, options?: string[]}>;
   sendTextMessage: (message: string) => void;
   isThinking: boolean;
   isConnected: boolean;
@@ -825,11 +825,25 @@ const Chat = ({ messages, sendTextMessage, isThinking, isConnected, websocket }:
       
       <div className="messages-container">
         {messages.map((msg, index) => (
-          <div 
-            key={index} 
-            className={`message ${msg.sender}-message ${msg.isError ? 'error' : ''}`}
-          >
-            {msg.content}
+          <div key={index}>
+            <div 
+              className={`message ${msg.sender}-message ${msg.isError ? 'error' : ''}`}
+            >
+              {msg.content}
+            </div>
+            {msg.options && msg.options.length > 0 && (
+              <div className="options-container">
+                {msg.options.map((option, optIndex) => (
+                  <button
+                    key={optIndex}
+                    className="option-button"
+                    onClick={() => sendTextMessage(option)}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ))}
         
