@@ -2,8 +2,9 @@ import math
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import List, Set, Dict, Any, Literal
+from typing import List, Set, Dict, Any, Literal, Tuple
 
+import random
 import numpy as np
 from colorama import Fore, Back, Style, init
 
@@ -19,6 +20,9 @@ BORDER_SIZE = 15
 WATER_LEVEL = 0.5  # Values below this are water, above are land
 WATER_SYMBOL = "~~~"
 LAND_SYMBOL = "$$$"
+
+# Version information
+VERSION = "2.0"  # Removed landmark and NPC functionality
 
 def create_game(map_size: int = MAP_SIZE, 
                 border_size: int = BORDER_SIZE,
@@ -1408,7 +1412,7 @@ if __name__ == "__main__":
 class LandObstacleFactory:
     @staticmethod
     def create_hole(name: str = "Hole", **props) -> GameObject:
-        from .game_object import GameObject
+        from game_object import GameObject
         return GameObject(
             id=str(uuid.uuid4()),
             name=name,
@@ -1422,7 +1426,7 @@ class LandObstacleFactory:
 
     @staticmethod
     def create_fallen_log(size: str = "medium", **props) -> GameObject:
-        from .game_object import GameObject
+        from game_object import GameObject
         return GameObject(
             id=str(uuid.uuid4()),
             name=f"{size.capitalize()} Fallen Log",
@@ -1436,7 +1440,7 @@ class LandObstacleFactory:
 
     @staticmethod
     def create_tree_stump(height: int = 1, **props) -> GameObject:
-        from .game_object import GameObject
+        from game_object import GameObject
         return GameObject(
             id=str(uuid.uuid4()),
             name=f"Tree Stump ({height}m)",
@@ -2240,8 +2244,6 @@ class GameFactory:
         self.objects = {
             "chests": [],
             "camps": [],
-            "npcs": [],
-            "landmarks": [],
             "obstacles": [],
             "campfires": [],
             "backpacks": [],
@@ -2253,12 +2255,84 @@ class GameFactory:
             "campfire_pots": [],
             "pots": []
         }
+
+    def find_valid_player_position(self) -> Tuple[int, int]:
+        """
+        Find a valid starting position for the player that:
+        1. Is on land
+        2. Is not occupied by any object
+        3. Has at least 5 free adjacent positions for movement
+        
+        Returns:
+            Tuple[int, int]: A valid (x, y) position for the player
+        """
+        # Get all land tiles
+        land_tiles = []
+        for y in range(self.map_size):
+            for x in range(self.map_size):
+                if y < self.border_size or y >= self.map_size - self.border_size or \
+                   x < self.border_size or x >= self.map_size - self.border_size:
+                    continue
+                
+                # Check if the tile is land
+                if self.map_grid[y][x] == "$$$":
+                    # Check if the tile is already occupied
+                    occupied = False
+                    for obj_type, obj_list in self.objects.items():
+                        for obj in obj_list:
+                            if obj["position"] == (x, y):
+                                occupied = True
+                                break
+                        if occupied:
+                            break
+                    
+                    if not occupied:
+                        land_tiles.append((x, y))
+        
+        # Shuffle the land tiles for random selection
+        random.shuffle(land_tiles)
+        
+        # Check each tile for valid movement options
+        for x, y in land_tiles:
+            free_positions = 0
+            
+            # Check adjacent positions (including diagonals)
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    if dx == 0 and dy == 0:
+                        continue
+                        
+                    new_x = x + dx
+                    new_y = y + dy
+                    
+                    # Check if position is valid and free
+                    if (new_x >= self.border_size and new_x < self.map_size - self.border_size and
+                        new_y >= self.border_size and new_y < self.map_size - self.border_size and
+                        self.map_grid[new_y][new_x] == "$$$"):
+                        
+                        # Check if position is occupied
+                        occupied = False
+                        for obj_type, obj_list in self.objects.items():
+                            for obj in obj_list:
+                                if obj["position"] == (new_x, new_y):
+                                    occupied = True
+                                    break
+                            if occupied:
+                                break
+                        
+                        if not occupied:
+                            free_positions += 1
+            
+            # If we found a position with at least 5 free adjacent tiles
+            if free_positions >= 5:
+                return (x, y)
+        
+        # If no position found, return a default position
+        return (self.border_size + 1, self.border_size + 1)
         
     def generate_world(self, 
                       chest_count: int = 5, 
                       camp_count: int = 3,
-                      npc_count: int = 8,
-                      landmark_count: int = 3,
                       obstacle_count: int = 10,
                       campfire_count: int = 4,
                       backpack_count: int = 3,
@@ -2275,8 +2349,6 @@ class GameFactory:
         Args:
             chest_count: Number of chests to place
             camp_count: Number of camps to place
-            npc_count: Number of NPCs to place
-            landmark_count: Number of landmarks to place
             obstacle_count: Number of land obstacles to place
             campfire_count: Number of campfires to place
             backpack_count: Number of backpacks to place
@@ -2289,13 +2361,12 @@ class GameFactory:
             pot_count: Number of pots to place
             
         Returns:
-            Dict containing the map and placed objects
+            Dict containing the map, placed objects, and suggested player position
         """
         # Generate the map
         self.map_grid = generate_map()
         
         # Place objects in order of importance
-        self.place_objects("landmarks", landmark_count)
         self.place_objects("obstacles", obstacle_count)
         self.place_objects("camps", camp_count)
         self.place_objects("campfires", campfire_count)
@@ -2308,11 +2379,14 @@ class GameFactory:
         self.place_objects("backpacks", backpack_count)
         self.place_objects("firewood", firewood_count)
         self.place_objects("pots", pot_count)
-        self.place_objects("npcs", npc_count)
+        
+        # Find a valid starting position for the player
+        player_position = self.find_valid_player_position()
         
         return {
             "map": self.map_grid,
-            "objects": self.objects
+            "objects": self.objects,
+            "player_position": player_position
         }
     
     def create_landmark(self) -> Dict[str, Any]:
@@ -2505,10 +2579,6 @@ class GameFactory:
                 obj = create_chest()
             elif object_type == "camps":
                 obj = create_camp()
-            elif object_type == "npcs":
-                obj = self.create_npc()
-            elif object_type == "landmarks":
-                obj = self.create_landmark()
             elif object_type == "obstacles":
                 obj = create_land_obstacle()
             elif object_type == "campfires":
@@ -2552,27 +2622,10 @@ class GameFactory:
         
         # Place objects on the display grid in order of visibility (layering)
         
-        # First obstacles and landmarks (lowest layer above terrain)
+        # First obstacles (lowest layer above terrain)
         for obstacle in self.objects["obstacles"]:
             x, y = obstacle["position"]
             display_grid[y][x] = "OBS"
-            
-        for landmark in self.objects["landmarks"]:
-            x, y = landmark["position"]
-            if landmark["type"] == "tower":
-                display_grid[y][x] = "TWR"
-            elif landmark["type"] == "statue":
-                display_grid[y][x] = "STA"
-            elif landmark["type"] == "ruins":
-                display_grid[y][x] = "RUI"
-            elif landmark["type"] == "cave":
-                display_grid[y][x] = "CAV"
-            elif landmark["type"] == "shrine":
-                display_grid[y][x] = "SHR"
-            elif landmark["type"] == "portal":
-                display_grid[y][x] = "PRT"
-            else:  # monolith
-                display_grid[y][x] = "MON"
         
         # Add pots to the display grid
         for pot in self.objects["pots"]:
@@ -2644,25 +2697,6 @@ class GameFactory:
             x, y = backpack["position"]
             display_grid[y][x] = "BPK"
         
-        # Finally NPCs (top layer)
-        for npc in self.objects["npcs"]:
-            x, y = npc["position"]
-            
-            if npc["type"] == "villager":
-                display_grid[y][x] = "VIL"
-            elif npc["type"] == "hero":
-                display_grid[y][x] = "HRO"
-            elif npc["type"] == "merchant":
-                display_grid[y][x] = "MER"
-            elif npc["type"] == "guard":
-                display_grid[y][x] = "GRD"
-            elif npc["type"] == "wizard":
-                display_grid[y][x] = "WIZ"
-            elif npc["type"] == "monk":
-                display_grid[y][x] = "MNK"
-            else:  # thief
-                display_grid[y][x] = "THF"
-        
         # Count land tiles
         land_count = sum(1 for row in self.map_grid for tile in row if tile == "$$$")
         water_count = self.map_size * self.map_size - land_count
@@ -2687,13 +2721,9 @@ class GameFactory:
               f"{Fore.RED}{Back.BLACK}BDR{Style.RESET_ALL} Bedroll   {Fore.RED}{Back.BLACK}LST{Style.RESET_ALL} Log Stool")
         print(f"{Fore.RED}{Back.BLACK}CSP{Style.RESET_ALL} Campfire Spit   {Fore.RED}{Back.BLACK}CPT{Style.RESET_ALL} Campfire Pot   "
               f"{Fore.RED}{Back.BLACK}FWD{Style.RESET_ALL} Firewood")
-        print(f"{Fore.MAGENTA}{Back.BLACK}TWR{Style.RESET_ALL} Tower   {Fore.MAGENTA}{Back.BLACK}STA{Style.RESET_ALL} Statue   "
-              f"{Fore.MAGENTA}{Back.BLACK}RUI{Style.RESET_ALL} Ruins   {Fore.MAGENTA}{Back.BLACK}CAV{Style.RESET_ALL} Cave")
         print(f"{Fore.MAGENTA}{Back.BLACK}OBS{Style.RESET_ALL} Obstacle")
         print(f"{Fore.GREEN}{Back.BLACK}SPT{Style.RESET_ALL} Small Pot   {Fore.GREEN}{Back.BLACK}MPT{Style.RESET_ALL} Medium Pot   "
               f"{Fore.GREEN}{Back.BLACK}BPT{Style.RESET_ALL} Big Pot")
-        print(f"{Fore.CYAN}{Back.BLACK}VIL{Style.RESET_ALL} Villager   {Fore.CYAN}{Back.BLACK}HRO{Style.RESET_ALL} Hero   "
-              f"{Fore.CYAN}{Back.BLACK}WIZ{Style.RESET_ALL} Wizard   {Fore.CYAN}{Back.BLACK}MER{Style.RESET_ALL} Merchant")
         print("=====================\n")
         
         # Print the map with colors
@@ -2715,17 +2745,13 @@ class GameFactory:
                 elif tile in ["BND", "TRV", "MRC", "ABD", "MIL", "CFR", "TNT", "BDR", "LST", "CSP", "CPT", "FWD"]:
                     row += f"{Fore.RED}{Back.BLACK}{tile}"
                 
-                # Landmarks and obstacles (magenta)
-                elif tile in ["TWR", "STA", "RUI", "CAV", "SHR", "PRT", "MON", "OBS"]:
+                # Obstacles (magenta)
+                elif tile in ["OBS"]:
                     row += f"{Fore.MAGENTA}{Back.BLACK}{tile}"
                 
                 # Pots (green)
                 elif tile in ["SPT", "MPT", "BPT"]:
                     row += f"{Fore.GREEN}{Back.BLACK}{tile}"
-                
-                # NPCs (cyan)
-                elif tile in ["VIL", "HRO", "MER", "GRD", "WIZ", "MNK", "THF"]:
-                    row += f"{Fore.CYAN}{Back.BLACK}{tile}"
                 
                 else:
                     row += f"{Style.RESET_ALL}{tile}"
@@ -2791,13 +2817,6 @@ class GameFactory:
                 print(f"  {i+1}. {size} Vase ({state}) {Fore.GREEN}({pot['position'][0]},{pot['position'][1]}){Style.RESET_ALL}: " +
                      f"Capacity: {pot.get('capacity', 'Unknown')}, Durability: {durability_info}")
         
-        # Print landmarks and obstacles
-        print(f"- {len(self.objects['landmarks'])} landmarks")
-        for i, landmark in enumerate(self.objects['landmarks']):
-            landmark_type = landmark['type'].capitalize()
-            special = " (Special)" if landmark.get('special', False) else ""
-            print(f"  {i+1}. {landmark_type}{special} {Fore.MAGENTA}({landmark['position'][0]},{landmark['position'][1]}){Style.RESET_ALL}")
-            
         print(f"- {len(self.objects['obstacles'])} obstacles")
         for i, obstacle in enumerate(self.objects['obstacles']):
             obstacle_type = obstacle['type'].capitalize() if 'type' in obstacle else 'Generic'
@@ -2870,28 +2889,6 @@ class GameFactory:
             
         # Convert objects to entities
         entities = []
-        
-        # Convert NPCs
-        for npc in self.objects["npcs"]:
-            entities.append({
-                "id": npc["id"],
-                "type": npc["type"],
-                "name": npc["name"],
-                "position": {"x": npc["position"][0], "y": npc["position"][1]},
-                "state": "idle" + ("Down" if random.random() < 0.5 else "Up"),
-                "canMove": True,
-                "moveInterval": random.randint(2000, 4000),
-                "variant": str(random.randint(1, 3)),
-                "isMovable": True,
-                "isJumpable": False,
-                "isUsableAlone": False,
-                "isCollectable": False,
-                "isWearable": False,
-                "weight": 1,
-                "level": npc.get("level", 1),
-                "hostile": npc.get("hostile", False),
-                "inventory": npc.get("inventory", [])
-            })
             
         # Convert campfires
         for i, campfire in enumerate(self.objects["campfires"]):
@@ -2955,26 +2952,6 @@ class GameFactory:
                 "description": chest.get("description", "A container for storing valuable items.")
             })
 
-        # Convert landmarks
-        for landmark in self.objects["landmarks"]:
-            entities.append({
-                "id": landmark["id"],
-                "type": landmark["type"],
-                "name": landmark["name"],
-                "position": {"x": landmark["position"][0], "y": landmark["position"][1]},
-                "state": landmark.get("state", "idle"),
-                "variant": "1",
-                "isMovable": False,
-                "isJumpable": False,
-                "isUsableAlone": True,
-                "isCollectable": False,
-                "isWearable": False,
-                "weight": 100,
-                "special": landmark.get("special", False),
-                "description": landmark.get("description", "A notable location."),
-                "properties": {k: v for k, v in landmark.items() if k not in ["id", "type", "name", "position", "state", "special", "description"]}
-            })
-
         # Convert camp items (tents, bedrolls, log stools, etc.)
         for item_type in ["tents", "bedrolls", "log_stools", "campfire_spits", "campfire_pots", "firewood"]:
             for i, item in enumerate(self.objects[item_type]):
@@ -3015,8 +2992,6 @@ if __name__ == "__main__":
     world = factory.generate_world(
         chest_count=8, 
         camp_count=4, 
-        npc_count=10, 
-        landmark_count=5,
         obstacle_count=12,
         campfire_count=6,
         backpack_count=5,
@@ -3058,3 +3033,39 @@ if __name__ == "__main__":
     with open(ui_filename, 'w') as f:
         json.dump(ui_json, f, indent=2)
     print(f"UI map saved to: {ui_filename}") 
+
+class RainWeatherObject(GameObject):
+    """Rain drop object that falls down the screen."""
+    def __init__(self, x_pos, id_num):
+        from game_object import GameObject  # Import updated
+        super().__init__(
+            id=f"rain_{id_num}",
+            name="Rain Drop",
+            description="A drop of rain falling from the sky",
+            is_movable=False
+        )
+        # ... existing code ...
+
+class CloudWeatherObject(GameObject):
+    """Cloud object that moves across the screen."""
+    def __init__(self, y_pos, id_num):
+        from game_object import GameObject  # Import updated
+        super().__init__(
+            id=f"cloud_{id_num}",
+            name="Cloud",
+            description="A fluffy cloud floating in the sky",
+            is_movable=False
+        )
+        # ... existing code ...
+
+class LightningWeatherObject(GameObject):
+    """Lightning bolt that briefly appears on the screen."""
+    def __init__(self, x_pos, id_num):
+        from game_object import GameObject  # Import updated
+        super().__init__(
+            id=f"lightning_{id_num}",
+            name="Lightning Bolt",
+            description="A bright flash of lightning",
+            is_movable=False
+        )
+        # ... existing code ...

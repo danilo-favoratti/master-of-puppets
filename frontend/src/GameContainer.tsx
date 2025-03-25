@@ -82,7 +82,7 @@ const GameContainer = ({
     }
   }, [websocket]);
 
-  // Remove the map generation code from the useEffect and simplify it
+  // Only try to generate world if necessary and once
   useEffect(() => {
     // Don't do anything if we already have good map data
     if (mapInitialized) {
@@ -95,8 +95,29 @@ const GameContainer = ({
       
       if (localMapData.error) {
         console.error('Map data error detected:', localMapData.error);
-        // Show loading indicator while waiting for valid map data
-        setIsLoading(true);
+        
+        // Only try to generate world once to prevent infinite loops
+        if (!hasTriedGenerateWorld && websocket && websocket.readyState === WebSocket.OPEN) {
+          console.log('Attempting to generate world (first attempt)');
+          // Try directly asking the server for a map
+          websocket.send(JSON.stringify({
+            type: 'create_map',
+            theme: 'abandoned prisioner'
+          }));
+          setHasTriedGenerateWorld(true);
+          
+          // Since we're waiting for the server, show loading indicator
+          setIsLoading(true);
+        } else if (hasTriedGenerateWorld) {
+          console.log('Already attempted to generate world, showing fallback data');
+          // After one attempt, use fallback data to avoid blocking UI
+          setGameData({
+            grid: [],
+            entities: [],
+            environment: { theme: "Lost Arch" }
+          });
+          setIsLoading(false);
+        }
       } else {
         // We have valid map data
         console.log('Valid map data found in localMapData');
@@ -105,7 +126,19 @@ const GameContainer = ({
         setMapInitialized(true);
       }
     }
-  }, [localMapData, mapInitialized]);
+  }, [localMapData, hasTriedGenerateWorld, websocket, mapInitialized]);
+
+  // Initial world generation request - try once on mount
+  useEffect(() => {
+    if (!mapInitialized && !hasTriedGenerateWorld && websocket && websocket.readyState === WebSocket.OPEN) {
+      console.log('Initial mount - requesting map generation');
+      websocket.send(JSON.stringify({
+        type: 'create_map',
+        theme: 'abandoned prisioner'
+      }));
+      setHasTriedGenerateWorld(true);
+    }
+  }, [websocket, hasTriedGenerateWorld, mapInitialized]);
 
   return (
     <div className="relative w-full h-full">
@@ -153,5 +186,4 @@ const GameContainer = ({
   );
 };
 
-export default GameContainer;
-
+export default GameContainer; 

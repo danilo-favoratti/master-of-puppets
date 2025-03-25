@@ -10,7 +10,7 @@ from agents import (
 )
 
 from person import Person
-from ..game_object import Container
+from game_object import Container
 
 
 class DirectionHelper:
@@ -56,7 +56,7 @@ class DirectionHelper:
         """Move continuously in a direction until blocked or at board edge."""
         moves = 0
         last_message = ""
-        max_moves = 20  # Maximum number of moves to prevent infinite loops
+        max_moves = 50  # Maximum number of moves to prevent infinite loops
         
         while moves < max_moves:
             current_pos = game_state.person.position
@@ -288,60 +288,44 @@ async def use_object_with(
     return result["message"]
 
 @function_tool
-async def look(
-    ctx: RunContextWrapper[GameState], 
-    direction: Optional[str] = None
-) -> str:
-    """Look around or in a specific direction to find objects.
-    
-    Args:
-        direction: The direction to look ("left", "right", "up", "down") - optional
+async def look(ctx: RunContextWrapper[GameState]) -> str:
+    """Look around to find objects up to 5 positions away.
+
+    This function scans for nearby objects whose positions are within a
+    Manhattan distance of 5 from the player's current location.
     """
     game_state = ctx.context
-    
-    # Sync state and get current surroundings
+
+    # Sync state and update game state information
     sync_message = game_state.sync_game_state()
-    
-    # If no direction specified, return all visible objects
-    if not direction:
-        if not game_state.nearby_objects:
-            return "You don't see anything interesting nearby."
-            
-        object_descriptions = []
-        for obj in game_state.nearby_objects.values():
-            # Calculate relative direction to object
-            if obj.position and game_state.person.position:
-                direction_vector = DirectionHelper.get_direction_vector(
-                    game_state.person.position, 
-                    obj.position
-                )
-                direction_name = DirectionHelper.get_direction_name(direction_vector)
-                desc = f"{obj.name} is {direction_name} from you at position {obj.position}"
-            else:
-                desc = f"{obj.name} at position {obj.position}"
-                
-            if hasattr(obj, "description") and obj.description:
-                desc += f" - {obj.description}"
-            object_descriptions.append(desc)
-        
-        return "You look around:\n" + "\n".join(object_descriptions)
-    
-    # Look in specific direction
-    current_pos = game_state.person.position
-    target_pos = DirectionHelper.get_relative_position(current_pos, direction)
-    
-    # Filter objects in that direction
-    objects_in_direction = []
+
+    if not game_state.nearby_objects:
+        return "You don't see anything interesting nearby."
+
+    object_descriptions = []
+    person_pos = game_state.person.position
+
     for obj in game_state.nearby_objects.values():
-        if obj.position == target_pos:
-            objects_in_direction.append(obj)
-    
-    if not objects_in_direction:
-        return f"You look {direction} but don't see anything interesting."
-    
-    descriptions = [f"{obj.name} - {obj.description}" if hasattr(obj, "description") else obj.name 
-                   for obj in objects_in_direction]
-    return f"Looking {direction}, you see:\n" + "\n".join(descriptions)
+        if obj.position and person_pos:
+            # Calculate Manhattan distance between the player and the object
+            distance = abs(obj.position[0] - person_pos[0]) + abs(obj.position[1] - person_pos[1])
+            if distance > 5:
+                continue  # Skip objects further than 5 positions away
+
+            desc = f"{obj.name} is at position {obj.position} (distance: {distance})"
+        else:
+            desc = f"{obj.name} at unknown position"
+
+        if hasattr(obj, "description") and obj.description:
+            desc += f" - {obj.description}"
+
+        object_descriptions.append(desc)
+
+    if not object_descriptions:
+        return "You look around but nothing within 5 positions catches your eye."
+
+    return "You look around:\n" + "\n".join(object_descriptions)
+
 
 @function_tool
 async def say(
@@ -437,92 +421,40 @@ async def examine_object(
     
     return f"Object with ID {object_id} not found nearby or in inventory"
 
+@function_tool
+async def execute_movement_sequence(
+    ctx: RunContextWrapper[GameState], 
+    commands: list
+) -> str:
+    """Execute a sequence of movement instructions provided as a list of commands.
+
+    Each command is expected to be a dict with the keys 'tool' and 'parameters'.
+    Supported tools: 'move' and 'jump'.
+    """
+    results = []
+    for cmd in commands:
+        tool_name = cmd.get('tool')
+        params = cmd.get('parameters', {})
+        if tool_name == 'move':
+            direction = params.get('direction')
+            is_running = params.get('is_running', False)
+            continuous = params.get('continuous', False)
+            res = await move(ctx, direction, is_running, continuous)
+            results.append(f"move {direction}: {res}")
+        elif tool_name == 'jump':
+            target_x = params.get('target_x')
+            target_y = params.get('target_y')
+            res = await jump(ctx, target_x, target_y)
+            results.append(f"jump to ({target_x},{target_y}): {res}")
+        else:
+            results.append(f"Unknown command: {cmd}")
+    return "\n".join(results)
+
 # Create the agent with all tools
-def create_person_agent(person_name="Game Character"):
+def create_puppet_master(person_name="Game Character"):
     return Agent[GameState](
         name=person_name,
-        instructions=f"""You control {person_name}, a character in a game world.
-
-You have full access to your game state through the context, including:
-- Your current position on the board
-- Your inventory contents
-- Nearby objects and their positions
-- The game board layout
-
-The game state is automatically synchronized after each successful action to ensure you have accurate information about:
-- Objects in your vicinity
-- Their positions relative to you
-- Available containers and their contents
-
-When handling directions:
-- Use simple direction words: "left", "right", "up", "down"
-- The game uses a coordinate system where:
-  * Moving left decreases X (x-1)
-  * Moving right increases X (x+1)
-  * Moving up decreases Y (y-1)
-  * Moving down increases Y (y+1)
-- When a user gives a direction, convert it to these simple directions
-  * "north" or "forward" = "up"
-  * "south" or "backward" = "down"
-  * "east" = "right"
-  * "west" = "left"
-
-For movement commands:
-- Always provide all required parameters:
-  * direction: The direction to move in
-  * is_running: Set to true for running (2 tiles), false for walking (1 tile)
-  * continuous: Set to true for "as far as possible" commands, false for single steps
-- For continuous movement commands like:
-  * "go to the left limit"
-  * "move right as far as possible"
-  * "keep going down until blocked"
-  Use move with continuous=true and is_running=false
-- For single steps, use move with continuous=false
-- When moving continuously, you will automatically stop at:
-  * Board boundaries (x: 0-14, y: 0-9)
-  * Blocked positions (objects, walls, etc.)
-  * Invalid positions
-
-Before each action:
-1. Look around to understand your surroundings if needed
-2. Check your current position from the game state
-3. For movement commands:
-   - Convert user's direction words to simple directions
-   - Determine if continuous movement is requested
-   - Set appropriate values for is_running and continuous
-   - Use the move tool with all required parameters
-4. For object interactions:
-   - Identify the object by ID from nearby_objects
-   - Calculate relative positions using directions
-   - Verify the action is possible given game rules
-
-You can:
-- Move in any direction (walk or run)
-- Move continuously until blocked
-- Jump over objects
-- Push or pull objects
-- Look around or in specific directions
-- Interact with objects (get items, put items, use items)
-- Examine objects to learn more about them
-- Check your inventory
-- Say things
-
-Think carefully about the actions you take. Some actions might not be possible due to:
-- Physical constraints (e.g., objects are too heavy, positions are not reachable)
-- Game rules (e.g., containers must be open to access)
-- Board boundaries (positions must be within the game board)
-
-Always maintain awareness of your surroundings and position. If you're ever unsure about the state of the game world, use the look command to update your knowledge.
-
-Common movement patterns:
-1. Single step: move(direction="right", is_running=false, continuous=false)
-2. Running step: move(direction="right", is_running=true, continuous=false)
-3. Continuous walk: move(direction="right", is_running=false, continuous=true)
-4. Continuous run: move(direction="right", is_running=true, continuous=true)
-
-For commands like "go to the left limit", use:
-move(direction="left", is_running=false, continuous=true)
-""",
+        instructions=f"""You control {person_name}, a character in a game world.\n\nYou have full access to your game state through the context, including:\n- Your current position on the board\n- Your inventory contents\n- Nearby objects and their positions\n- The game board layout\n\nWhen provided with a JSON input containing a 'commands' key, execute the movement commands sequentially using tools:\n- 'move': parameters include 'direction', 'is_running', and 'continuous'\n- 'jump': parameters include 'target_x' and 'target_y'\n\nAlways print the list of tools you are using in your response.""",
         tools=[
             move,
             jump,
@@ -534,14 +466,15 @@ move(direction="left", is_running=false, continuous=true)
             look,
             say,
             check_inventory,
-            examine_object
-        ],
+            examine_object,
+            execute_movement_sequence
+        ]
     )
 
 # Setup conversation handler
 async def run_continuous_conversation(game_state: GameState, person_name="Game Character"):
-    agent = create_person_agent(person_name)
-    
+    agent = create_puppet_master(person_name)
+
     # Thread ID for tracing
     thread_id = f"game-conversation-{game_state.person.id}"
     
@@ -595,8 +528,8 @@ async def run_continuous_conversation(game_state: GameState, person_name="Game C
 
 # Example of using the agent
 async def example_usage():
-    from model.person import Person
-    from model.game_object import Container, GameObject
+    from person import Person
+    from game_object import Container, GameObject
     
     # Create a game board (mock)
     class SimpleGameBoard:

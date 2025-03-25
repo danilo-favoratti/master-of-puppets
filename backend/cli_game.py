@@ -3,12 +3,12 @@ import os
 
 from agents import Runner, trace
 from colorama import init, Fore, Style
-from model.board import Board  # Import the model's Board class
-from model.entity import Position
-from model.game_object import Container, GameObject
-from model.person import Person
+from board import Board  # Import the model's Board class
+from entity import Position
+from game_object import Container, GameObject
+from person import Person
 
-from agent.agent_person import GameState, create_person_agent
+from agent_puppet_master import GameState, create_puppet_master
 
 # Initialize colorama for cross-platform colored terminal output
 init()
@@ -121,7 +121,7 @@ async def run_game_with_board_display(game_state):
     Args:
         game_state: The game state containing the board, player, and other game information
     """
-    agent = create_person_agent(game_state.person.name)
+    agent = create_puppet_master(game_state.person.name)
     
     # Thread ID for tracing
     thread_id = f"game-conversation-{game_state.person.id}"

@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Tuple
 
-from .entity import Entity, Position
-from .game_object import GameObject, Container
+from entity import Entity, Position
+from game_object import GameObject, Container
 
 
 @dataclass

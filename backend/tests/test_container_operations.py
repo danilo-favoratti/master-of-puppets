@@ -12,11 +12,11 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 # Import from the model package
-from model.game import Game
-from model.entity import Position
-from model.board import Board
-from model.game_object import GameObject, Container
-from model.person import Person
+from game import Game
+from entity import Position
+from board import Board
+from game_object import GameObject, Container
+from person import Person
 
 
 def create_game_from_engine(engine):

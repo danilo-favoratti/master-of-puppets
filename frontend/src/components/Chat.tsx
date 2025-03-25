@@ -68,10 +68,9 @@ const Chat = ({
       audio.autoplay = false;
       audio.preload = "auto"; // Change to auto for better initialization
 
-      // Set an empty audio source to prevent errors
-      // Use a tiny silent MP3 or a data URL with a valid audio format
-      audio.src =
-        "data:audio/mp3;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwBURU5DAAAAHQAAA1N3aXRjaCBQbHVzIMKpIE5DSCBTb2Z0d2FyZQBUSVQyAAAABgAAAzIyMzUAVFNTRQAAAA8AAANMYXZmNTcuODMuMTAwAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQsRbAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQMSkAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
+      // Use a valid silent audio source
+      // This is important as some browsers reject data URLs with certain formats
+      audio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
 
       // Initialize volume
       audio.volume = 1.0;
@@ -84,7 +83,7 @@ const Chat = ({
 
       audioPlayerRef.current = audio;
 
-      // Try to unlock audio on first user interaction
+      // Try to unlock audio on first user interaction - with better error handling
       const unlockAudio = () => {
         if (audioPlayerRef.current) {
           // Play a silent sound
@@ -102,6 +101,25 @@ const Chat = ({
             })
             .catch((err) => {
               console.log("Could not unlock audio:", err);
+              
+              // Create a new audio element with a different format if there was an error
+              if (audioPlayerRef.current) {
+                console.log("Trying alternative audio format...");
+                audioPlayerRef.current.src = "data:audio/mpeg;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwBURU5DAAAAHQAAA1N3aXRjaCBQbHVzIMKpIE5DSCBTb2Z0d2FyZQBUSVQyAAAABgAAAzIyMzUAVFNTRQAAAA8AAANMYXZmNTcuODMuMTAwAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQsRbAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQMSkAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
+                
+                // Try again
+                audioPlayerRef.current
+                  .play()
+                  .then(() => {
+                    console.log("Audio unlocked successfully with alternative format");
+                    audioPlayerRef.current?.pause();
+                    audioPlayerRef.current!.currentTime = 0;
+                    audioPlayerRef.current!.muted = isMuted;
+                  })
+                  .catch(altErr => {
+                    console.log("Still could not unlock audio with alternative format:", altErr);
+                  });
+              }
             });
         }
 
@@ -245,7 +263,22 @@ const Chat = ({
     isPlaying,
   ]); // Add all state variables that affect rendering
 
-  // Set up WebSocket listeners for audio
+  // First, add a function to handle parsing string messages to check for JSON-in-string formatted messages
+  const tryParseJsonInString = (text: string) => {
+    try {
+      // Check if the string might be JSON (starts with '{' or '[')
+      if ((text.trim().startsWith('{') || text.trim().startsWith('[')) && 
+          (text.trim().endsWith('}') || text.trim().endsWith(']'))) {
+        return JSON.parse(text);
+      }
+    } catch (e) {
+      // If parsing fails, it's not valid JSON
+      console.log("Not valid JSON in message:", e);
+    }
+    return null;
+  };
+
+  // Update the WebSocket message handler
   useEffect(() => {
     if (!websocket) return;
     websocket.binaryType = "arraybuffer";
@@ -268,55 +301,28 @@ const Chat = ({
             const data = JSON.parse(event.data);
             console.log("WebSocket received JSON message:", data.type);
 
-            if (data.type === "audio_start") {
-              console.log("WebSocket: Received audio_start signal");
-              isReceivingAudio = true;
-              audioStartReceived = true;
-              hasPlayedAudioRef.current = false; // Reset flag on new audio session
-              audioChunks = [];
-            } else if (data.type === "audio_end") {
-              console.log(
-                `WebSocket: Received audio_end JSON signal, chunks: ${audioChunks.length}, audioStartReceived: ${audioStartReceived}`
-              );
+            switch (data.type) {
+              case "audio_start":
+                console.log("WebSocket: Received audio_start signal");
+                isReceivingAudio = true;
+                audioStartReceived = true;
+                hasPlayedAudioRef.current = false;
+                audioChunks = [];
+                break;
 
-              // Only play if we've received audio_start, have chunks, and haven't played yet
-              if (
-                audioStartReceived &&
-                audioChunks.length > 0 &&
-                !hasPlayedAudioRef.current
-              ) {
-                console.log(
-                  `Playing audio: ${
-                    audioChunks.length
-                  } chunks totaling ${audioChunks.reduce(
-                    (acc, chunk) => acc + chunk.length,
-                    0
-                  )} bytes`
-                );
-                playBufferedAudio(audioChunks);
-                hasPlayedAudioRef.current = true;
-              } else {
-                if (!audioStartReceived) {
-                  console.warn(
-                    "Received audio_end but no audio_start was received"
-                  );
-                }
-                if (audioChunks.length === 0) {
-                  console.warn(
-                    "No audio chunks to play after audio_end",
-                    new Error().stack
-                  );
-                }
-              }
+              case "audio_end":
+                handleAudioEnd();
+                break;
 
-              // Reset state
-              isReceivingAudio = false;
-              audioStartReceived = false;
-              audioChunks = [];
-            } else if (data.type === "error") {
-              console.error("Received error from server:", data.content);
-              setIsProcessingAudio(false);
-              setIsWaitingForResponse(false);
+              case "error":
+                console.error("Received error from server:", data.content);
+                setIsProcessingAudio(false);
+                setIsWaitingForResponse(false);
+                break;
+
+              // Let App.tsx handle other message types
+              default:
+                break;
             }
           } catch (jsonError) {
             console.error("Error parsing JSON from WebSocket:", jsonError);
@@ -324,102 +330,113 @@ const Chat = ({
         }
         // Handle binary data (audio chunks)
         else if (event.data instanceof ArrayBuffer) {
-          console.log(
-            `WebSocket: Received binary data, size: ${event.data.byteLength} bytes, isReceiving: ${isReceivingAudio}, audioStartReceived: ${audioStartReceived}`
-          );
-
-          if (isReceivingAudio && audioStartReceived) {
-            try {
-              const arrayBuf = new Uint8Array(event.data);
-              const isEndMarker = arrayBuf.length === 12;
-              if (isEndMarker) {
-                let endMarkerString = "";
-                for (let i = 0; i < arrayBuf.length; i++) {
-                  endMarkerString += String.fromCharCode(arrayBuf[i]);
-                }
-                if (endMarkerString === "__AUDIO_END__") {
-                  console.log(
-                    `WebSocket: Received __AUDIO_END__ binary marker, chunks: ${audioChunks.length}`
-                  );
-                  isReceivingAudio = false;
-                  if (audioChunks.length > 0 && !hasPlayedAudioRef.current) {
-                    console.log(
-                      `Playing audio from binary __AUDIO_END__: ${
-                        audioChunks.length
-                      } chunks totaling ${audioChunks.reduce(
-                        (acc, chunk) => acc + chunk.length,
-                        0
-                      )} bytes`
-                    );
-                    playBufferedAudio(audioChunks);
-                    hasPlayedAudioRef.current = true;
-                  } else {
-                    console.warn(
-                      "No audio chunks to play after __AUDIO_END__",
-                      new Error().stack
-                    );
-                  }
-                  audioStartReceived = false;
-                  audioChunks = [];
-                } else {
-                  audioChunks.push(arrayBuf);
-                  console.log(
-                    `Added audio chunk: ${arrayBuf.length} bytes, total chunks: ${audioChunks.length}`
-                  );
-                }
-              } else {
-                if (audioChunks.length === 0) {
-                  console.log(
-                    `Added FIRST audio chunk: ${arrayBuf.length} bytes, first 30 bytes:`,
-                    Array.from(arrayBuf.slice(0, 30))
-                      .map((b) => b.toString(16).padStart(2, "0"))
-                      .join(" ")
-                  );
-                  const potentialHeader = Array.from(arrayBuf.slice(0, 3))
-                    .map((b) => b.toString(16).padStart(2, "0"))
-                    .join(" ");
-                  console.log(`MP3 header check: ${potentialHeader}`);
-                  if (arrayBuf.length < 100) {
-                    console.warn(
-                      `Suspiciously small first audio chunk: ${arrayBuf.length} bytes`
-                    );
-                  }
-                } else {
-                  console.log(
-                    `Added audio chunk: ${
-                      arrayBuf.length
-                    } bytes, total chunks: ${audioChunks.length + 1}`
-                  );
-                }
-                audioChunks.push(arrayBuf);
-                if (audioChunks.length % 5 === 0) {
-                  const totalSize = audioChunks.reduce(
-                    (acc, chunk) => acc + chunk.length,
-                    0
-                  );
-                  console.log(
-                    `Accumulated ${audioChunks.length} chunks, total size: ${totalSize} bytes`
-                  );
-                }
-              }
-            } catch (binaryError) {
-              console.error("Error processing binary data:", binaryError);
-            }
-          } else {
-            if (!isReceivingAudio) {
-              console.warn(
-                "Received binary data but isReceivingAudio is false"
-              );
-            }
-            if (!audioStartReceived) {
-              console.warn(
-                "Received binary data but no audio_start was received"
-              );
-            }
-          }
+          handleBinaryData(event.data);
         }
       } catch (err) {
         console.error("Error in WebSocket message handler:", err);
+      }
+    };
+
+    // Helper function to handle audio end
+    const handleAudioEnd = () => {
+      console.log(
+        `WebSocket: Received audio_end signal, chunks: ${audioChunks.length}, audioStartReceived: ${audioStartReceived}`
+      );
+
+      if (audioStartReceived && audioChunks.length > 0 && !hasPlayedAudioRef.current) {
+        console.log(
+          `Playing audio: ${audioChunks.length} chunks totaling ${audioChunks.reduce(
+            (acc, chunk) => acc + chunk.length,
+            0
+          )} bytes`
+        );
+        playBufferedAudio(audioChunks);
+        hasPlayedAudioRef.current = true;
+      } else {
+        if (!audioStartReceived) {
+          console.warn("Received audio_end but no audio_start was received");
+        }
+        if (audioChunks.length === 0) {
+          console.warn("No audio chunks to play after audio_end");
+        }
+      }
+
+      // Reset state
+      isReceivingAudio = false;
+      audioStartReceived = false;
+      audioChunks = [];
+    };
+
+    // Helper function to handle binary data
+    const handleBinaryData = (data: ArrayBuffer) => {
+      console.log(
+        `WebSocket: Received binary data, size: ${data.byteLength} bytes, isReceiving: ${isReceivingAudio}, audioStartReceived: ${audioStartReceived}`
+      );
+
+      if (isReceivingAudio && audioStartReceived) {
+        try {
+          const arrayBuf = new Uint8Array(data);
+          const isEndMarker = arrayBuf.length === 12;
+
+          if (isEndMarker) {
+            let endMarkerString = "";
+            for (let i = 0; i < arrayBuf.length; i++) {
+              endMarkerString += String.fromCharCode(arrayBuf[i]);
+            }
+            if (endMarkerString === "__AUDIO_END__") {
+              handleAudioEnd();
+            } else {
+              audioChunks.push(arrayBuf);
+            }
+          } else {
+            if (audioChunks.length === 0) {
+              logFirstChunk(arrayBuf);
+            }
+            audioChunks.push(arrayBuf);
+            logChunkProgress();
+          }
+        } catch (binaryError) {
+          console.error("Error processing binary data:", binaryError);
+        }
+      } else {
+        logAudioStateWarnings();
+      }
+    };
+
+    // Helper function to log first chunk details
+    const logFirstChunk = (arrayBuf: Uint8Array) => {
+      console.log(
+        `Added FIRST audio chunk: ${arrayBuf.length} bytes, first 30 bytes:`,
+        Array.from(arrayBuf.slice(0, 30))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(" ")
+      );
+      const potentialHeader = Array.from(arrayBuf.slice(0, 3))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join(" ");
+      console.log(`MP3 header check: ${potentialHeader}`);
+      if (arrayBuf.length < 100) {
+        console.warn(`Suspiciously small first audio chunk: ${arrayBuf.length} bytes`);
+      }
+    };
+
+    // Helper function to log chunk progress
+    const logChunkProgress = () => {
+      if (audioChunks.length % 5 === 0) {
+        const totalSize = audioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
+        console.log(
+          `Accumulated ${audioChunks.length} chunks, total size: ${totalSize} bytes`
+        );
+      }
+    };
+
+    // Helper function to log audio state warnings
+    const logAudioStateWarnings = () => {
+      if (!isReceivingAudio) {
+        console.warn("Received binary data but isReceivingAudio is false");
+      }
+      if (!audioStartReceived) {
+        console.warn("Received binary data but no audio_start was received");
       }
     };
 
@@ -657,6 +674,13 @@ const Chat = ({
     if (isRecording) {
       stopRecording();
     } else {
+      // Stop any currently playing audio before starting recording
+      if (audioPlayerRef.current) {
+        console.log("Stopping audio playback before recording");
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current.currentTime = 0;
+        setIsPlaying(false);
+      }
       startRecording();
     }
   };
@@ -964,6 +988,15 @@ const Chat = ({
     applyMuteStateToAudio();
   }, [isMuted]);
 
+  // Add this useEffect near the other effects inside the Chat component
+  useEffect(() => {
+    // If there's any message not from the user, clear the waiting state.
+    if (messages.some((msg) => msg.sender !== "user")) {
+      console.log("Received response. Clearing waiting state.");
+      setIsWaitingForResponse(false);
+    }
+  }, [messages]);
+
   return (
     <div className="chat-container">
       <div className="chat-header">
@@ -978,28 +1011,74 @@ const Chat = ({
       </div>
 
       <div className="messages-container">
-        {messages.map((msg, index) => (
-          <div key={index}>
-            <div
-              className={`message ${msg.sender}-message ${msg.isError ? 'error' : ''}`}
-            >
-              {msg.content}
-            </div>
-            {msg.options && msg.options.length > 0 && (
-              <div className="options-container">
-                {msg.options.map((option, optIndex) => (
-                  <button
-                    key={optIndex}
-                    className="option-button"
-                    onClick={() => sendTextMessage(option)}
-                  >
-                    {option}
-                  </button>
+        {messages
+          .filter(msg => !msg.content.trim().startsWith('```'))
+          .map((msg, index) => {
+          // Try to parse JSON in content string
+          const jsonContent = tryParseJsonInString(msg.content);
+          
+          // If message contains JSON with answers array, render those instead
+          if (jsonContent && jsonContent.answers && Array.isArray(jsonContent.answers)) {
+            // Filter out any answers with empty descriptions before rendering
+            const validAnswers = jsonContent.answers.filter(answer => 
+              answer && answer.description && answer.description.trim().length > 0
+            );
+            
+            return (
+              <React.Fragment key={index}>
+                {validAnswers.map((answer: any, answerIndex: number) => (
+                  <div key={`${index}-${answerIndex}`}>
+                    <div className={`message ${msg.sender}-message ${answer.isError ? 'error' : ''}`}>
+                      {answer.description}
+                    </div>
+                    {/* Only show options on the last answer */}
+                    {answerIndex === validAnswers.length - 1 && answer.options && answer.options.length > 0 && (
+                      <div className="options-container">
+                        {answer.options.map((option: string, optIndex: number) => (
+                          <button
+                            key={optIndex}
+                            className="option-button"
+                            onClick={() => {
+                              setMessage(option);
+                              sendTextMessage(option);
+                            }}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
+              </React.Fragment>
+            );
+          }
+          
+          // Regular message rendering
+          return (
+            <div key={index}>
+              <div className={`message ${msg.sender}-message ${msg.isError ? 'error' : ''}`}>
+                {msg.content}
               </div>
-            )}
-          </div>
-        ))}
+              {msg.options && msg.options.length > 0 && (
+                <div className="options-container">
+                  {msg.options.map((option, optIndex) => (
+                    <button
+                      key={optIndex}
+                      className="option-button"
+                      onClick={() => {
+                        setMessage(option);
+                        sendTextMessage(option);
+                      }}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
 
         {isThinking && (
           <div className="thinking-indicator">
@@ -1104,7 +1183,8 @@ const Chat = ({
                         setTimeout(() => {
                           if (audioPlayerRef.current) {
                             audioPlayerRef.current.currentTime = currentTime;
-                            audioPlayerRef.current
+                            audioPlayerRef
+                              .current
                               .play()
                               .catch((e) =>
                                 console.error(

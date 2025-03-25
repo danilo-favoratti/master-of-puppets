@@ -12,31 +12,31 @@ print("Testing imports...")
 
 # Import from the model package
 try:
-    from model.game import Game
+    from game import Game
     print("✓ Successfully imported Game")
 except ImportError as e:
     print(f"✗ Failed to import Game: {e}")
 
 try:
-    from model.entity import Position
+    from entity import Position
     print("✓ Successfully imported Position")
 except ImportError as e:
     print(f"✗ Failed to import Position: {e}")
 
 try:
-    from model.board import Board
+    from board import Board
     print("✓ Successfully imported Board")
 except ImportError as e:
     print(f"✗ Failed to import Board: {e}")
 
 try:
-    from model.game_object import GameObject, Container
+    from game_object import GameObject, Container
     print("✓ Successfully imported GameObject and Container")
 except ImportError as e:
     print(f"✗ Failed to import GameObject and Container: {e}")
 
 try:
-    from model.person import Person
+    from person import Person
     print("✓ Successfully imported Person")
 except ImportError as e:
     print(f"✗ Failed to import Person: {e}")
