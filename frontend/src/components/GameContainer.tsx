@@ -1,53 +1,142 @@
 import { Canvas } from "@react-three/fiber";
-import React, { useRef, useState } from "react";
-import { GameData, Position } from "../types/game";
+import React, { useRef, useState, useEffect } from "react";
 import Game from "./Game";
 import GameUI from "./GameUI";
+import '../LoadingSpinner.css';
+
 interface GameContainerProps {
   executeCommand: (commandName: string, result: string, params: any) => void;
   registerCommandHandler: (
     handler: (cmd: string, result: string, params: any) => void
   ) => void;
-  gameData: GameData;
+  mapData: any;
+  isMapReady: boolean;
+  characterRef: React.RefObject<any>;
+  websocket?: WebSocket | null;
 }
 
-const GameContainer: React.FC<GameContainerProps> = ({
+const GameContainer = ({
   executeCommand,
   registerCommandHandler,
-  gameData,
-}) => {
-  const characterRef = useRef<{ moveAlongPath: (path: Position[]) => void }>(
-    null
-  );
+  mapData,
+  isMapReady,
+  characterRef,
+  websocket
+}: GameContainerProps) => {
   const [lightIntensity, setLightIntensity] = useState(1.3);
   const [lightDistance, setLightDistance] = useState(4);
   const [lightDecay, setLightDecay] = useState(0.5);
   const [ambientLightIntensity, setAmbientLightIntensity] = useState(0);
+  const [gameData, setGameData] = useState<any>(null);
+  const [localMapData, setLocalMapData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasTriedGenerateWorld, setHasTriedGenerateWorld] = useState(false);
+  const [mapInitialized, setMapInitialized] = useState(false);
+
+  // Log mapData changes from props
+  useEffect(() => {
+    if (mapData) {
+      console.log('MapData prop changed:', mapData);
+      setLocalMapData(mapData);
+      
+      // If we received valid map data, initialize the game
+      if (!mapData.error && mapData.map) {
+        setGameData(mapData);
+        setIsLoading(false);
+        setMapInitialized(true);
+        console.log('Game initialized with valid map data from props');
+      }
+    }
+  }, [mapData]);
+
+  // WebSocket handler for direct map update events
+  useEffect(() => {
+    if (websocket) {
+      const handleWebSocketMessage = (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'map_created') {
+            console.log('Map created event received in GameContainer:', data);
+            
+            // If we have valid map data in the event
+            if (data.map_data && !data.map_data.error) {
+              console.log('Valid map data received in WebSocket event, updating game');
+              setLocalMapData(data.map_data);
+              setGameData(data.map_data);
+              setIsLoading(false);
+              setMapInitialized(true);
+              setHasTriedGenerateWorld(false);
+            }
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      websocket.addEventListener('message', handleWebSocketMessage);
+
+      return () => {
+        websocket.removeEventListener('message', handleWebSocketMessage);
+      };
+    }
+  }, [websocket]);
+
+  // Remove the map generation code from the useEffect and simplify it
+  useEffect(() => {
+    // Don't do anything if we already have good map data
+    if (mapInitialized) {
+      console.log('Map already initialized, no need to generate world');
+      return;
+    }
+    
+    if (localMapData) {
+      console.log('Processing localMapData:', localMapData);
+      
+      if (localMapData.error) {
+        console.error('Map data error detected:', localMapData.error);
+        // Show loading indicator while waiting for valid map data
+        setIsLoading(true);
+      } else {
+        // We have valid map data
+        console.log('Valid map data found in localMapData');
+        setGameData(localMapData);
+        setIsLoading(false);
+        setMapInitialized(true);
+      }
+    }
+  }, [localMapData, mapInitialized]);
 
   return (
     <div className="relative w-full h-full">
-      <Canvas
-        style={{
-          width: "100%",
-          height: "100%",
-          position: "absolute",
-          top: 0,
-          left: 0,
-        }}
-        camera={{ position: [0, 0, 5], fov: 75 }}
-        gl={{ antialias: true }}
-      >
-        <Game
-          gameData={gameData}
-          executeCommand={executeCommand}
-          registerCommandHandler={registerCommandHandler}
-          characterRef={characterRef}
-          lightIntensity={lightIntensity}
-          lightDistance={lightDistance}
-          lightDecay={lightDecay}
-          ambientLightIntensity={ambientLightIntensity}
-        />
-      </Canvas>
+      {isLoading ? (
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Creating your adventure world...</p>
+        </div>
+      ) : (
+        <Canvas
+          style={{
+            width: "100%",
+            height: "100%",
+            position: "absolute",
+            top: 0,
+            left: 0,
+          }}
+          camera={{ position: [0, 0, 5], fov: 75 }}
+          gl={{ antialias: true }}
+        >
+          <Game
+            executeCommand={executeCommand}
+            registerCommandHandler={registerCommandHandler}
+            characterRef={characterRef}
+            gameData={gameData}
+            lightIntensity={1.5}
+            lightDistance={10}
+            lightDecay={1.5}
+            ambientLightIntensity={0.3}
+          />
+        </Canvas>
+      )}
       <GameUI
         characterRef={characterRef}
         lightIntensity={lightIntensity}
@@ -64,3 +153,4 @@ const GameContainer: React.FC<GameContainerProps> = ({
 };
 
 export default GameContainer;
+

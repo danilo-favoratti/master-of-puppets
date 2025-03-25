@@ -5,9 +5,9 @@ import gameDataJSON from "./config/gameData.json";
 import { useGameStore } from "./store/gameStore";
 import { GameData } from "./types/game";
 
-// @ts-ignore: Property 'env' does not exist on type 'ImportMeta'.
+// Fix the WebSocket URL declaration to avoid TypeScript error
 const WS_URL =
-  (import.meta.env as any).VITE_WS_URL ||
+  (import.meta as any).env?.VITE_WS_URL ||
   "wss://masterofpuppets.favoratti.com/ws";
 
 // Global variables to maintain a single WebSocket connection across component mounts
@@ -32,6 +32,9 @@ function App() {
       options?: string[];
     }>
   >([]);
+  const [isMapCreated, setIsMapCreated] = useState(false);
+  const [mapData, setMapData] = useState(null);
+  const [isMapReady, setIsMapReady] = useState(false);
 
   const { gameData, setGameData } = useGameStore();
   useEffect(() => {
@@ -123,66 +126,125 @@ function App() {
     setIsThinking(false);
   }, []);
 
-  // Handle messages from the server
+  // Update the handleServerMessage function to handle 'info' message type
   const handleServerMessage = (data: any) => {
-    switch (data.type) {
-      case "text":
-        // Check if this is the welcome message
-        if (
-          data.content ===
-          "Hey there, I'm your quirky game character! Speak to me or send me a text message."
-        ) {
-          if (!globalWelcomeReceived) {
-            globalWelcomeReceived = true;
-            addMessage(data.content, "character");
-          }
-        } else {
-          // Handle text messages with options
+    setIsWaitingForResponse(false);
+    console.log("Received server message:", data);
+
+    try {
+      // Handle different message types
+      switch (data.type) {
+        case "user_input":
+        case "text":
+        case "response":
           if (Array.isArray(data.answers)) {
             data.answers.forEach((answer: any) => {
               if (answer.type === "text") {
-                addMessage(
-                  answer.description,
-                  "character",
-                  false,
-                  answer.options || []
-                );
+                addMessage(answer.description, "character", false, answer.options || []);
               }
             });
           } else {
             addMessage(data.content, "character");
           }
+          break;
+
+        case "command":
+          console.info("Command", data);
+          executeCommand(data.name, data.result, data.params);
+          break;
+
+        case "error":
+          console.error("Server error:", data.content);
+          addMessage(`Error: ${data.content}`, "system", true);
+          break;
+
+        case "transcription":
+          addMessage(data.content, "user");
+          break;
+
+        case "user_message":
+          // Handle the new user_message type (for voice input)
+          addMessage(data.content, "user");
+          setIsWaitingForResponse(false);
+          break;
+
+        case "map_created":
+          console.log("Map Created", data.content);
+          handleMapCreated(data);
+          break;
+
+        case "info":
+          console.log("Info message received:", data.content);
+          // Add to messages if it's informative to the user
+          if (data.content && data.content.includes("Map created")) {
+            addMessage("Map created and ready for exploration!", "system");
+          }
+          break;
+
+        case "json":
+          handleJsonMessage(data);
+          break;
+
+        case "audio_start":
+        case "audio_end":
+        case "audio_data":
+          // These are handled by the Chat component
+          break;
+
+        default:
+          console.log(`Received unhandled message type: ${data.type}`);
+          break;
+      }
+    } catch (err) {
+      console.error("Error processing server message:", err);
+    } finally {
+      setIsThinking(false);
+    }
+  };
+
+  // Helper function to handle map creation messages
+  const handleMapCreated = (data: any) => {
+    console.log('Map created in App:', data);
+    
+    if (data.map_data) {
+      if (data.map_data.error) {
+        console.error('Map data contains error:', data.map_data.error);
+        // Simply retry the map generation with the correct text format
+        if (!isMapCreated) {
+          console.log('Retrying map generation with theme message');
+          setIsMapCreated(true); // Set this first to prevent multiple retries
+          
+          // Short delay before retry
+          setTimeout(() => {
+            requestMapGeneration('abandoned prisioner');
+          }, 500);
         }
-        setIsWaitingForResponse(false);
-        break;
+      } else {
+        console.log('Valid map data received, updating state');
+        setMapData(data.map_data);
+        setIsMapReady(true);
+        setIsMapCreated(true);
+        addMessage("Map created successfully! Wanna know more about this world?", "character");
+      }
+    } else {
+      console.error('Received map_created event but data is missing map_data property');
+      if (!isMapCreated) {
+        setIsMapCreated(true);
+        setTimeout(() => {
+          requestMapGeneration('abandoned prisioner');
+        }, 500);
+      }
+    }
+  };
 
-      case "command":
-        executeCommand(data.name, data.result, data.params);
-        setIsWaitingForResponse(false);
-        break;
-
-      case "error":
-        console.error("Server error:", data.content);
-        addMessage(`Error: ${data.content}`, "character", true);
-        setIsWaitingForResponse(false);
-        break;
-
-      case "transcription":
-        // Add the transcribed text to the chat as a user message
-        addMessage(data.content, "user");
-        setIsWaitingForResponse(false);
-        break;
-
-      case "user_message":
-        // Handle the new user_message type (for voice input)
-        addMessage(data.content, "user");
-        setIsWaitingForResponse(false);
-        break;
-
-      default:
-        // Ignore other message types like audio metadata
-        setIsWaitingForResponse(false);
-        break;
+  // Helper function to handle JSON messages
+  const handleJsonMessage = (data: any) => {
+    try {
+      const jsonContent = typeof data.content === 'string' ? JSON.parse(data.content) : data.content;
+      addMessage(JSON.stringify(jsonContent), "agent");
+    } catch (err) {
+      console.error("Error parsing JSON message:", err);
+      addMessage(data.content, "agent");
     }
   };
 
@@ -196,7 +258,7 @@ function App() {
     setMessages((prev) => [...prev, { content, sender, isError, options }]);
   };
 
-  // Send a text message to the server
+  // Update sendTextMessage to use the correct message format
   const sendTextMessage = (message: string) => {
     if (!isConnected || !socket) {
       console.error("Not connected to WebSocket server");
@@ -205,12 +267,19 @@ function App() {
 
     setIsThinking(true);
 
+    // Use the format the backend expects
     const data = {
       type: "text",
-      content: message,
+      content: message
     };
 
-    socket.send(JSON.stringify(data));
+    try {
+      socket.send(JSON.stringify(data));
+    } catch (err) {
+      console.error("Error sending message:", err);
+      setIsThinking(false);
+      addMessage("Failed to send message. Please try again.", "system", true);
+    }
   };
 
   // Execute a command from the character
@@ -240,10 +309,99 @@ function App() {
     setIsChatVisible(!isChatVisible);
   };
 
-  const themeSelect = (theme: string) => {
-    setThemeIsSelected(!themeIsSelected);
-    sendTextMessage(theme);
+  // Fix the map generation function to use the correct format "generate_world"
+  const requestMapGeneration = (theme: string) => {
+    // First check if socket exists and is connected
+    if (!socket) {
+      console.error('Socket not initialized, cannot generate map');
+      return;
+    }
+
+    if (socket.readyState !== WebSocket.OPEN) {
+      console.error('WebSocket not connected (state:', socket.readyState, ')');
+      
+      // Retry after a short delay if socket exists but not in OPEN state
+      setTimeout(() => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          console.log('Retrying map generation after connection delay');
+          doSendMapRequest(theme);
+        } else {
+          console.error('Still not connected, cannot generate map');
+        }
+      }, 1000);
+      return;
+    }
+
+    doSendMapRequest(theme);
   };
+
+  // Helper function to actually send the map request
+  const doSendMapRequest = (theme: string) => {
+    // Safety check again to make sure socket exists
+    if (!socket) {
+      console.error('Socket became null before sending request');
+      return;
+    }
+    
+    console.log('Sending map generation request for theme:', theme);
+    setIsThinking(true);
+
+    // Use the text format with theme prefix - the format the server actually accepts
+    const message = {
+      type: 'text',
+      content: `${theme}`
+    };
+
+    try {
+      socket.send(JSON.stringify(message));
+      console.log('Map generation request sent successfully');
+    } catch (err) {
+      console.error('Error sending map generation request:', err);
+      setIsThinking(false);
+    }
+  };
+
+  // Update the handleThemeSelection function
+  const handleThemeSelection = (theme: string) => {
+    if (!isConnected || !socket) {
+      console.error("Not connected to WebSocket server");
+      return;
+    }
+
+    setIsThinking(true);
+    requestMapGeneration(theme);
+    setThemeIsSelected(true);
+  };
+
+  // Update the themeSelect function to use handleThemeSelection
+  const themeSelect = (theme) => {
+    setThemeIsSelected(true);
+    handleThemeSelection(theme);
+  };
+
+  // Add a useEffect to listen to WebSocket messages for map creation
+  useEffect(() => {
+    if (socket) {
+      const handleWebSocketMessage = (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'map_created') {
+            console.log('Map created in App:', data);
+            setMapData(data.map_data);
+            setIsMapReady(true);
+          }
+        } catch (err) {
+          console.error('Error processing websocket message in App:', err);
+        }
+      };
+
+      socket.addEventListener('message', handleWebSocketMessage);
+
+      return () => {
+        socket.removeEventListener('message', handleWebSocketMessage);
+      };
+    }
+  }, [socket]);
 
   if (!themeIsSelected) {
     return (
@@ -285,7 +443,7 @@ function App() {
               <h2>Select a Game Theme</h2>
             </div>
             <button
-              onClick={() => themeSelect("Lost Island")}
+              onClick={() => themeSelect("Abandoned Prisioner")}
               style={{
                 backgroundColor: "#3B82F6",
                 color: "white",
@@ -297,10 +455,10 @@ function App() {
                 fontSize: "1.2rem",
               }}
             >
-              Lost Island
+              Abandoned Prisioner
             </button>
             <button
-              onClick={() => themeSelect("Treasure Island")}
+              onClick={() => themeSelect("Crash in the Sea")}
               style={{
                 backgroundColor: "#3B82F6",
                 color: "white",
@@ -312,10 +470,10 @@ function App() {
                 fontSize: "1.2rem",
               }}
             >
-              Treasure Island
+              Crash in the Sea
             </button>
             <button
-              onClick={() => themeSelect("Zombie Apocalypse")}
+              onClick={() => themeSelect("Lost Memory")}
               style={{
                 backgroundColor: "#3B82F6",
                 color: "white",
@@ -327,7 +485,7 @@ function App() {
                 fontSize: "1.2rem",
               }}
             >
-              Zombie Apocalypse
+              Lost Memory
             </button>
           </div>
         </div>
@@ -341,6 +499,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen">
+<<<<<<< HEAD
       <div className="flex-1 relative">
         <GameContainer
           gameData={gameData}
@@ -356,6 +515,34 @@ function App() {
         isConnected={isConnected}
         websocket={socket}
       />
+=======
+      {!themeIsSelected ? (
+        // Theme selection screen (unchanged)
+        <div style={{ /* unchanged */ }}>
+          {/* ... unchanged ... */}
+        </div>
+      ) : (
+        // Game screen with map data
+        <div className="flex-1 relative">
+          <GameContainer
+            executeCommand={executeCommand}
+            registerCommandHandler={registerGameCommandHandler}
+            mapData={mapData}
+            isMapReady={isMapReady}
+            characterRef={characterRef}
+            websocket={socket}
+          />
+          
+          <Chat
+            messages={messages}
+            sendTextMessage={sendTextMessage}
+            isThinking={isThinking}
+            isConnected={isConnected}
+            websocket={socket}
+          />
+        </div>
+      )}
+>>>>>>> 94c4577 (map generation with real objects)
     </div>
   );
 }

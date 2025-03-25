@@ -25,7 +25,7 @@ interface GameProps {
   lightDistance: number;
   lightDecay: number;
   ambientLightIntensity?: number;
-  gameData: GameData;
+  gameData?: any; // Optional game data from backend
 }
 
 const Game = ({
@@ -36,7 +36,7 @@ const Game = ({
   lightDistance,
   lightDecay,
   ambientLightIntensity = 0,
-  gameData,
+  gameData = null, // Default to null if not provided
 }: GameProps) => {
   const { camera } = useThree();
   const position = useGameStore((state) => state.position);
@@ -49,7 +49,25 @@ const Game = ({
   const [isPulling, setIsPulling] = useState(false);
   const [isJumping, setIsJumping] = useState(false);
 
-  const [entities, setEntities] = useState<GameEntity[]>(gameData.entities);
+  // Use provided gameData if available, otherwise use the default from JSON
+  const [gameDataState, setGameDataState] = useState<GameData>(gameData as GameData);
+  
+  // Initialize entities from gameDataState with fallback to empty array
+  const [entities, setEntities] = useState<GameEntity[]>(
+    gameDataState?.entities || []
+  );
+  
+  // Update gameData when it changes
+  useEffect(() => {
+    if (gameData) {
+      setGameDataState(gameData);
+      // Only update entities if they exist in gameData
+      if (gameData.entities) {
+        setEntities(gameData.entities);
+      }
+    }
+  }, [gameData]);
+  
   // Speed constants
   const walkSpeed = 0.05; // unused now
   const runSpeed = 0.1; // unused now
@@ -283,11 +301,33 @@ const Game = ({
       },
     };
 
-    const handleCommand = (command: string, result: string, params: any) => {
-      if (commandMap[command]) {
-        commandMap[command](params);
-      } else {
-        console.warn("Unknown command received:", command);
+    const handleCommand = (cmd: string, result: string, params: any) => {
+      console.log(`Handling command: ${cmd}`, params);
+      
+      switch (cmd) {
+        case "update_map":
+          // Update the map data with the new data from the server
+          if (params && typeof params === 'object') {
+            setGameDataState(params);
+          }
+          break;
+        
+        case "generate_world":
+          console.log("Handling generate_world command");
+          // This command is sent to request map generation
+          // We'll just acknowledge it here since actual generation happens on the server
+          break;
+        
+        case "move":
+          // Handle character movement
+          if (params.direction && characterRef.current) {
+            const direction = params.direction;
+            characterRef.current.move(direction);
+          }
+          break;
+        
+        default:
+          console.log(`Unknown command received: ${cmd}`);
       }
     };
 
@@ -353,11 +393,14 @@ const Game = ({
         makeDefault
       />
 
-      <GameEntities
-        entities={entities}
-        onEntityStateChange={handleEntityStateChange}
-        onEntityClick={handleEntityClick}
-      />
+      {/* Only render entities if they exist */}
+      {entities.length > 0 && (
+        <GameEntities
+          entities={entities}
+          onEntityStateChange={handleEntityStateChange}
+          onEntityClick={handleEntityClick}
+        />
+      )}
 
       <CharacterBody
         ref={characterRef}
@@ -387,7 +430,10 @@ const Game = ({
         zOffset={0.3}
       />
 
-      <MapDisplay mapGridData={gameData.map.grid} />
+      {/* Only render map if grid data exists */}
+      {gameDataState?.map?.grid && (
+        <MapDisplay mapGridData={gameDataState.map.grid} />
+      )}
     </>
   );
 };
