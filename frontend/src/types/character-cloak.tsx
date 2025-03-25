@@ -1,5 +1,5 @@
 // Import animation types from CharacterBody
-import { CharacterAnimationType } from "./animations";
+import {CharacterAnimationType} from "./animations";
 
 // Import all cloak sprites
 // Long cloaks (lnpl)

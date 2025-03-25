@@ -1,6 +1,6 @@
-import React, { useState } from "react";
-import { useGameStore } from "../store/gameStore";
-import { Position } from "../types/game";
+import React, {useState} from "react";
+import {useGameStore} from "../store/gameStore";
+import {Position} from "../types/game";
 import LightControls from "./LightControls";
 
 interface GameUIProps {

@@ -1,7 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import React, {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
-
-import React from "react";
 import forestSpritesheet from "../assets/spritesheets/forest/gentle forest (48x48 resize) v08.png";
 
 interface ForestTileProps {

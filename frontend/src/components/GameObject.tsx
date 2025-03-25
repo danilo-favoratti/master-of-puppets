@@ -1,6 +1,6 @@
 import React from "react";
-import { GameObjectConfig, GameObject as GameObjectType } from "../types/game";
-import { AnimatedSprite } from "./AnimatedSprite";
+import {GameObject as GameObjectType, GameObjectConfig} from "../types/game";
+import {AnimatedSprite} from "./AnimatedSprite";
 
 interface GameObjectProps {
   config: GameObjectConfig;

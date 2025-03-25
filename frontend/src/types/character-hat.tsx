@@ -1,5 +1,5 @@
 // Import animation types from CharacterBody
-import { CharacterAnimationType } from "../../types/animations";
+import {CharacterAnimationType} from "../../types/animations";
 
 // Import all hat sprites
 // Headband (band)

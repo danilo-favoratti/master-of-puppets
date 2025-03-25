@@ -1,15 +1,12 @@
 // NpcEntity.tsx
 
-import { Text } from "@react-three/drei";
-import { ThreeEvent, useFrame } from "@react-three/fiber";
-import React, { useEffect, useRef, useState } from "react";
-import { useGameStore } from "../../store/gameStore";
-import { CharacterAnimationType } from "../../types/animations";
-import {
-  CharacterBodyConfType,
-  getRandomCharacterBody,
-} from "../../types/characters-body";
-import { Entity, Position } from "../../types/game";
+import {Text} from "@react-three/drei";
+import {ThreeEvent, useFrame} from "@react-three/fiber";
+import React, {useEffect, useRef, useState} from "react";
+import {useGameStore} from "../../store/gameStore";
+import {CharacterAnimationType} from "../../types/animations";
+import {CharacterBodyConfType, getRandomCharacterBody,} from "../../types/characters-body";
+import {Entity, Position} from "../../types/game";
 import CharacterBody from "../character/CharacterBody";
 
 interface NpcEntityProps {

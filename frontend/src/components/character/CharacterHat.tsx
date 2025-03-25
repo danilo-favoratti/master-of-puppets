@@ -1,13 +1,8 @@
-import { useFrame } from "@react-three/fiber";
-import React, { useEffect, useRef, useState } from "react";
+import {useFrame} from "@react-three/fiber";
+import React, {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
-import { ANIMATIONS, CharacterAnimationType } from "../../types/animations";
-import {
-  CharacterHatProps,
-  getRandomHat,
-  HATS,
-  HatStyle,
-} from "../../types/character-hat";
+import {ANIMATIONS, CharacterAnimationType} from "../../types/animations";
+import {CharacterHatProps, getRandomHat, HATS, HatStyle,} from "../../types/character-hat";
 
 const CharacterHat = ({
   position = [0, 0, 0],

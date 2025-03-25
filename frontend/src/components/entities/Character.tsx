@@ -1,8 +1,8 @@
-import { ThreeEvent, useFrame } from "@react-three/fiber";
-import React, { useEffect, useRef, useState } from "react";
-import { Entity } from "../../types/entity";
-import { Position } from "../../types/game";
-import { AnimatedSprite } from "../AnimatedSprite";
+import {ThreeEvent, useFrame} from "@react-three/fiber";
+import React, {useEffect, useRef, useState} from "react";
+import {Entity} from "../../types/entity";
+import {Position} from "../../types/game";
+import {AnimatedSprite} from "../AnimatedSprite";
 
 interface CharacterProps {
   position: Position;

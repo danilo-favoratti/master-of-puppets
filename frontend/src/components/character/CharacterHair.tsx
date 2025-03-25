@@ -1,13 +1,8 @@
-import { useFrame } from "@react-three/fiber";
-import React, { useEffect, useRef, useState } from "react";
+import {useFrame} from "@react-three/fiber";
+import React, {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
-import { ANIMATIONS, CharacterAnimationType } from "../../types/animations";
-import {
-  CharacterHairProps,
-  HAIRSTYLES,
-  HairStyle,
-  getRandomHairstyle,
-} from "../../types/character-hair";
+import {ANIMATIONS, CharacterAnimationType} from "../../types/animations";
+import {CharacterHairProps, getRandomHairstyle, HairStyle, HAIRSTYLES,} from "../../types/character-hair";
 
 const CharacterHair = ({
   position = [0, 0, 0],

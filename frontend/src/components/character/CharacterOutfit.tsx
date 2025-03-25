@@ -1,13 +1,8 @@
-import { useFrame } from "@react-three/fiber";
-import React, { useEffect, useRef, useState } from "react";
+import {useFrame} from "@react-three/fiber";
+import React, {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
-import { ANIMATIONS, CharacterAnimationType } from "../../types/animations";
-import {
-  CharacterOutfitProps,
-  getRandomOutfit,
-  OUTFITS,
-  OutfitStyle,
-} from "../../types/character-outfit";
+import {ANIMATIONS, CharacterAnimationType} from "../../types/animations";
+import {CharacterOutfitProps, getRandomOutfit, OUTFITS, OutfitStyle,} from "../../types/character-outfit";
 
 const CharacterOutfit = ({
   position = [0, 0, 0],

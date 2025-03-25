@@ -1,6 +1,6 @@
 import React from "react";
 import * as THREE from "three";
-import { Position } from "../types/game";
+import {Position} from "../types/game";
 
 interface EntityProps {
   id: string;

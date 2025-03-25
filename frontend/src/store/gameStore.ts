@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { CharacterAnimationType } from "../types/animations";
-import { GameData } from '../types/game';
+import {create} from 'zustand';
+import {CharacterAnimationType} from "../types/animations";
+import {GameData} from '../types/game';
 
 export enum GameState {
   MENU,

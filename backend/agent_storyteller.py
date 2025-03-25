@@ -626,8 +626,22 @@ This detailed markdown explanation provides a complete reference to all objects,
                     response = self.deepgram_client.listen.prerecorded.v("1").transcribe_file(payload, options)
                     logger.debug("Used listen.prerecorded.v(1).transcribe_file successfully.")
                 except Exception as e2:
-                    response = "Error: " + str(e2) + " " + str(e)
                     logger.error(f"Error using prerecorded.transcribe_file: {e2}", exc_info=True)
+                    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as temp_file:
+                        temp_file.write(audio_data)
+                        temp_file_path = temp_file.name
+                    logger.debug(f"Temporary file created at {temp_file_path}")
+                    try:
+                        with open(temp_file_path, 'rb') as audio_file:
+                            file_payload = {"file": audio_file}
+                            response = self.deepgram_client.listen.rest.v("1").transcribe_file(file_payload, options)
+                        logger.debug("Successfully used temporary file method for transcription.")
+                    except Exception as e3:
+                        logger.error(f"All transcription methods failed: {e3}", exc_info=True)
+                        raise Exception(f"Could not transcribe audio: {e}, {e2}, {e3}")
+                    finally:
+                        os.unlink(temp_file_path)
+                        logger.debug(f"Temporary file {temp_file_path} removed.")
 
             if not response.results:
                 logger.warning("No transcription results from Deepgram")
@@ -720,7 +734,7 @@ This detailed markdown explanation provides a complete reference to all objects,
                     await on_response(response_data["content"])
                     response_text = response_data["result"]  # For TTS
                 else:
-                    response_text = response_data["result"]
+                response_text = response_data["result"]
                     await on_response(response_text)
                 
                 command_info = {
@@ -731,21 +745,21 @@ This detailed markdown explanation provides a complete reference to all objects,
 
             # Only generate speech if we have text
             if response_text and response_text.strip():
-                logger.debug(f"Generating speech for response: '{response_text}'")
-                speech_response = self.openai_client.audio.speech.create(
-                    model="tts-1",
-                        voice=self.voice,
-                    input=response_text
-                )
+            logger.debug(f"Generating speech for response: '{response_text}'")
+            speech_response = self.openai_client.audio.speech.create(
+                model="tts-1",
+                    voice=self.voice,
+                input=response_text
+            )
 
-                collected_audio = bytearray()
-                for chunk in speech_response.iter_bytes():
-                    collected_audio.extend(chunk)
-                    await on_audio(chunk)
-                    logger.debug("Sent an audio chunk to on_audio callback.")
+            collected_audio = bytearray()
+            for chunk in speech_response.iter_bytes():
+                collected_audio.extend(chunk)
+                await on_audio(chunk)
+                logger.debug("Sent an audio chunk to on_audio callback.")
 
-                logger.debug("Sending __AUDIO_END__ marker")
-                await on_audio(b"__AUDIO_END__")
+            logger.debug("Sending __AUDIO_END__ marker")
+            await on_audio(b"__AUDIO_END__")
             else:
                 logger.warning("No response text to convert to speech")
                 
@@ -775,9 +789,23 @@ This detailed markdown explanation provides a complete reference to all objects,
         logger.debug("Processing user input through Storyteller agent.")
         agent = self.agent_data["agent"]
 
-        if "theme" in user_input.lower() and not self.game_context.theme:
+        # Check if this is a theme message
+        is_theme_message = "theme" in user_input.lower() and not self.game_context.theme
+        
+        if is_theme_message:
             self.game_context.theme = user_input
             logger.debug(f"Theme set in game context: {self.game_context.theme}")
+            
+            # Send thinking indicator immediately before processing
+            thinking_json = {
+                "answers": [
+                    {"type": "text", "description": "Hmm, let me think about that theme...", "options": [], "isThinking": True},
+                    {"type": "text", "description": "Creating a magical world for you...", "options": [], "isThinking": True}
+                ]
+            }
+            thinking_response = {"type": "json", "content": json.dumps(thinking_json)}
+            # Return the thinking response immediately, but also continue processing
+            return thinking_response, conversation_history
 
         try:
             result = await Runner.run(

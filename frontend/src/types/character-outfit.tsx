@@ -36,7 +36,7 @@ import pfdrV04 from "/src/assets/spritesheets/1out/char_a_p1_1out_pfdr_v04.png";
 import pfdrV05 from "/src/assets/spritesheets/1out/char_a_p1_1out_pfdr_v05.png";
 
 // Import animation types from CharacterBody
-import { CharacterAnimationType } from "../../types/animations";
+import {CharacterAnimationType} from "../../types/animations";
 
 // Define outfit types
 export enum OutfitStyle {

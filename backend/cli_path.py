@@ -1,7 +1,7 @@
 import asyncio
-import os
 import re
-from typing import List, Optional, Tuple, Dict, Any
+from typing import Dict, Any
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -11,9 +11,9 @@ from colorama import init, Fore, Style
 from board import Board  # Import the model's Board class
 from game_object import Container, GameObject
 from person import Person
-from agent_path_researcher import PathFinder, PathNode, PathContext, find_path
+from agent_path_researcher import find_path
 from agent_puppet_master import create_puppet_master, GameState
-from agents import Agent, Runner, function_tool, RunContextWrapper, trace
+from agents import Runner, trace
 
 # Initialize colorama for cross-platform colored terminal output
 init()

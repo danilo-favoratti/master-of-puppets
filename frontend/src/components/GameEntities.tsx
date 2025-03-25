@@ -1,15 +1,15 @@
-import { ThreeEvent } from "@react-three/fiber";
+import {ThreeEvent} from "@react-three/fiber";
 import React from "react";
-import { GameEntity } from "../types/entities";
+import {GameEntity} from "../types/entities";
 import BedrollSprite from "./entities/BedrollSprite";
-import { CampfirePotSprite } from "./entities/CampfirePotSprite";
+import {CampfirePotSprite} from "./entities/CampfirePotSprite";
 import CampfireSpitSprite from "./entities/CampfireSpitSprite";
-import { CampFireSprite } from "./entities/CampFireSprite";
-import { ChestSprite } from "./entities/ChestSprite";
-import { NpcEntity } from "./entities/NpcEntity";
-import { PigSprite } from "./entities/PigSprite";
-import { PotSprite } from "./entities/PotSprite";
-import { StatueSprite } from "./entities/StatueSprite";
+import {CampFireSprite} from "./entities/CampFireSprite";
+import {ChestSprite} from "./entities/ChestSprite";
+import {NpcEntity} from "./entities/NpcEntity";
+import {PigSprite} from "./entities/PigSprite";
+import {PotSprite} from "./entities/PotSprite";
+import {StatueSprite} from "./entities/StatueSprite";
 import TravelersCampSprite from "./entities/TravelersCampSprite";
 
 interface GameEntitiesProps {

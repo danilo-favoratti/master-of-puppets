@@ -1,4 +1,4 @@
-import { GameObjectConfig } from '../types/game';
+import {GameObjectConfig} from '../types/game';
 
 export const gameObjectConfigs: Record<string, GameObjectConfig> = {
   pig: {

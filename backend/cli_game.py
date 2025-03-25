@@ -3,12 +3,11 @@ import os
 
 from agents import Runner, trace
 from colorama import init, Fore, Style
-from board import Board  # Import the model's Board class
-from entity import Position
-from game_object import Container, GameObject
-from person import Person
 
 from agent_puppet_master import GameState, create_puppet_master
+from board import Board  # Import the model's Board class
+from game_object import Container, GameObject
+from person import Person
 
 # Initialize colorama for cross-platform colored terminal output
 init()

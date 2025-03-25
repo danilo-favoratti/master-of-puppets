@@ -1,13 +1,8 @@
-import { useFrame } from "@react-three/fiber";
-import React, { useEffect, useRef, useState } from "react";
+import {useFrame} from "@react-three/fiber";
+import React, {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
-import { ANIMATIONS, CharacterAnimationType } from "../../types/animations";
-import {
-  CharacterFaceProps,
-  FACES,
-  FaceStyle,
-  getRandomFace,
-} from "../../types/character-face";
+import {ANIMATIONS, CharacterAnimationType} from "../../types/animations";
+import {CharacterFaceProps, FACES, FaceStyle, getRandomFace,} from "../../types/character-face";
 
 const CharacterFace = ({
   position = [0, 0, 0],

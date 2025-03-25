@@ -1,4 +1,4 @@
-import { Position } from "./game";
+import {Position} from "./game";
 
 // Base interface for all entities
 export interface BaseEntity {

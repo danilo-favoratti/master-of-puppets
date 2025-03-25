@@ -1,13 +1,8 @@
-import { useFrame } from "@react-three/fiber";
-import React, { useEffect, useRef, useState } from "react";
+import {useFrame} from "@react-three/fiber";
+import React, {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
-import { ANIMATIONS, CharacterAnimationType } from "../../types/animations";
-import {
-  CharacterCloakProps,
-  CLOAKS,
-  CloakStyle,
-  getRandomCloak,
-} from "../../types/character-cloak";
+import {ANIMATIONS, CharacterAnimationType} from "../../types/animations";
+import {CharacterCloakProps, CLOAKS, CloakStyle, getRandomCloak,} from "../../types/character-cloak";
 
 const CharacterCloak = ({
   position = [0, 0, 0],

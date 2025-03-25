@@ -1,6 +1,6 @@
 import asyncio
-import os
 import re
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -9,13 +9,12 @@ load_dotenv()
 from colorama import init, Fore, Style
 from board import Board  # Import the model's Board class
 from game_object import Container, GameObject
-from person import Person
-from agent_path_researcher import PathFinder, PathNode, PathContext
-from agents import Agent, Runner, function_tool, RunContextWrapper, trace
+from agent_path_researcher import PathFinder, PathNode
 
 # A* Pathfinding implementation
 import heapq
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Tuple
+
 
 class PathNode:
     """Node used in the A* path-finding algorithm."""

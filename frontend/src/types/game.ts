@@ -1,4 +1,4 @@
-import { GameEntity } from "./entities";
+import {GameEntity} from "./entities";
 
 export interface Position {
   x: number;

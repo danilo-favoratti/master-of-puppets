@@ -1,5 +1,5 @@
-import { CharacterAnimationType } from "./animations";
-import { Position } from "./game";
+import {CharacterAnimationType} from "./animations";
+import {Position} from "./game";
 
 // Import the sprite sheets
 import char_demn_v01 from "/src/assets/spritesheets/characters/char_a_p1_0bas_demn_v01.png";
@@ -16,6 +16,7 @@ import char_humn_v07 from "/src/assets/spritesheets/characters/char_a_p1_0bas_hu
 import char_humn_v08 from "/src/assets/spritesheets/characters/char_a_p1_0bas_humn_v08.png";
 import char_humn_v09 from "/src/assets/spritesheets/characters/char_a_p1_0bas_humn_v09.png";
 import char_humn_v10 from "/src/assets/spritesheets/characters/char_a_p1_0bas_humn_v10.png";
+
 // Define character types
 export enum CharacterBodyType {
   HUMAN = "human",

@@ -10,6 +10,7 @@ from agents import (
     trace
 )
 
+
 class PathNode:
     """Node used in the A* path-finding algorithm."""
     def __init__(self, position, parent=None):

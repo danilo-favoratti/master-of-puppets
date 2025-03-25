@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { Entity } from "../../types/entity";
-import { Position } from "../../types/game";
-import { AnimatedSprite } from "../AnimatedSprite";
+import React, {useEffect, useState} from "react";
+import {Entity} from "../../types/entity";
+import {Position} from "../../types/game";
+import {AnimatedSprite} from "../AnimatedSprite";
 
 interface TravelersCampSpriteProps {
   position: Position;

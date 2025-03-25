@@ -1,8 +1,8 @@
-import { Text } from "@react-three/drei";
-import { ThreeEvent } from "@react-three/fiber";
-import React, { useEffect, useRef, useState } from "react";
+import {Text} from "@react-three/drei";
+import {ThreeEvent} from "@react-three/fiber";
+import React, {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
-import { Position } from "../types/game";
+import {Position} from "../types/game";
 
 interface AnimatedSpriteProps {
   id: string;

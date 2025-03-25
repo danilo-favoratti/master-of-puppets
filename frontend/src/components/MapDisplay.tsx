@@ -1,8 +1,8 @@
 import alea from "alea";
-import React, { useMemo } from "react";
-import { createNoise2D } from "simplex-noise";
-import { Vector3 } from "three";
-import { useGameStore } from "../store/gameStore";
+import React, {useMemo} from "react";
+import {createNoise2D} from "simplex-noise";
+import {Vector3} from "three";
+import {useGameStore} from "../store/gameStore";
 import ForestTile from "./ForestTile";
 
 const MapDisplay: React.FC<{ mapGridData: number[][] }> = ({ mapGridData }) => {

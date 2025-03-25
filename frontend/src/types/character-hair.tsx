@@ -1,5 +1,5 @@
 // Import animation types from CharacterBody
-import { CharacterAnimationType } from "./animations";
+import {CharacterAnimationType} from "./animations";
 // Import all hair sprites
 // Main hairstyle variants
 import bob2 from "/src/assets/spritesheets/4har/char_a_p1_4har_bob2_v00.png";

@@ -1,21 +1,15 @@
-import { useFrame } from "@react-three/fiber";
-import React, {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-  useState,
-} from "react";
+import {useFrame} from "@react-three/fiber";
+import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState,} from "react";
 import * as THREE from "three";
-import { ANIMATIONS, CharacterAnimationType } from "../../types/animations";
+import {ANIMATIONS, CharacterAnimationType} from "../../types/animations";
 import {
-  CHARACTERS_BODY,
-  CharacterBodyProps,
-  CharacterBodyType,
-  MovementState,
-  getRandomCharacterBody,
+    CharacterBodyProps,
+    CharacterBodyType,
+    CHARACTERS_BODY,
+    getRandomCharacterBody,
+    MovementState,
 } from "../../types/characters-body";
-import { Position } from "../../types/game";
+import {Position} from "../../types/game";
 import CharacterCloak from "./CharacterCloak";
 import CharacterHair from "./CharacterHair";
 import CharacterHat from "./CharacterHat";

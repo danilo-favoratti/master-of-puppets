@@ -1024,15 +1024,25 @@ const Chat = ({
               answer && answer.description && answer.description.trim().length > 0
             );
             
+            // Check if any answers have the isThinking flag
+            const hasThinkingMessages = validAnswers.some(answer => answer.isThinking === true);
+            
             return (
               <React.Fragment key={index}>
                 {validAnswers.map((answer: any, answerIndex: number) => (
                   <div key={`${index}-${answerIndex}`}>
-                    <div className={`message ${msg.sender}-message ${answer.isError ? 'error' : ''}`}>
+                    <div className={`message ${msg.sender}-message ${answer.isError ? 'error' : ''} ${answer.isThinking ? 'thinking-message' : ''}`}>
                       {answer.description}
+                      {answer.isThinking && (
+                        <div className="thinking-indicator-inline">
+                          <div className="dot"></div>
+                          <div className="dot"></div>
+                          <div className="dot"></div>
+                        </div>
+                      )}
                     </div>
-                    {/* Only show options on the last answer */}
-                    {answerIndex === validAnswers.length - 1 && answer.options && answer.options.length > 0 && (
+                    {/* Only show options on the last answer and not for thinking messages */}
+                    {answerIndex === validAnswers.length - 1 && !hasThinkingMessages && answer.options && answer.options.length > 0 && (
                       <div className="options-container">
                         {answer.options.map((option: string, optIndex: number) => (
                           <button

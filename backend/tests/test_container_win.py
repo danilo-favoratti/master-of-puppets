@@ -13,10 +13,8 @@ if parent_dir not in sys.path:
 
 # Import from the model package
 from game import Game
-from entity import Position
-from board import Board
-from game_object import GameObject, Container
-from person import Person
+from game_object import Container
+
 
 def test_basic_container_operations():
     """Test basic container operations"""
