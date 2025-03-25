@@ -1,10 +1,13 @@
 import { ThreeEvent } from "@react-three/fiber";
 import React from "react";
 import { GameEntity } from "../types/entities";
+import BedrollSprite from "./entities/BedrollSprite";
+import CampfireSpitSprite from "./entities/CampfireSpitSprite";
 import { CampFireSprite } from "./entities/CampFireSprite";
 import { ChestSprite } from "./entities/ChestSprite";
 import { PigSprite } from "./entities/PigSprite";
 import { PotSprite } from "./entities/PotSprite";
+import TravelersCampSprite from "./entities/TravelersCampSprite";
 
 interface GameEntitiesProps {
   entities: GameEntity[];
@@ -43,6 +46,8 @@ export const GameEntities: React.FC<GameEntitiesProps> = ({
           );
         }
       };
+
+    console.log("entity.type", entity.type);
 
     switch (entity.type) {
       case "pot":
@@ -119,6 +124,79 @@ export const GameEntities: React.FC<GameEntitiesProps> = ({
               is_movable: false,
               is_jumpable: false,
               is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "tent":
+        return (
+          <TravelersCampSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            variant={entity.variant}
+            entity={{
+              is_movable: true,
+              is_jumpable: false,
+              is_usable_alone: true,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "bedroll":
+        return (
+          <BedrollSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            entity={{
+              is_movable: true,
+              is_jumpable: false,
+              is_usable_alone: true,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "campfire_spit":
+        return (
+          <CampfireSpitSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            entity={{
+              is_movable: true,
+              is_jumpable: false,
+              is_usable_alone: true,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "campfire_pot":
+        return (
+          <CampfireSpitSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            entity={{
+              is_movable: true,
+              is_jumpable: false,
+              is_usable_alone: true,
               is_collectable: false,
               is_wearable: false,
               weight: 1,

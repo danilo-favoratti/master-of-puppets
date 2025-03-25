@@ -213,6 +213,7 @@ body {
 .user-message {
   align-self: flex-end;
   background-color: #4a90e2;
+  justify-self: right;
 }
 
 .character-message {

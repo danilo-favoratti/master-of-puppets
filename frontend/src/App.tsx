@@ -234,6 +234,7 @@ function App() {
 
   const themeSelect = (theme: string) => {
     setThemeIsSelected(!themeIsSelected);
+    sendTextMessage(theme);
   };
 
   if (!themeIsSelected) {
@@ -334,34 +335,14 @@ function App() {
           registerCommandHandler={registerGameCommandHandler}
         />
       </div>
-      <button
-        onClick={toggleChat}
-        style={{
-          position: "absolute",
-          bottom: "1.25rem",
-          left: "1.25rem",
-          backgroundColor: "#3b82f6",
-          color: "white",
-          fontWeight: "bold",
-          padding: "0.5rem 1rem",
-          borderRadius: "0.25rem",
-          zIndex: 10,
-          cursor: "pointer",
-        }}
-        onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#1d4ed8")}
-        onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#3b82f6")}
-      >
-        {isChatVisible ? "Hide Chat" : "Show Chat"}
-      </button>
-      {isChatVisible && (
-        <Chat
-          messages={messages}
-          sendTextMessage={sendTextMessage}
-          isThinking={isThinking}
-          isConnected={isConnected}
-          websocket={socket}
-        />
-      )}
+
+      <Chat
+        messages={messages}
+        sendTextMessage={sendTextMessage}
+        isThinking={isThinking}
+        isConnected={isConnected}
+        websocket={socket}
+      />
     </div>
   );
 }

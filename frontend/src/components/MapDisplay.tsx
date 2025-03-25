@@ -19,7 +19,11 @@ const MapDisplay: React.FC<{ mapGridData: number[][] }> = ({ mapGridData }) => {
         const noiseValue = noise2D(x * scale, y * scale);
 
         if (mapGridData[x][y] === 1) {
-          return { tileX: 2, tileY: 6 }; // grass
+          const randomGrass = Math.floor(Math.random() * 4);
+          if (randomGrass === 0) return { tileX: 1, tileY: 6 };
+          if (randomGrass === 1) return { tileX: 1, tileY: 5 };
+          if (randomGrass === 2) return { tileX: 2, tileY: 6 };
+          if (randomGrass === 3) return { tileX: 2, tileY: 5 };
         } else {
           return { tileX: 1, tileY: 9 }; // soil
         }

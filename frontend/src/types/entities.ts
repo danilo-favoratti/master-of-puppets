@@ -36,8 +36,32 @@ export interface ChestEntity extends BaseEntity {
   state: "idle" | "breaking" | "broken";
 }
 
+// Tent entity interface
+export interface TentEntity extends BaseEntity {
+  type: "tent";
+  state: "idle";
+}
+
+// Bedroll entity interface
+export interface BedrollEntity extends BaseEntity {
+  type: "bedroll";
+  state: "idle";
+}
+
+// Campfire spit entity interface
+export interface CampfireSpitEntity extends BaseEntity {
+  type: "campfire_spit";
+  state: "idle";
+}
+
+// Campfire pot entity interface
+export interface CampfirePotEntity extends BaseEntity {
+  type: "campfire_pot";
+  state: "empty" | "cooking" | "idle";
+}
+
 // Union type for all entities
-export type GameEntity = PotEntity | CampFireEntity | PigEntity | ChestEntity;
+export type GameEntity = PotEntity | CampFireEntity | PigEntity | ChestEntity | TentEntity | BedrollEntity | CampfireSpitEntity | CampfirePotEntity;
 
 // Array type for all entities
 export type GameEntities = GameEntity[]; 

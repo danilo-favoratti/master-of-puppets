@@ -87,6 +87,18 @@ interface AnimatedSpriteProps {
       frames: Array<{ x: number; y: number }>;
       frameDuration: number;
     };
+    empty?: {
+      frame: { x: number; y: number };
+      frameDuration: number;
+    };
+    cooking?: {
+      frames: Array<{ x: number; y: number }>;
+      frameDuration: number;
+    };
+    cooked?: {
+      frames: Array<{ x: number; y: number }>;
+      frameDuration: number;
+    };
   };
   isActive?: boolean;
   size?: number;
@@ -109,7 +121,10 @@ interface AnimatedSpriteProps {
     | "breaking"
     | "idle"
     | "open"
-    | "closed";
+    | "closed"
+    | "empty"
+    | "cooking"
+    | "cooked";
   onClick?: (event: ThreeEvent<MouseEvent>) => void;
   onAnimationComplete?: (currentState: string) => void;
   showText?: boolean;
@@ -147,7 +162,11 @@ export const AnimatedSprite: React.FC<AnimatedSpriteProps> = ({
     broken: { frame: { x: 0, y: 0 }, frameDuration: 200 },
     breaking: { frame: { x: 0, y: 0 }, frameDuration: 200 },
     idle: { frame: { x: 0, y: 0 }, frameDuration: 200 },
+    empty: { frame: { x: 0, y: 0 }, frameDuration: 200 },
+    cooking: { frame: { x: 0, y: 0 }, frameDuration: 200 },
+    cooked: { frame: { x: 0, y: 0 }, frameDuration: 200 },
   },
+
   isActive = false,
   size = 1,
   state = "idle",

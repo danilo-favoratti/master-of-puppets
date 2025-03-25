@@ -42,6 +42,8 @@ const CharacterSprite = forwardRef<
     },
     ref
   ) => {
+    const currentFrameRef = useRef(0);
+    const frameTimeAccumulatorRef = useRef(0);
     const meshRef = useRef<THREE.Mesh>(null);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const [currentFrame, setCurrentFrame] = useState(0);
@@ -117,7 +119,6 @@ const CharacterSprite = forwardRef<
     // Expor moveAlongPath através da ref
     useImperativeHandle(ref, () => ({
       moveAlongPath: (path: Point[]) => {
-        console.log("Iniciando movimento com path:", path); // Debug
         setMovementState({
           path,
           currentPathIndex: 0,
@@ -135,6 +136,10 @@ const CharacterSprite = forwardRef<
 
       if (currentPathIndex >= movementState.path.length) {
         setMovementState((prev) => ({ ...prev, isMoving: false }));
+        setAnimation?.(AnimationType.IDLE_DOWN);
+        setCurrentFrame(0);
+        setFrameTimeAccumulator(0);
+        console.log("currentPos", currentPos);
         if (setPosition) {
           setPosition([currentPos.x, currentPos.y, currentPos.z]);
         }
@@ -229,48 +234,44 @@ const CharacterSprite = forwardRef<
       }
 
       // Update frame using delta time
-      let newFrameTimeAccumulator = frameTimeAccumulator + delta * 1000;
+      frameTimeAccumulatorRef.current += delta * 1000;
 
       // Check if we need to advance to the next frame
-      if (newFrameTimeAccumulator >= frameTiming[currentFrame]) {
-        // Reset accumulator
-        newFrameTimeAccumulator -= frameTiming[currentFrame];
-
+      if (
+        frameTimeAccumulatorRef.current >= frameTiming[currentFrameRef.current]
+      ) {
         // Advance to next frame
-        let newFrame = currentFrame + 1;
+        let newFrame = currentFrameRef.current + 1;
+        currentFrameRef.current = newFrame;
 
         // Check if animation is complete
         if (newFrame >= animationFrames.length) {
           if (shouldLoop) {
             // Loop back to the beginning
+            console.log("looping");
             newFrame = 0;
+            currentFrameRef.current = 0;
           } else {
             // Animation is complete, stay at the last frame
             newFrame = animationFrames.length - 1;
 
             // Notify that animation is complete
             if (onAnimationComplete) {
+              currentFrameRef.current = 0;
               onAnimationComplete(animationRef.current);
             }
           }
         }
 
         setCurrentFrame(newFrame);
-        setTextureOffsetFromFrame(animationFrames[newFrame]);
+        setTextureOffsetFromFrame(animationFrames[currentFrameRef.current]);
+
+        // Reset accumulator
+        frameTimeAccumulatorRef.current -= frameTiming[currentFrameRef.current];
       }
 
-      setFrameTimeAccumulator(newFrameTimeAccumulator);
+      setFrameTimeAccumulator(frameTimeAccumulatorRef.current);
     });
-
-    if (!texture || !selectedCharacter) {
-      // Return a placeholder while the texture is loading
-      return (
-        <mesh position={position} scale={scale}>
-          <boxGeometry args={[1, 1, 0.1]} />
-          <meshStandardMaterial color="lightblue" />
-        </mesh>
-      );
-    }
 
     const adjustedPosition: [number, number, number] = [
       position[0],
