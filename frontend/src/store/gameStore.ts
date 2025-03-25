@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AnimationType } from "../types/animations";
+import { CharacterAnimationType } from "../types/animations";
 
 export enum GameState {
   MENU,
@@ -41,7 +41,7 @@ interface GameStore {
   health: number;
   gameState: GameState;
   highScore: number;
-  currentAnimation: AnimationType;
+  currentAnimation: CharacterAnimationType;
   isManualAnimation: boolean;
   // Add board and entities
   board: Board;
@@ -53,7 +53,7 @@ interface GameStore {
   startGame: () => void;
   setGameOver: () => void;
   resetGame: () => void;
-  setAnimation: (animation: AnimationType) => void;
+  setAnimation: (animation: CharacterAnimationType) => void;
   setManualAnimation: (isManual: boolean) => void;
   
   // New functions for board management
@@ -87,7 +87,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   health: INITIAL_HEALTH,
   gameState: GameState.MENU,
   highScore: 0,
-  currentAnimation: AnimationType.IDLE_DOWN,
+  currentAnimation: CharacterAnimationType.IDLE_DOWN,
   isManualAnimation: false,
   // Initialize board and entities
   board: DEFAULT_BOARD,
@@ -120,7 +120,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     gameState: GameState.MENU
   }),
 
-  setAnimation: (animation: AnimationType) => set({
+  setAnimation: (animation: CharacterAnimationType) => set({
     currentAnimation: animation,
     isManualAnimation: true
   }),

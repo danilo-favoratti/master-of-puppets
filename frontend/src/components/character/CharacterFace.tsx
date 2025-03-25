@@ -1,73 +1,20 @@
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-
-// Import animation types from CharacterSprite
-import { AnimationType } from "../../types/animations";
-
-// Import all face sprites
-// Goggles (gogl)
-import goglV01 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v01.png";
-import goglV02 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v02.png";
-import goglV03 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v03.png";
-import goglV04 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v04.png";
-import goglV05 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v05.png";
-
-// Define face styles
-export enum FaceStyle {
-  GOGGLES = "goggles",
-  NONE = "none", // Added for possibility of no face accessory
-}
-
-// Group face sprites by style
-const FACES = {
-  [FaceStyle.GOGGLES]: [goglV01, goglV02, goglV03, goglV04, goglV05],
-};
-
-// Function to get a random face or none (with a certain probability)
-const getRandomFace = (chanceOfNoFace: number = 40) => {
-  // First, determine if we should have no face accessory (default 40% chance)
-  if (Math.random() * 100 < chanceOfNoFace) {
-    return {
-      style: FaceStyle.NONE,
-      sprite: null,
-    };
-  }
-
-  // Get random style type (excluding NONE)
-  const styles = [FaceStyle.GOGGLES];
-  const randomStyleType = styles[Math.floor(Math.random() * styles.length)];
-
-  // Get random color variant from that style
-  const styleVariants = FACES[randomStyleType as keyof typeof FACES];
-  const randomVariant =
-    styleVariants[Math.floor(Math.random() * styleVariants.length)];
-
-  return {
-    style: randomStyleType,
-    sprite: randomVariant,
-  };
-};
-
-interface CharacterFaceProps {
-  position?: [number, number, number];
-  scale?: [number, number, number];
-  rows?: number;
-  cols?: number;
-  animation?: AnimationType;
-  frame?: number;
-  faceStyle?: FaceStyle; // Optional specific face style
-  zOffset?: number; // Optional Z offset to position the face relative to the character
-  chanceOfNoFace?: number; // Percentage chance (0-100) that no face accessory will be shown
-  onAnimationComplete?: (animation: AnimationType) => void;
-}
+import { ANIMATIONS, CharacterAnimationType } from "../../types/animations";
+import {
+  CharacterFaceProps,
+  FACES,
+  FaceStyle,
+  getRandomFace,
+} from "../../types/character-face";
 
 const CharacterFace = ({
   position = [0, 0, 0],
   scale = [1, 1, 1],
   rows = 8,
   cols = 8,
-  animation = AnimationType.IDLE_DOWN,
+  animation = CharacterAnimationType.IDLE_DOWN,
   frame = undefined,
   faceStyle = undefined, // If not specified, will pick randomly
   zOffset = 0.02, // Default offset to place face in front of character and cloak
@@ -152,113 +99,6 @@ const CharacterFace = ({
 
     // Set texture offset
     texture.offset.set(col / cols, 1 - (row + 1) / rows);
-  };
-
-  // Animation definitions
-  const ANIMATIONS: Record<
-    AnimationType,
-    { frames: number[]; frameTiming: number[]; loop?: boolean }
-  > = {
-    [AnimationType.IDLE_DOWN]: {
-      frames: [0],
-      frameTiming: [300],
-    },
-    [AnimationType.IDLE_UP]: {
-      frames: [8],
-      frameTiming: [300],
-    },
-    [AnimationType.IDLE_LEFT]: {
-      frames: [24],
-      frameTiming: [300],
-    },
-    [AnimationType.IDLE_RIGHT]: {
-      frames: [16],
-      frameTiming: [300],
-    },
-    [AnimationType.WALK_DOWN]: {
-      frames: [32, 33, 34, 35, 36, 37],
-      frameTiming: [135, 135, 135, 135, 135, 135],
-    },
-    [AnimationType.WALK_UP]: {
-      frames: [40, 41, 42, 43, 44, 45],
-      frameTiming: [135, 135, 135, 135, 135, 135],
-    },
-    [AnimationType.WALK_LEFT]: {
-      frames: [56, 57, 58, 59, 60, 61],
-      frameTiming: [135, 135, 135, 135, 135, 135],
-    },
-    [AnimationType.WALK_RIGHT]: {
-      frames: [48, 49, 50, 51, 52, 53],
-      frameTiming: [135, 135, 135, 135, 135, 135],
-    },
-    [AnimationType.RUN_DOWN]: {
-      frames: [64, 65, 70, 67, 68, 71],
-      frameTiming: [80, 55, 125, 80, 55, 125],
-    },
-    [AnimationType.RUN_UP]: {
-      frames: [72, 73, 78, 75, 76, 79],
-      frameTiming: [80, 55, 125, 80, 55, 125],
-    },
-    [AnimationType.RUN_LEFT]: {
-      frames: [88, 89, 94, 91, 92, 95],
-      frameTiming: [80, 55, 125, 80, 55, 125],
-    },
-    [AnimationType.RUN_RIGHT]: {
-      frames: [80, 81, 86, 83, 84, 87],
-      frameTiming: [80, 55, 125, 80, 55, 125],
-    },
-    [AnimationType.PUSH_DOWN]: {
-      frames: [1, 2],
-      frameTiming: [300, 300],
-    },
-    [AnimationType.PUSH_UP]: {
-      frames: [9, 10],
-      frameTiming: [300, 300],
-    },
-    [AnimationType.PUSH_LEFT]: {
-      frames: [25, 26],
-      frameTiming: [300, 300],
-    },
-    [AnimationType.PUSH_RIGHT]: {
-      frames: [17, 18],
-      frameTiming: [300, 300],
-    },
-    [AnimationType.PULL_DOWN]: {
-      frames: [3, 4],
-      frameTiming: [400, 400],
-    },
-    [AnimationType.PULL_UP]: {
-      frames: [11, 12],
-      frameTiming: [400, 400],
-    },
-    [AnimationType.PULL_LEFT]: {
-      frames: [27, 28],
-      frameTiming: [400, 400],
-    },
-    [AnimationType.PULL_RIGHT]: {
-      frames: [19, 20],
-      frameTiming: [400, 400],
-    },
-    [AnimationType.JUMP_DOWN]: {
-      frames: [5, 6, 7, 5],
-      frameTiming: [300, 150, 100, 300],
-      loop: false,
-    },
-    [AnimationType.JUMP_UP]: {
-      frames: [13, 14, 15, 13],
-      frameTiming: [300, 150, 100, 300],
-      loop: false,
-    },
-    [AnimationType.JUMP_LEFT]: {
-      frames: [29, 30, 31, 29],
-      frameTiming: [300, 150, 100, 300],
-      loop: false,
-    },
-    [AnimationType.JUMP_RIGHT]: {
-      frames: [21, 22, 23, 21],
-      frameTiming: [300, 150, 100, 300],
-      loop: false,
-    },
   };
 
   useFrame((_, delta) => {

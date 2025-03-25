@@ -27,12 +27,12 @@
   },
   "entities": [
     {
-      "id": "npc_wizard_8832",
-      "type": "wizard",
-      "name": "Wizard",
+      "id": "npc_pig_8832",
+      "type": "pig",
+      "name": "Pig",
       "position": {
-        "x": 2,
-        "y": 2
+        "x": 11,
+        "y": 11
       },
       "state": "idleDown",
       "canMove": true,

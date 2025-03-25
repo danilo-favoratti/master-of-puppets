@@ -36,7 +36,7 @@ This project is built with:
 
 ## Project Structure
 
-- `/src/components/` - React components including Game, Chat, and CharacterSprite
+- `/src/components/` - React components including Game, Chat, and CharacterBody
 - `/src/store/` - State management with Zustand
 - `/src/hooks/` - Custom React hooks for keyboard control
 - `/src/assets/` - Game assets like character sprite sheets

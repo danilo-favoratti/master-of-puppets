@@ -32,30 +32,11 @@ interface PigSpriteProps {
   moveInterval?: number;
 }
 
-const defaultEntity: Entity = {
-  is_movable: false,
-  is_jumpable: false,
-  is_usable_alone: false,
-  is_collectable: false,
-  is_wearable: false,
-  weight: 1,
-  usable_with: [],
-  possible_alone_actions: [],
-};
-
-export const PigSprite: React.FC<PigSpriteProps> = ({
-  position: initialPosition,
-  state = "unlit",
-  entity = defaultEntity,
-  onStateChange,
-  onClick,
-  canMove = true,
-  moveInterval = 3000, // Default 3 seconds between movements
-}) => {
-  const [currentPosition, setCurrentPosition] =
-    useState<Position>(initialPosition);
+export const PigSprite = (props: PigSpriteProps) => {
+  const [currentPosition, setCurrentPosition] = useState<Position>(
+    props.position
+  );
   const [currentState, setCurrentState] = useState<
-    | "unlit"
     | "idleUp"
     | "idleDown"
     | "idleLeft"
@@ -95,7 +76,10 @@ export const PigSprite: React.FC<PigSpriteProps> = ({
       setCurrentPosition(newPosition);
 
       // Update animation based on movement direction
-      if (isMoving) {
+
+      //
+
+      if (isMoving && !movementRef.current.elapsedTime) {
         const direction = movementRef.current.direction;
         setCurrentState(
           `walk${direction.charAt(0).toUpperCase() + direction.slice(1)}` as any
@@ -115,7 +99,7 @@ export const PigSprite: React.FC<PigSpriteProps> = ({
   });
 
   useEffect(() => {
-    if (!canMove) return;
+    if (!props.canMove) return;
 
     const movePig = () => {
       if (isMoving) return;
@@ -157,10 +141,10 @@ export const PigSprite: React.FC<PigSpriteProps> = ({
       };
     };
 
-    const interval = setInterval(movePig, moveInterval);
+    const interval = setInterval(movePig, props.moveInterval);
 
     return () => clearInterval(interval);
-  }, [canMove, moveInterval, isMoving, currentPosition]);
+  }, [props.canMove, props.moveInterval, isMoving, currentPosition]);
 
   return (
     <AnimatedSprite
@@ -170,11 +154,10 @@ export const PigSprite: React.FC<PigSpriteProps> = ({
       position={currentPosition}
       imageUrl="/src/assets/spritesheets/animals/livestock_pig_A_v01.png"
       spritesheetSize={{ columns: 8, rows: 8 }}
+      state={currentState}
+      size={2}
+      zOffset={0.04}
       animationConfig={{
-        unlit: {
-          frame: { x: 0, y: 0 },
-          frameDuration: 200,
-        },
         idleUp: {
           frames: [
             { x: 0, y: 1 },
@@ -240,9 +223,7 @@ export const PigSprite: React.FC<PigSpriteProps> = ({
           frameDuration: 200,
         },
       }}
-      state={currentState}
-      size={2}
-      onClick={onClick}
+      onClick={props.onClick}
     />
   );
 };

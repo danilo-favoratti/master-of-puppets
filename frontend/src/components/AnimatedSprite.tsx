@@ -10,6 +10,7 @@ interface AnimatedSpriteProps {
   name: string;
   position: Position;
   imageUrl: string;
+  zOffset?: number;
   spritesheetSize?: {
     columns: number;
     rows: number;
@@ -124,8 +125,7 @@ interface AnimatedSpriteProps {
     | "closed"
     | "empty"
     | "cooking"
-    | "cooked"
-    | undefined;
+    | "cooked";
   onClick?: (event: ThreeEvent<MouseEvent>) => void;
   onAnimationComplete?: (currentState: string) => void;
   showText?: boolean;
@@ -238,7 +238,9 @@ export const AnimatedSprite = (props: AnimatedSpriteProps) => {
   }
 
   return (
-    <group position={[props.position.x, props.position.y, 0.2]}>
+    <group
+      position={[props.position.x, props.position.y, props.zOffset || 0.01]}
+    >
       <mesh name={props.name} onClick={props.onClick}>
         <planeGeometry args={[props.size, props.size]} />
         <meshStandardMaterial

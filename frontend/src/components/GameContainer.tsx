@@ -1,6 +1,6 @@
 import { Canvas } from "@react-three/fiber";
 import React, { useRef, useState } from "react";
-import { Point } from "./character/CharacterSprite";
+import { Position } from "../types/game";
 import Game from "./Game";
 import GameUI from "./GameUI";
 interface GameContainerProps {
@@ -14,7 +14,9 @@ const GameContainer: React.FC<GameContainerProps> = ({
   executeCommand,
   registerCommandHandler,
 }) => {
-  const characterRef = useRef<{ moveAlongPath: (path: Point[]) => void }>(null);
+  const characterRef = useRef<{ moveAlongPath: (path: Position[]) => void }>(
+    null
+  );
   const [lightIntensity, setLightIntensity] = useState(1.3);
   const [lightDistance, setLightDistance] = useState(4);
   const [lightDecay, setLightDecay] = useState(0.5);

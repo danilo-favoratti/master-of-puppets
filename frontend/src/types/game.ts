@@ -5,6 +5,7 @@ export interface Position {
   y: number;
 }
 
+
 export interface Square {
   position: Position;
   contains_entity: boolean;

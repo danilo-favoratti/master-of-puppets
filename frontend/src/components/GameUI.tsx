@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { useGameStore } from "../store/gameStore";
-import { Point } from "./character/CharacterSprite";
+import { Position } from "../types/game";
 import LightControls from "./LightControls";
 
 interface GameUIProps {
-  characterRef: React.RefObject<{ moveAlongPath: (path: Point[]) => void }>;
+  characterRef: React.RefObject<{ moveAlongPath: (path: Position[]) => void }>;
   lightIntensity: number;
   lightDistance: number;
   lightDecay: number;
@@ -28,7 +28,10 @@ const GameUI = ({
 }: GameUIProps) => {
   const position = useGameStore((state) => state.position);
   const [isMoving, setIsMoving] = useState(false);
-  const [targetPosition, setTargetPosition] = useState<Point>({ x: 10, y: 10 });
+  const [targetPosition, setTargetPosition] = useState<Position>({
+    x: 10,
+    y: 10,
+  });
 
   const moveToPosition = () => {
     if (isMoving || !characterRef.current) return;

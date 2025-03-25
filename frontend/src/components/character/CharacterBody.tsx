@@ -7,25 +7,23 @@ import React, {
   useState,
 } from "react";
 import * as THREE from "three";
-import { ANIMATIONS, AnimationType } from "../../types/animations";
+import { ANIMATIONS, CharacterAnimationType } from "../../types/animations";
 import {
-  CharacterSpriteProps,
+  CHARACTERS_BODY,
+  CharacterBodyProps,
+  CharacterBodyType,
   MovementState,
-  Point,
-} from "../../types/character-sprite";
-import {
-  CHARACTERS,
-  CharacterType,
-  getRandomCharacter,
-} from "../../types/characters";
+  getRandomCharacterBody,
+} from "../../types/characters-body";
+import { Position } from "../../types/game";
 import CharacterCloak from "./CharacterCloak";
 import CharacterHair from "./CharacterHair";
 import CharacterHat from "./CharacterHat";
 import CharacterOutfit from "./CharacterOutfit";
 
-const CharacterSprite = forwardRef<
-  { moveAlongPath: (path: Point[]) => void },
-  CharacterSpriteProps
+const CharacterBody = forwardRef<
+  { moveAlongPath: (path: Position[]) => void },
+  CharacterBodyProps
 >(
   (
     {
@@ -33,7 +31,7 @@ const CharacterSprite = forwardRef<
       scale = [1, 1, 1],
       rows = 8,
       cols = 8,
-      animation = AnimationType.IDLE_DOWN,
+      animation = CharacterAnimationType.IDLE_DOWN,
       frame = undefined, // If specified, will override the animation
       characterType = undefined, // If not specified, will pick randomly
       onAnimationComplete,
@@ -45,15 +43,13 @@ const CharacterSprite = forwardRef<
     },
     ref
   ) => {
-    const currentFrameRef = useRef(0);
-    const frameTimeAccumulatorRef = useRef(0);
     const meshRef = useRef<THREE.Mesh>(null);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const [currentFrame, setCurrentFrame] = useState(0);
     const [frameTimeAccumulator, setFrameTimeAccumulator] = useState(0);
     const animationRef = useRef(animation);
     const [selectedCharacter, setSelectedCharacter] = useState<{
-      type: CharacterType;
+      type: CharacterBodyType;
       sprite: string;
     } | null>(null);
     const [movementState, setMovementState] = useState<MovementState>({
@@ -66,10 +62,10 @@ const CharacterSprite = forwardRef<
     // Set random character on first render
     useEffect(() => {
       if (!characterType) {
-        setSelectedCharacter(getRandomCharacter());
+        setSelectedCharacter(getRandomCharacterBody());
       } else {
         // Use the specified type with a random variant
-        const typeVariants = CHARACTERS[characterType];
+        const typeVariants = CHARACTERS_BODY[characterType];
         const randomVariant =
           typeVariants[Math.floor(Math.random() * typeVariants.length)];
         setSelectedCharacter({
@@ -122,7 +118,7 @@ const CharacterSprite = forwardRef<
 
     // Expor moveAlongPath através da ref
     useImperativeHandle(ref, () => ({
-      moveAlongPath: (path: Point[]) => {
+      moveAlongPath: (path: Position[]) => {
         setMovementState({
           path,
           currentPathIndex: 0,
@@ -140,7 +136,7 @@ const CharacterSprite = forwardRef<
 
       if (currentPathIndex >= movementState.path.length) {
         setMovementState((prev) => ({ ...prev, isMoving: false }));
-        setAnimation?.(AnimationType.IDLE_DOWN);
+        setAnimation?.(CharacterAnimationType.IDLE_DOWN);
         setCurrentFrame(0);
         setFrameTimeAccumulator(0);
         if (setPosition) {
@@ -159,20 +155,20 @@ const CharacterSprite = forwardRef<
       const dy = targetPos.y - currentPos.y;
 
       // Determinar a direção predominante e atualizar a animação global
-      let newAnimation: AnimationType;
+      let newAnimation: CharacterAnimationType;
       if (Math.abs(dx) > Math.abs(dy)) {
         // Movimento horizontal
         if (dx > 0) {
-          newAnimation = AnimationType.WALK_RIGHT;
+          newAnimation = CharacterAnimationType.WALK_RIGHT;
         } else {
-          newAnimation = AnimationType.WALK_LEFT;
+          newAnimation = CharacterAnimationType.WALK_LEFT;
         }
       } else {
         // Movimento vertical
         if (dy > 0) {
-          newAnimation = AnimationType.WALK_UP;
+          newAnimation = CharacterAnimationType.WALK_UP;
         } else {
-          newAnimation = AnimationType.WALK_DOWN;
+          newAnimation = CharacterAnimationType.WALK_DOWN;
         }
       }
 
@@ -311,5 +307,5 @@ const CharacterSprite = forwardRef<
 );
 
 // Exportar tudo em uma única linha
-export type { MovementState, Point };
-export default CharacterSprite;
+export type { MovementState, Position };
+export default CharacterBody;
