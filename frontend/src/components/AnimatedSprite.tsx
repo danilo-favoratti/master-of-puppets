@@ -19,116 +19,16 @@ interface AnimatedSpriteProps {
     width: number;
     height: number;
   };
-  animationConfig?: {
-    unlit?: {
-      frame: { x: number; y: number };
-      frameDuration: number;
-    };
-    burning?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    dying?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    extinguished?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    idleUp?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    idleDown?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    idleLeft?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    idleRight?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    walkLeft?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    walkRight?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    walkUp?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    walkDown?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    broken?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    breaking?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    idle?: {
-      frame: { x: number; y: number };
-      frameDuration: number;
-    };
-    open?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    closed?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    empty?: {
-      frame: { x: number; y: number };
-      frameDuration: number;
-    };
-    cooking?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-    cooked?: {
-      frames: Array<{ x: number; y: number }>;
-      frameDuration: number;
-    };
-  };
+  animationConfig?: Record<string, any>;
   isActive?: boolean;
   size?: number;
   emissive?: boolean;
   emissiveIntensity?: number;
-  state?:
-    | "unlit"
-    | "burning"
-    | "dying"
-    | "extinguished"
-    | "idleUp"
-    | "idleDown"
-    | "idleLeft"
-    | "idleRight"
-    | "walkLeft"
-    | "walkRight"
-    | "walkUp"
-    | "walkDown"
-    | "broken"
-    | "breaking"
-    | "idle"
-    | "open"
-    | "closed"
-    | "empty"
-    | "cooking"
-    | "cooked";
+  state?: string;
   onClick?: (event: ThreeEvent<MouseEvent>) => void;
   onAnimationComplete?: (currentState: string) => void;
   showText?: boolean;
+  heightProportion?: number;
 }
 
 export const AnimatedSprite = (props: AnimatedSpriteProps) => {
@@ -237,12 +137,19 @@ export const AnimatedSprite = (props: AnimatedSpriteProps) => {
     return null; // or a loading placeholder
   }
 
+  const heightProportion = props.heightProportion || 1;
+  const baseSize = props.size || 1;
+
+  let posY = props.position.y;
+
+  if (heightProportion != 1) {
+    posY += baseSize / 2;
+  }
+
   return (
-    <group
-      position={[props.position.x, props.position.y, props.zOffset || 0.01]}
-    >
+    <group position={[props.position.x, posY, props.zOffset || 0.01]}>
       <mesh name={props.name} onClick={props.onClick}>
-        <planeGeometry args={[props.size, props.size]} />
+        <planeGeometry args={[baseSize, baseSize * heightProportion]} />
         <meshStandardMaterial
           map={texture}
           transparent={true}

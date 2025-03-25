@@ -1,5 +1,5 @@
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { ANIMATIONS, CharacterAnimationType } from "../../types/animations";
 import {
@@ -52,12 +52,10 @@ const CharacterOutfit = ({
   useEffect(() => {
     if (!selectedOutfit) return;
 
-    console.log("Loading outfit texture...");
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(
       selectedOutfit.sprite,
       (loadedTexture) => {
-        console.log("Outfit texture loaded successfully!", loadedTexture);
         loadedTexture.magFilter = THREE.NearestFilter;
         loadedTexture.minFilter = THREE.NearestFilter;
         loadedTexture.wrapS = loadedTexture.wrapT = THREE.RepeatWrapping;
@@ -71,9 +69,7 @@ const CharacterOutfit = ({
           )}%`
         );
       },
-      (error) => {
-        console.error("Error loading outfit texture:", error);
-      }
+      (error) => {}
     );
   }, [selectedOutfit, rows, cols]);
 
@@ -179,7 +175,7 @@ const CharacterOutfit = ({
       scale={new THREE.Vector3(...scale)}
     >
       <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial map={texture} transparent={true} />
+      <meshStandardMaterial map={texture} transparent={true} />
     </mesh>
   );
 };

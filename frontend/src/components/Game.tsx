@@ -10,8 +10,8 @@ import {
   PigEntity,
   PotEntity,
 } from "../types/entities";
-import { GameData } from "../types/game";
-import CharacterBody, { Point } from "./character/CharacterBody";
+import { GameData, Position } from "../types/game";
+import CharacterBody from "./character/CharacterBody";
 import GameEntities from "./GameEntities";
 import MapDisplay from "./MapDisplay";
 
@@ -20,7 +20,7 @@ interface GameProps {
   registerCommandHandler: (
     handler: (cmd: string, result: string, params: any) => void
   ) => void;
-  characterRef: React.RefObject<{ moveAlongPath: (path: Point[]) => void }>;
+  characterRef: React.RefObject<{ moveAlongPath: (path: Position[]) => void }>;
   lightIntensity: number;
   lightDistance: number;
   lightDecay: number;

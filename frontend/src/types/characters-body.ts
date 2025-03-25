@@ -16,7 +16,6 @@ import char_humn_v07 from "/src/assets/spritesheets/characters/char_a_p1_0bas_hu
 import char_humn_v08 from "/src/assets/spritesheets/characters/char_a_p1_0bas_humn_v08.png";
 import char_humn_v09 from "/src/assets/spritesheets/characters/char_a_p1_0bas_humn_v09.png";
 import char_humn_v10 from "/src/assets/spritesheets/characters/char_a_p1_0bas_humn_v10.png";
-
 // Define character types
 export enum CharacterBodyType {
   HUMAN = "human",
@@ -44,7 +43,14 @@ export const CHARACTERS_BODY = {
 } as const;
 
 // Function to get a random character sprite
-export const getRandomCharacterBody = () => {
+
+export interface CharacterBodyConfType {
+  type: CharacterBodyType;
+  sprite: string;
+  spritesheetSize: { columns: number; rows: number };
+}
+
+export const getRandomCharacterBody = (): CharacterBodyConfType => {
   // Get random character type
   const types = Object.values(CharacterBodyType);
   const randomType = types[Math.floor(Math.random() * types.length)];
@@ -56,9 +62,9 @@ export const getRandomCharacterBody = () => {
   return {
     type: randomType,
     sprite: randomVariant,
+    spritesheetSize: { columns: 8, rows: 8 },
   };
-}; 
-
+};
 
 export interface MovementState {
   path: Position[];

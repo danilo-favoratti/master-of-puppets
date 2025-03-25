@@ -23,7 +23,7 @@ const GameObject: React.FC<GameObjectProps> = ({
   return (
     <AnimatedSprite
       id={config.id}
-      type="environment"
+      type={config.type}
       name={config.name}
       position={position}
       imageUrl={config.imageUrl}
@@ -31,7 +31,7 @@ const GameObject: React.FC<GameObjectProps> = ({
       animationConfig={config.animationConfig}
       state={state}
       size={config.size || 1}
-      onClick={onClick}
+      onClick={onClick as any}
     />
   );
 };

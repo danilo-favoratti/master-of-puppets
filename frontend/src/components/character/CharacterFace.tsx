@@ -185,7 +185,7 @@ const CharacterFace = ({
       scale={new THREE.Vector3(...scale)}
     >
       <planeGeometry args={[1, 1]} />
-      <meshBasicMaterial map={texture} transparent={true} />
+      <meshStandardMaterial map={texture} transparent={true} />
     </mesh>
   );
 };

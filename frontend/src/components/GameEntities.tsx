@@ -2,11 +2,14 @@ import { ThreeEvent } from "@react-three/fiber";
 import React from "react";
 import { GameEntity } from "../types/entities";
 import BedrollSprite from "./entities/BedrollSprite";
+import { CampfirePotSprite } from "./entities/CampfirePotSprite";
 import CampfireSpitSprite from "./entities/CampfireSpitSprite";
 import { CampFireSprite } from "./entities/CampFireSprite";
 import { ChestSprite } from "./entities/ChestSprite";
+import { NpcEntity } from "./entities/NpcEntity";
 import { PigSprite } from "./entities/PigSprite";
 import { PotSprite } from "./entities/PotSprite";
+import { StatueSprite } from "./entities/StatueSprite";
 import TravelersCampSprite from "./entities/TravelersCampSprite";
 
 interface GameEntitiesProps {
@@ -187,7 +190,7 @@ export const GameEntities: React.FC<GameEntitiesProps> = ({
         );
       case "campfire_pot":
         return (
-          <CampfireSpitSprite
+          <CampfirePotSprite
             key={entity.id}
             {...commonProps}
             state={entity.state}
@@ -203,6 +206,126 @@ export const GameEntities: React.FC<GameEntitiesProps> = ({
             }}
           />
         );
+      case "thief":
+        return (
+          <NpcEntity
+            key={entity.id}
+            {...commonProps}
+            name={entity.name}
+            type={entity.type}
+            position={entity.position}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "guard":
+        return (
+          <NpcEntity
+            key={entity.id}
+            {...commonProps}
+            name={entity.name}
+            type={entity.type}
+            position={entity.position}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "merchant":
+        return (
+          <NpcEntity
+            key={entity.id}
+            {...commonProps}
+            name={entity.name}
+            type={entity.type}
+            position={entity.position}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "hero":
+        return (
+          <NpcEntity
+            key={entity.id}
+            {...commonProps}
+            name={entity.name}
+            type={entity.type}
+            position={entity.position}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "wizard":
+        return (
+          <NpcEntity
+            key={entity.id}
+            {...commonProps}
+            name={entity.name}
+            type={entity.type}
+            position={entity.position}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "statue":
+        return (
+          <StatueSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            variant={entity.variant}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+
       default:
         return null;
     }

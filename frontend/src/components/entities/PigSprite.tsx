@@ -72,23 +72,12 @@ export const PigSprite = (props: PigSpriteProps) => {
         y: lerp(movementRef.current.start.y, movementRef.current.end.y, t),
       };
 
-      // Update position
       setCurrentPosition(newPosition);
-
-      // Update animation based on movement direction
-
-      //
-
-      if (isMoving && !movementRef.current.elapsedTime) {
-        const direction = movementRef.current.direction;
-        setCurrentState(
-          `walk${direction.charAt(0).toUpperCase() + direction.slice(1)}` as any
-        );
-      }
 
       if (t === 1) {
         // When movement is complete, set idle animation
         const direction = movementRef.current.direction;
+
         setCurrentState(
           `idle${direction.charAt(0).toUpperCase() + direction.slice(1)}` as any
         );

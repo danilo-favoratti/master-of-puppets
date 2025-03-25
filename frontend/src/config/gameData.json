@@ -53,8 +53,8 @@
       "type": "thief",
       "name": "Thief",
       "position": {
-        "x": 3,
-        "y": 2
+        "x": 10,
+        "y": 12
       },
       "state": "idleDown",
       "canMove": true,
@@ -97,8 +97,8 @@
       "type": "guard",
       "name": "Guard",
       "position": {
-        "x": 5,
-        "y": 2
+        "x": 15,
+        "y": 13
       },
       "state": "idleUp",
       "canMove": true,
@@ -125,8 +125,8 @@
       "type": "merchant",
       "name": "Merchant",
       "position": {
-        "x": 23,
-        "y": 35
+        "x": 14,
+        "y": 12
       },
       "state": "idleUp",
       "canMove": true,
@@ -246,8 +246,8 @@
       "type": "hero",
       "name": "Hero",
       "position": {
-        "x": 23,
-        "y": 32
+        "x": 9,
+        "y": 8
       },
       "state": "idleDown",
       "canMove": true,
@@ -274,8 +274,8 @@
       "type": "wizard",
       "name": "Wizard",
       "position": {
-        "x": 34,
-        "y": 23
+        "x": 7,
+        "y": 13
       },
       "state": "idleDown",
       "canMove": true,
@@ -898,8 +898,8 @@
       "type": "statue",
       "name": "Statue",
       "position": {
-        "x": 20,
-        "y": 36
+        "x": 16,
+        "y": 8
       },
       "state": "idle",
       "variant": "1",

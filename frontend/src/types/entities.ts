@@ -60,8 +60,44 @@ export interface CampfirePotEntity extends BaseEntity {
   state: "empty" | "cooking" | "idle";
 }
 
+// Thief entity interface
+export interface ThiefEntity extends BaseEntity {
+  type: "thief";
+  state: "idle" | "walkLeft" | "walkRight" | "walkUp" | "walkDown";
+}
+
+// Guard entity interface
+export interface GuardEntity extends BaseEntity {
+  type: "guard";
+  state: "idle" | "walkLeft" | "walkRight" | "walkUp" | "walkDown";
+}
+
+// Merchant entity interface
+export interface MerchantEntity extends BaseEntity {
+  type: "merchant";
+  state: "idle" | "walkLeft" | "walkRight" | "walkUp" | "walkDown";
+}
+
+// Hero entity interface
+export interface HeroEntity extends BaseEntity {
+  type: "hero";
+  state: "idle" | "walkLeft" | "walkRight" | "walkUp" | "walkDown";
+}
+
+// Wizard entity interface
+export interface WizardEntity extends BaseEntity {
+  type: "wizard";
+  state: "idle" | "walkLeft" | "walkRight" | "walkUp" | "walkDown";
+}
+
+// Statue entity interface
+export interface StatueEntity extends BaseEntity {
+  type: "statue";
+  state: "idle";
+}
+
 // Union type for all entities
-export type GameEntity = PotEntity | CampFireEntity | PigEntity | ChestEntity | TentEntity | BedrollEntity | CampfireSpitEntity | CampfirePotEntity;
+export type GameEntity = PotEntity | CampFireEntity | PigEntity | ChestEntity | TentEntity | BedrollEntity | CampfireSpitEntity | CampfirePotEntity | ThiefEntity | GuardEntity | MerchantEntity | HeroEntity | WizardEntity | StatueEntity;
 
 // Array type for all entities
 export type GameEntities = GameEntity[]; 
