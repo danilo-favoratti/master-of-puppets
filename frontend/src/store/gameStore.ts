@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { CharacterAnimationType } from "../types/animations";
+import { GameData } from '../types/game';
 
 export enum GameState {
   MENU,
@@ -16,6 +17,18 @@ interface Position {
 interface Square {
   position: Position;
   contains_entity: boolean;
+}
+
+const DEFAULT_GAME_DATA:GameData = {
+  map: {
+    size: 20,
+    border_size: 1,
+    grid: Array(400).fill(null).map((_, index) => ({
+      x: index % 5,
+      y: Math.floor(index / 5)
+    }))
+  },
+  entities: []
 }
 
 interface Entity {
@@ -46,7 +59,6 @@ interface GameStore {
   // Add board and entities
   board: Board;
   entities: Entity[];
-  
   // Existing functions
   incrementScore: () => void;
   decrementHealth: () => void;
@@ -65,6 +77,8 @@ interface GameStore {
   // New properties
   position: [number, number, number];
   setPosition: (position: [number, number, number]) => void;
+  gameData: GameData;
+  setGameData: (gameData: GameData) => void;
 }
 
 const INITIAL_HEALTH = 3;
@@ -80,6 +94,7 @@ const DEFAULT_BOARD: Board = {
     },
     contains_entity: false
   }))
+
 };
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -92,7 +107,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // Initialize board and entities
   board: DEFAULT_BOARD,
   entities: [],
-  
+  gameData: DEFAULT_GAME_DATA,
   // Existing methods
   incrementScore: () => set(state => ({ score: state.score + 1 })),
   
@@ -155,6 +170,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     
     return { entities: newEntities };
   }),
+
+  setGameData: (gameData: GameData) => set({ gameData }),
   
   // New properties
   position: [10, 10, 0],

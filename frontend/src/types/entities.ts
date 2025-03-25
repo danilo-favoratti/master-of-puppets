@@ -96,8 +96,14 @@ export interface StatueEntity extends BaseEntity {
   state: "idle";
 }
 
+// NPC entity interface
+export interface NpcEntity extends BaseEntity {
+  type: "npc";
+  state: "idle" | "walkLeft" | "walkRight" | "walkUp" | "walkDown";
+}
+
 // Union type for all entities
-export type GameEntity = PotEntity | CampFireEntity | PigEntity | ChestEntity | TentEntity | BedrollEntity | CampfireSpitEntity | CampfirePotEntity | ThiefEntity | GuardEntity | MerchantEntity | HeroEntity | WizardEntity | StatueEntity;
+export type GameEntity = PotEntity | CampFireEntity | PigEntity | ChestEntity | TentEntity | BedrollEntity | CampfireSpitEntity | CampfirePotEntity | ThiefEntity | GuardEntity | MerchantEntity | HeroEntity | WizardEntity | StatueEntity | NpcEntity;
 
 // Array type for all entities
 export type GameEntities = GameEntity[]; 

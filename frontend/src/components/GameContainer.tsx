@@ -1,6 +1,6 @@
 import { Canvas } from "@react-three/fiber";
 import React, { useRef, useState } from "react";
-import { Position } from "../types/game";
+import { GameData, Position } from "../types/game";
 import Game from "./Game";
 import GameUI from "./GameUI";
 interface GameContainerProps {
@@ -8,11 +8,13 @@ interface GameContainerProps {
   registerCommandHandler: (
     handler: (cmd: string, result: string, params: any) => void
   ) => void;
+  gameData: GameData;
 }
 
 const GameContainer: React.FC<GameContainerProps> = ({
   executeCommand,
   registerCommandHandler,
+  gameData,
 }) => {
   const characterRef = useRef<{ moveAlongPath: (path: Position[]) => void }>(
     null
@@ -36,6 +38,7 @@ const GameContainer: React.FC<GameContainerProps> = ({
         gl={{ antialias: true }}
       >
         <Game
+          gameData={gameData}
           executeCommand={executeCommand}
           registerCommandHandler={registerCommandHandler}
           characterRef={characterRef}

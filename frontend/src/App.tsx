@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Chat from "./components/Chat";
 import GameContainer from "./components/GameContainer";
+import gameDataJSON from "./config/gameData.json";
+import { useGameStore } from "./store/gameStore";
+import { GameData } from "./types/game";
 
 // @ts-ignore: Property 'env' does not exist on type 'ImportMeta'.
 const WS_URL =
@@ -29,6 +32,11 @@ function App() {
       options?: string[];
     }>
   >([]);
+
+  const { gameData, setGameData } = useGameStore();
+  useEffect(() => {
+    setGameData(gameDataJSON as GameData);
+  }, []);
 
   // Create a ref to store the real executeCommand implementation from Game
   const gameCommandHandlerRef = useRef<
@@ -327,10 +335,15 @@ function App() {
     );
   }
 
+  if (!gameData) {
+    return <div>Loading game data...</div>;
+  }
+
   return (
     <div className="flex flex-col h-screen">
       <div className="flex-1 relative">
         <GameContainer
+          gameData={gameData}
           executeCommand={executeCommand}
           registerCommandHandler={registerGameCommandHandler}
         />

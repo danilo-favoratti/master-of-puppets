@@ -29,7 +29,7 @@ export interface Board {
   squares: Square[];
 }
 
-export type GameObjectType = 'pig' | 'campfire' | 'tree' | 'rock' | 'chest';
+export type GameObjectType = 'pig' | 'campfire' | 'tree' | 'rock' | 'chest' | 'npc';
 
 export type GameObjectState = 'unlit' | 'burning' | 'dying' | 'extinguished' | 'idle' | 'walking' | 'running';
 

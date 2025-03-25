@@ -1,7 +1,7 @@
 import { OrbitControls } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import React, { useEffect, useRef, useState } from "react";
-import gameDataJSON from "../config/gameData.json";
+
 import { useGameStore } from "../store/gameStore";
 import { CharacterAnimationType } from "../types/animations";
 import {
@@ -25,6 +25,7 @@ interface GameProps {
   lightDistance: number;
   lightDecay: number;
   ambientLightIntensity?: number;
+  gameData: GameData;
 }
 
 const Game = ({
@@ -35,6 +36,7 @@ const Game = ({
   lightDistance,
   lightDecay,
   ambientLightIntensity = 0,
+  gameData,
 }: GameProps) => {
   const { camera } = useThree();
   const position = useGameStore((state) => state.position);
@@ -47,7 +49,6 @@ const Game = ({
   const [isPulling, setIsPulling] = useState(false);
   const [isJumping, setIsJumping] = useState(false);
 
-  const [gameData, setGameData] = useState<GameData>(gameDataJSON as GameData);
   const [entities, setEntities] = useState<GameEntity[]>(gameData.entities);
   // Speed constants
   const walkSpeed = 0.05; // unused now

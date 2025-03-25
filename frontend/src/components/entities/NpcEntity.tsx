@@ -3,6 +3,7 @@
 import { Text } from "@react-three/drei";
 import { ThreeEvent, useFrame } from "@react-three/fiber";
 import React, { useEffect, useRef, useState } from "react";
+import { useGameStore } from "../../store/gameStore";
 import { CharacterAnimationType } from "../../types/animations";
 import {
   CharacterBodyConfType,
@@ -99,11 +100,17 @@ export const NpcEntity = ({
   scale,
   body = getRandomCharacterBody(),
   canMove = true,
-  moveInterval = 5000,
+  moveInterval = 1000,
 }: NpcEntityProps) => {
   const initialPosition = useRef(position);
   const imageUrl = body.sprite;
   const [currentPosition, setCurrentPosition] = useState<Position>(position);
+
+  const { gameData } = useGameStore();
+
+  if (!gameData || !gameData.map.grid) return null;
+
+  const entities = gameData.entities;
 
   const [currentState, setCurrentState] = useState<
     | "idleUp"
@@ -132,7 +139,13 @@ export const NpcEntity = ({
   // Smoothly update position based on movementRef using useFrame
   useFrame((_, delta) => {
     if (movementRef.current) {
+      const currentPosition = movementRef.current.start;
       movementRef.current.elapsedTime += delta;
+
+      const currentPositionFloor = {
+        x: Math.floor(currentPosition.x),
+        y: Math.floor(currentPosition.y),
+      };
       let t = movementRef.current.elapsedTime / movementRef.current.duration;
       if (t > 1) t = 1;
 
@@ -142,12 +155,7 @@ export const NpcEntity = ({
         y: lerp(movementRef.current.start.y, movementRef.current.end.y, t),
       };
 
-      // Update position
       setCurrentPosition(newPosition);
-
-      // Update animation based on movement direction
-
-      //
 
       if (isMoving && !movementRef.current.elapsedTime) {
         const direction = movementRef.current.direction;
@@ -157,16 +165,19 @@ export const NpcEntity = ({
       }
 
       if (t === 1) {
-        // When movement is complete, set idle animation
-        const direction = movementRef.current.direction;
-        setCurrentState(
-          `idle${direction.charAt(0).toUpperCase() + direction.slice(1)}` as any
-        );
-        setIsMoving(false);
-        movementRef.current = null;
+        stopMovement(movementRef.current.direction);
       }
     }
   });
+
+  const stopMovement = (direction: "up" | "down" | "left" | "right") => {
+    setCurrentState(
+      `idle${direction.charAt(0).toUpperCase() + direction.slice(1)}` as any
+    );
+    setCurrentPosition(currentPosition);
+    setIsMoving(false);
+    movementRef.current = null;
+  };
 
   useEffect(() => {
     if (!canMove) return;
@@ -188,6 +199,16 @@ export const NpcEntity = ({
         x: currentPosition.x + randomDirection.dx,
         y: currentPosition.y + randomDirection.dy,
       };
+
+      const entity = entities.find(
+        (e) =>
+          e.position?.x === Math.floor(newPos.x) &&
+          e.position?.y === Math.floor(newPos.y)
+      );
+      if (entity && entity.type !== "npc") {
+        console.log("entity", entity.type);
+        return;
+      }
 
       // Checa se a nova posição está no limite de 5 tiles
       const dx = Math.abs(newPos.x - initialPosition.current.x);
@@ -221,7 +242,7 @@ export const NpcEntity = ({
       };
     };
 
-    const interval = setInterval(moveNPC, moveInterval + Math.random() * 3000);
+    const interval = setInterval(moveNPC, moveInterval + Math.random() * 1000);
 
     return () => clearInterval(interval);
   }, [canMove, moveInterval, isMoving, currentPosition]);
