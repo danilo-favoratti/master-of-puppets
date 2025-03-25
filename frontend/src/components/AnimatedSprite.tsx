@@ -124,67 +124,24 @@ interface AnimatedSpriteProps {
     | "closed"
     | "empty"
     | "cooking"
-    | "cooked";
+    | "cooked"
+    | undefined;
   onClick?: (event: ThreeEvent<MouseEvent>) => void;
   onAnimationComplete?: (currentState: string) => void;
   showText?: boolean;
 }
 
-export const AnimatedSprite: React.FC<AnimatedSpriteProps> = ({
-  id,
-  name,
-  position,
-  imageUrl,
-  spritesheetSize = { columns: 1, rows: 1 },
-  tileSize = { width: 32, height: 32 },
-  animationConfig = {
-    unlit: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    burning: {
-      frames: [{ x: 0, y: 0 }],
-      frameDuration: 200,
-    },
-    dying: {
-      frames: [{ x: 0, y: 0 }],
-      frameDuration: 200,
-    },
-    extinguished: {
-      frames: [{ x: 0, y: 0 }],
-      frameDuration: 200,
-    },
-    idleUp: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    idleDown: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    idleLeft: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    idleRight: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    walkLeft: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    walkRight: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    walkUp: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    walkDown: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    broken: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    breaking: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    idle: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    empty: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    cooking: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-    cooked: { frame: { x: 0, y: 0 }, frameDuration: 200 },
-  },
-
-  isActive = false,
-  size = 1,
-  state = "idle",
-  onClick,
-  onAnimationComplete,
-  showText = false,
-}) => {
+export const AnimatedSprite = (props: AnimatedSpriteProps) => {
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
   const animationRef = useRef<number>();
   const lastFrameTimeRef = useRef<number>(0);
-  const { columns, rows } = spritesheetSize;
-  const { width: tileWidth, height: tileHeight } = tileSize;
+  const { columns, rows } = props.spritesheetSize || { columns: 1, rows: 1 };
 
   useEffect(() => {
     const loader = new THREE.TextureLoader();
     loader.load(
-      imageUrl,
+      props.imageUrl,
       (loadedTexture) => {
         loadedTexture.magFilter = THREE.NearestFilter;
         loadedTexture.minFilter = THREE.NearestFilter;
@@ -195,20 +152,26 @@ export const AnimatedSprite: React.FC<AnimatedSpriteProps> = ({
         console.error("Error loading texture:", error);
       }
     );
-  }, [imageUrl]);
+  }, [props.imageUrl]);
 
   useEffect(() => {
     if (!texture) return;
 
-    const currentState = animationConfig[state];
+    const currentState =
+      props.animationConfig?.[
+        props.state as keyof typeof props.animationConfig
+      ];
 
     if (!currentState) {
-      console.warn(`Animation config for state "${state}" is missing`);
+      console.warn(`Animation config for state "${props.state}" is missing`);
       return;
     }
 
     // Handle unlit state (static frame)
-    if ((state === "unlit" || state === "idle") && "frame" in currentState) {
+    if (
+      (props.state === "unlit" || props.state === "idle") &&
+      "frame" in currentState
+    ) {
       const frame = currentState.frame;
       if (frame && typeof frame === "object" && "x" in frame && "y" in frame) {
         const { x, y } = frame;
@@ -237,7 +200,7 @@ export const AnimatedSprite: React.FC<AnimatedSpriteProps> = ({
 
           // Check if animation has completed (reached the last frame)
           if (nextFrame === 0 && currentFrame === frames.length - 1) {
-            onAnimationComplete?.(state);
+            props.onAnimationComplete?.(props.state || "idle");
           }
         }
 
@@ -255,36 +218,36 @@ export const AnimatedSprite: React.FC<AnimatedSpriteProps> = ({
       }
     };
   }, [
-    state,
+    props.state,
     columns,
     rows,
-    animationConfig,
+    props.animationConfig,
     texture,
     currentFrame,
-    onAnimationComplete,
+    props.onAnimationComplete,
   ]);
 
   // Reset currentFrame when state changes
   useEffect(() => {
     setCurrentFrame(0);
     lastFrameTimeRef.current = performance.now();
-  }, [state]);
+  }, [props.state]);
 
   if (!texture) {
     return null; // or a loading placeholder
   }
 
   return (
-    <group position={[position.x, position.y, 0.2]}>
-      <mesh name={name} onClick={onClick}>
-        <planeGeometry args={[size, size]} />
+    <group position={[props.position.x, props.position.y, 0.2]}>
+      <mesh name={props.name} onClick={props.onClick}>
+        <planeGeometry args={[props.size, props.size]} />
         <meshStandardMaterial
           map={texture}
           transparent={true}
           side={THREE.DoubleSide}
         />
       </mesh>
-      {showText && (
+      {props.showText && (
         <>
           <Text
             position={[0, -0.55, 0]}
@@ -293,7 +256,7 @@ export const AnimatedSprite: React.FC<AnimatedSpriteProps> = ({
             anchorX="center"
             anchorY="middle"
           >
-            {id}
+            {props.id}
           </Text>
           <Text
             position={[0, -0.8, 0]}
@@ -302,7 +265,7 @@ export const AnimatedSprite: React.FC<AnimatedSpriteProps> = ({
             anchorX="center"
             anchorY="middle"
           >
-            {state}
+            {props.state}
           </Text>
         </>
       )}

@@ -11,7 +11,7 @@ import {
   PotEntity,
 } from "../types/entities";
 import { GameData } from "../types/game";
-import CharacterSprite, { Point } from "./CharacterSprite";
+import CharacterSprite, { Point } from "./character/CharacterSprite";
 import GameEntities from "./GameEntities";
 import MapDisplay from "./MapDisplay";
 
@@ -368,7 +368,6 @@ const Game = ({
         setAnimation={setAnimation}
         setPosition={setPosition}
         onMoveComplete={() => {
-          console.log("Movimento completo");
           // Converter a animação de movimento para a respectiva animação idle
           switch (currentAnimation) {
             case AnimationType.WALK_UP:
@@ -384,7 +383,7 @@ const Game = ({
               setAnimation(AnimationType.IDLE_DOWN);
           }
         }}
-        zOffset={0.01}
+        zOffset={0.3}
       />
 
       <MapDisplay mapGridData={gameData.map.grid} />

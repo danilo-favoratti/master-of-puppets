@@ -1,4 +1,3 @@
-import { Text } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import React, {
   forwardRef,
@@ -8,17 +7,21 @@ import React, {
   useState,
 } from "react";
 import * as THREE from "three";
-import { ANIMATIONS, AnimationType } from "../types/animations";
+import { ANIMATIONS, AnimationType } from "../../types/animations";
 import {
   CharacterSpriteProps,
   MovementState,
   Point,
-} from "../types/character-sprite";
+} from "../../types/character-sprite";
 import {
   CHARACTERS,
   CharacterType,
   getRandomCharacter,
-} from "../types/characters";
+} from "../../types/characters";
+import CharacterCloak from "./CharacterCloak";
+import CharacterHair from "./CharacterHair";
+import CharacterHat from "./CharacterHat";
+import CharacterOutfit from "./CharacterOutfit";
 
 const CharacterSprite = forwardRef<
   { moveAlongPath: (path: Point[]) => void },
@@ -34,7 +37,7 @@ const CharacterSprite = forwardRef<
       frame = undefined, // If specified, will override the animation
       characterType = undefined, // If not specified, will pick randomly
       onAnimationComplete,
-      speed = 2, // Units per second
+      speed = 1, // Units per second
       onMoveComplete,
       setPosition,
       setAnimation,
@@ -58,6 +61,7 @@ const CharacterSprite = forwardRef<
       currentPathIndex: 0,
       isMoving: false,
     });
+    const [random, setRandom] = useState(Math.random());
 
     // Set random character on first render
     useEffect(() => {
@@ -139,7 +143,6 @@ const CharacterSprite = forwardRef<
         setAnimation?.(AnimationType.IDLE_DOWN);
         setCurrentFrame(0);
         setFrameTimeAccumulator(0);
-        console.log("currentPos", currentPos);
         if (setPosition) {
           setPosition([currentPos.x, currentPos.y, currentPos.z]);
         }
@@ -228,49 +231,50 @@ const CharacterSprite = forwardRef<
       const shouldLoop = animationConfig.loop !== false; // Default to true if not specified
 
       // For single frame animations, just show the frame
-      if (animationFrames.length === 1) {
+      if (animationFrames.length <= 1) {
         setTextureOffsetFromFrame(animationFrames[0]);
         return;
       }
 
-      // Update frame using delta time
-      frameTimeAccumulatorRef.current += delta * 1000;
+      // Accumulate time since last frame
+      const newAccumulator = frameTimeAccumulator + delta * 1000; // Convert to ms
+      setFrameTimeAccumulator(newAccumulator);
 
-      // Check if we need to advance to the next frame
-      if (
-        frameTimeAccumulatorRef.current >= frameTiming[currentFrameRef.current]
-      ) {
-        // Advance to next frame
-        let newFrame = currentFrameRef.current + 1;
-        currentFrameRef.current = newFrame;
+      // Determine which frame to show based on accumulated time
+      let timeSum = 0;
+      let frameIndex = 0;
 
-        // Check if animation is complete
-        if (newFrame >= animationFrames.length) {
-          if (shouldLoop) {
-            // Loop back to the beginning
-            console.log("looping");
-            newFrame = 0;
-            currentFrameRef.current = 0;
-          } else {
-            // Animation is complete, stay at the last frame
-            newFrame = animationFrames.length - 1;
+      const totalDuration = frameTiming.reduce((sum, time) => sum + time, 0);
 
-            // Notify that animation is complete
-            if (onAnimationComplete) {
-              currentFrameRef.current = 0;
-              onAnimationComplete(animationRef.current);
-            }
+      // If we shouldn't loop and we've gone past the total duration,
+      // show the last frame and don't continue animation
+      if (!shouldLoop && newAccumulator > totalDuration) {
+        frameIndex = animationFrames.length - 1;
+      } else {
+        const normalizedTime = shouldLoop
+          ? newAccumulator % totalDuration
+          : Math.min(newAccumulator, totalDuration);
+
+        for (let i = 0; i < frameTiming.length; i++) {
+          timeSum += frameTiming[i];
+          if (normalizedTime < timeSum) {
+            frameIndex = i;
+            break;
           }
         }
-
-        setCurrentFrame(newFrame);
-        setTextureOffsetFromFrame(animationFrames[currentFrameRef.current]);
-
-        // Reset accumulator
-        frameTimeAccumulatorRef.current -= frameTiming[currentFrameRef.current];
       }
 
-      setFrameTimeAccumulator(frameTimeAccumulatorRef.current);
+      // Update the frame
+      const frameToShow = animationFrames[frameIndex];
+      if (currentFrame !== frameToShow) {
+        setCurrentFrame(frameToShow);
+        setTextureOffsetFromFrame(frameToShow);
+      }
+
+      // Check if the animation is complete
+      if (!shouldLoop && frameIndex === animationFrames.length - 1) {
+        onAnimationComplete?.(animationRef.current);
+      }
     });
 
     const adjustedPosition: [number, number, number] = [
@@ -285,6 +289,14 @@ const CharacterSprite = forwardRef<
         position={new THREE.Vector3(...adjustedPosition)}
         scale={scale}
       >
+        {random > 0.5 ? (
+          <CharacterHair animation={animationRef.current} />
+        ) : (
+          <CharacterHat animation={animationRef.current} />
+        )}
+
+        <CharacterOutfit animation={animationRef.current} />
+        <CharacterCloak animation={animationRef.current} />
         <planeGeometry args={[1, 1]} />
         <meshStandardMaterial
           map={texture}
@@ -293,15 +305,6 @@ const CharacterSprite = forwardRef<
           metalness={0.0}
           side={THREE.DoubleSide}
         />
-        <Text
-          position={[0, -0.25, 0]}
-          fontSize={0.08}
-          color="white"
-          anchorX="center"
-          anchorY="middle"
-        >
-          {animationRef.current}
-        </Text>
       </mesh>
     );
   }

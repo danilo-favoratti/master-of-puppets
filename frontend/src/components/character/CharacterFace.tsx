@@ -3,127 +3,43 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 // Import animation types from CharacterSprite
-import { AnimationType } from "./CharacterSprite.tsx";
+import { AnimationType } from "../../types/animations";
 
-// Import all hat sprites
-// Headband (band)
-import bandV01 from "../assets/spritesheets/5hat/char_a_p1_5hat_band_v01.png";
-import bandV02 from "../assets/spritesheets/5hat/char_a_p1_5hat_band_v02.png";
-import bandV03 from "../assets/spritesheets/5hat/char_a_p1_5hat_band_v03.png";
-import bandV04 from "../assets/spritesheets/5hat/char_a_p1_5hat_band_v04.png";
-import bandV05 from "../assets/spritesheets/5hat/char_a_p1_5hat_band_v05.png";
+// Import all face sprites
+// Goggles (gogl)
+import goglV01 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v01.png";
+import goglV02 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v02.png";
+import goglV03 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v03.png";
+import goglV04 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v04.png";
+import goglV05 from "../assets/spritesheets/3fac/char_a_p1_3fac_gogl_v05.png";
 
-// Hood (hddn)
-import hddnV01 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v01.png";
-import hddnV02 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v02.png";
-import hddnV03 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v03.png";
-import hddnV04 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v04.png";
-import hddnV05 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v05.png";
-import hddnV06 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v06.png";
-import hddnV07 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v07.png";
-import hddnV08 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v08.png";
-import hddnV09 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v09.png";
-import hddnV10 from "../assets/spritesheets/5hat/char_a_p1_5hat_hddn_v10.png";
-
-// Helmet (hdpl)
-import hdplV01 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v01.png";
-import hdplV02 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v02.png";
-import hdplV03 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v03.png";
-import hdplV04 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v04.png";
-import hdplV05 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v05.png";
-import hdplV06 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v06.png";
-import hdplV07 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v07.png";
-import hdplV08 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v08.png";
-import hdplV09 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v09.png";
-import hdplV10 from "../assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v10.png";
-
-// Pointy hat (pnty)
-import pntyV01 from "../assets/spritesheets/5hat/char_a_p1_5hat_pnty_v01.png";
-import pntyV02 from "../assets/spritesheets/5hat/char_a_p1_5hat_pnty_v02.png";
-import pntyV03 from "../assets/spritesheets/5hat/char_a_p1_5hat_pnty_v03.png";
-import pntyV04 from "../assets/spritesheets/5hat/char_a_p1_5hat_pnty_v04.png";
-import pntyV05 from "../assets/spritesheets/5hat/char_a_p1_5hat_pnty_v05.png";
-
-// Round hat (rnht)
-import rnhtV01 from "../assets/spritesheets/5hat/char_a_p1_5hat_rnht_v01.png";
-import rnhtV02 from "../assets/spritesheets/5hat/char_a_p1_5hat_rnht_v02.png";
-import rnhtV03 from "../assets/spritesheets/5hat/char_a_p1_5hat_rnht_v03.png";
-import rnhtV04 from "../assets/spritesheets/5hat/char_a_p1_5hat_rnht_v04.png";
-import rnhtV05 from "../assets/spritesheets/5hat/char_a_p1_5hat_rnht_v05.png";
-
-// Puff ball hat (pfbn)
-import pfbnV01 from "../assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v01.png";
-import pfbnV02 from "../assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v02.png";
-import pfbnV03 from "../assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v03.png";
-import pfbnV04 from "../assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v04.png";
-import pfbnV05 from "../assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v05.png";
-
-// Define hat styles
-export enum HatStyle {
-  HEADBAND = "headband",
-  HOOD = "hood",
-  HELMET = "helmet",
-  POINTY = "pointy",
-  ROUND = "round",
-  PUFFBALL = "puffball",
-  NONE = "none", // Added for possibility of no hat
+// Define face styles
+export enum FaceStyle {
+  GOGGLES = "goggles",
+  NONE = "none", // Added for possibility of no face accessory
 }
 
-// Group hat sprites by style
-const HATS = {
-  [HatStyle.HEADBAND]: [bandV01, bandV02, bandV03, bandV04, bandV05],
-  [HatStyle.HOOD]: [
-    hddnV01,
-    hddnV02,
-    hddnV03,
-    hddnV04,
-    hddnV05,
-    hddnV06,
-    hddnV07,
-    hddnV08,
-    hddnV09,
-    hddnV10,
-  ],
-  [HatStyle.HELMET]: [
-    hdplV01,
-    hdplV02,
-    hdplV03,
-    hdplV04,
-    hdplV05,
-    hdplV06,
-    hdplV07,
-    hdplV08,
-    hdplV09,
-    hdplV10,
-  ],
-  [HatStyle.POINTY]: [pntyV01, pntyV02, pntyV03, pntyV04, pntyV05],
-  [HatStyle.ROUND]: [rnhtV01, rnhtV02, rnhtV03, rnhtV04, rnhtV05],
-  [HatStyle.PUFFBALL]: [pfbnV01, pfbnV02, pfbnV03, pfbnV04, pfbnV05],
+// Group face sprites by style
+const FACES = {
+  [FaceStyle.GOGGLES]: [goglV01, goglV02, goglV03, goglV04, goglV05],
 };
 
-// Function to get a random hat or none (with a certain probability)
-const getRandomHat = (chanceOfNoHat: number = 25) => {
-  // First, determine if we should have no hat (default 25% chance)
-  if (Math.random() * 100 < chanceOfNoHat) {
+// Function to get a random face or none (with a certain probability)
+const getRandomFace = (chanceOfNoFace: number = 40) => {
+  // First, determine if we should have no face accessory (default 40% chance)
+  if (Math.random() * 100 < chanceOfNoFace) {
     return {
-      style: HatStyle.NONE,
+      style: FaceStyle.NONE,
       sprite: null,
     };
   }
 
   // Get random style type (excluding NONE)
-  const styles = [
-    HatStyle.HEADBAND,
-    HatStyle.HOOD,
-    HatStyle.HELMET,
-    HatStyle.POINTY,
-    HatStyle.ROUND,
-    HatStyle.PUFFBALL,
-  ];
+  const styles = [FaceStyle.GOGGLES];
   const randomStyleType = styles[Math.floor(Math.random() * styles.length)];
 
   // Get random color variant from that style
-  const styleVariants = HATS[randomStyleType as keyof typeof HATS];
+  const styleVariants = FACES[randomStyleType as keyof typeof FACES];
   const randomVariant =
     styleVariants[Math.floor(Math.random() * styleVariants.length)];
 
@@ -133,76 +49,78 @@ const getRandomHat = (chanceOfNoHat: number = 25) => {
   };
 };
 
-interface CharacterHatProps {
+interface CharacterFaceProps {
   position?: [number, number, number];
   scale?: [number, number, number];
   rows?: number;
   cols?: number;
   animation?: AnimationType;
   frame?: number;
-  hatStyle?: HatStyle; // Optional specific hat style
-  zOffset?: number; // Optional Z offset to position the hat relative to the character
-  chanceOfNoHat?: number; // Percentage chance (0-100) that no hat will be shown
+  faceStyle?: FaceStyle; // Optional specific face style
+  zOffset?: number; // Optional Z offset to position the face relative to the character
+  chanceOfNoFace?: number; // Percentage chance (0-100) that no face accessory will be shown
   onAnimationComplete?: (animation: AnimationType) => void;
 }
 
-const CharacterHat = ({
+const CharacterFace = ({
   position = [0, 0, 0],
   scale = [1, 1, 1],
   rows = 8,
   cols = 8,
   animation = AnimationType.IDLE_DOWN,
   frame = undefined,
-  hatStyle = undefined, // If not specified, will pick randomly
-  zOffset = 0.03, // Default offset to place hat in front of character, cloak, and face
-  chanceOfNoHat = 25, // 25% chance of no hat by default
+  faceStyle = undefined, // If not specified, will pick randomly
+  zOffset = 0.02, // Default offset to place face in front of character and cloak
+  chanceOfNoFace = 40, // 40% chance of no face accessory by default
   onAnimationComplete,
-}: CharacterHatProps) => {
+}: CharacterFaceProps) => {
+  const currentFrameRef = useRef(0);
+  const frameTimeAccumulatorRef = useRef(0);
   const meshRef = useRef<THREE.Mesh>(null);
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [frameTimeAccumulator, setFrameTimeAccumulator] = useState(0);
   const animationRef = useRef(animation);
-  const [selectedHat, setSelectedHat] = useState<{
-    style: HatStyle;
+  const [selectedFace, setSelectedFace] = useState<{
+    style: FaceStyle;
     sprite: string | null;
   } | null>(null);
 
-  // Set random hat on first render
+  // Set random face on first render
   useEffect(() => {
-    if (!hatStyle) {
-      setSelectedHat(getRandomHat(chanceOfNoHat));
-    } else if (hatStyle === HatStyle.NONE) {
-      setSelectedHat({
-        style: HatStyle.NONE,
+    if (!faceStyle) {
+      setSelectedFace(getRandomFace(chanceOfNoFace));
+    } else if (faceStyle === FaceStyle.NONE) {
+      setSelectedFace({
+        style: FaceStyle.NONE,
         sprite: null,
       });
     } else {
       // Use the specified style with a random variant
-      const styleVariants = HATS[hatStyle as keyof typeof HATS];
+      const styleVariants = FACES[faceStyle as keyof typeof FACES];
       const randomVariant =
         styleVariants[Math.floor(Math.random() * styleVariants.length)];
-      setSelectedHat({
-        style: hatStyle,
+      setSelectedFace({
+        style: faceStyle,
         sprite: randomVariant,
       });
     }
-  }, [hatStyle, chanceOfNoHat]);
+  }, [faceStyle, chanceOfNoFace]);
 
-  // Load texture when selectedHat changes
+  // Load texture when selectedFace changes
   useEffect(() => {
     if (
-      !selectedHat ||
-      selectedHat.style === HatStyle.NONE ||
-      !selectedHat.sprite
+      !selectedFace ||
+      selectedFace.style === FaceStyle.NONE ||
+      !selectedFace.sprite
     ) {
-      // No hat to show
+      // No face accessory to show
       return;
     }
 
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(
-      selectedHat.sprite,
+      selectedFace.sprite,
       (loadedTexture) => {
         loadedTexture.magFilter = THREE.NearestFilter;
         loadedTexture.minFilter = THREE.NearestFilter;
@@ -215,7 +133,7 @@ const CharacterHat = ({
         // Handle error silently
       }
     );
-  }, [selectedHat, rows, cols]);
+  }, [selectedFace, rows, cols]);
 
   // Update animation ref when animation prop changes
   useEffect(() => {
@@ -408,8 +326,8 @@ const CharacterHat = ({
     }
   });
 
-  // If no hat or texture, don't render anything
-  if (!texture || !selectedHat || selectedHat.style === HatStyle.NONE) {
+  // If no face accessory or texture, don't render anything
+  if (!texture || !selectedFace || selectedFace.style === FaceStyle.NONE) {
     return null;
   }
 
@@ -432,4 +350,4 @@ const CharacterHat = ({
   );
 };
 
-export default CharacterHat;
+export default CharacterFace;

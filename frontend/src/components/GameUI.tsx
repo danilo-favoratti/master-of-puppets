@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useGameStore } from "../store/gameStore";
-import { Point } from "./CharacterSprite";
+import { Point } from "./character/CharacterSprite";
 import LightControls from "./LightControls";
 
 interface GameUIProps {

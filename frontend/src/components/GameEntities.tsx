@@ -47,8 +47,6 @@ export const GameEntities: React.FC<GameEntitiesProps> = ({
         }
       };
 
-    console.log("entity.type", entity.type);
-
     switch (entity.type) {
       case "pot":
         return (

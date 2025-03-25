@@ -3,32 +3,32 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 // Import animation types from CharacterSprite
-import { AnimationType } from "./CharacterSprite.tsx";
+import { ANIMATIONS, AnimationType } from "../../types/animations";
 
 // Import all cloak sprites
 // Long cloaks (lnpl)
-import lnplV01 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v01.png";
-import lnplV02 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v02.png";
-import lnplV03 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v03.png";
-import lnplV04 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v04.png";
-import lnplV05 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v05.png";
-import lnplV06 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v06.png";
-import lnplV07 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v07.png";
-import lnplV08 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v08.png";
-import lnplV09 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v09.png";
-import lnplV10 from "../assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v10.png";
+import lnplV01 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v01.png";
+import lnplV02 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v02.png";
+import lnplV03 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v03.png";
+import lnplV04 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v04.png";
+import lnplV05 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v05.png";
+import lnplV06 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v06.png";
+import lnplV07 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v07.png";
+import lnplV08 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v08.png";
+import lnplV09 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v09.png";
+import lnplV10 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_lnpl_v10.png";
 
 // Medium cloaks (mnpl)
-import mnplV01 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v01.png";
-import mnplV02 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v02.png";
-import mnplV03 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v03.png";
-import mnplV04 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v04.png";
-import mnplV05 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v05.png";
-import mnplV06 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v06.png";
-import mnplV07 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v07.png";
-import mnplV08 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v08.png";
-import mnplV09 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v09.png";
-import mnplV10 from "../assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v10.png";
+import mnplV01 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v01.png";
+import mnplV02 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v02.png";
+import mnplV03 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v03.png";
+import mnplV04 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v04.png";
+import mnplV05 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v05.png";
+import mnplV06 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v06.png";
+import mnplV07 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v07.png";
+import mnplV08 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v08.png";
+import mnplV09 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v09.png";
+import mnplV10 from "/src/assets/spritesheets/2clo/char_a_p1_2clo_mnpl_v10.png";
 
 // Define cloak styles
 export enum CloakStyle {
@@ -194,113 +194,6 @@ const CharacterCloak = ({
 
     // Set texture offset
     texture.offset.set(col / cols, 1 - (row + 1) / rows);
-  };
-
-  // Animation definitions
-  const ANIMATIONS: Record<
-    AnimationType,
-    { frames: number[]; frameTiming: number[]; loop?: boolean }
-  > = {
-    [AnimationType.IDLE_DOWN]: {
-      frames: [0],
-      frameTiming: [300],
-    },
-    [AnimationType.IDLE_UP]: {
-      frames: [8],
-      frameTiming: [300],
-    },
-    [AnimationType.IDLE_LEFT]: {
-      frames: [24],
-      frameTiming: [300],
-    },
-    [AnimationType.IDLE_RIGHT]: {
-      frames: [16],
-      frameTiming: [300],
-    },
-    [AnimationType.WALK_DOWN]: {
-      frames: [32, 33, 34, 35, 36, 37],
-      frameTiming: [135, 135, 135, 135, 135, 135],
-    },
-    [AnimationType.WALK_UP]: {
-      frames: [40, 41, 42, 43, 44, 45],
-      frameTiming: [135, 135, 135, 135, 135, 135],
-    },
-    [AnimationType.WALK_LEFT]: {
-      frames: [56, 57, 58, 59, 60, 61],
-      frameTiming: [135, 135, 135, 135, 135, 135],
-    },
-    [AnimationType.WALK_RIGHT]: {
-      frames: [48, 49, 50, 51, 52, 53],
-      frameTiming: [135, 135, 135, 135, 135, 135],
-    },
-    [AnimationType.RUN_DOWN]: {
-      frames: [64, 65, 70, 67, 68, 71],
-      frameTiming: [80, 55, 125, 80, 55, 125],
-    },
-    [AnimationType.RUN_UP]: {
-      frames: [72, 73, 78, 75, 76, 79],
-      frameTiming: [80, 55, 125, 80, 55, 125],
-    },
-    [AnimationType.RUN_LEFT]: {
-      frames: [88, 89, 94, 91, 92, 95],
-      frameTiming: [80, 55, 125, 80, 55, 125],
-    },
-    [AnimationType.RUN_RIGHT]: {
-      frames: [80, 81, 86, 83, 84, 87],
-      frameTiming: [80, 55, 125, 80, 55, 125],
-    },
-    [AnimationType.PUSH_DOWN]: {
-      frames: [1, 2],
-      frameTiming: [300, 300],
-    },
-    [AnimationType.PUSH_UP]: {
-      frames: [9, 10],
-      frameTiming: [300, 300],
-    },
-    [AnimationType.PUSH_LEFT]: {
-      frames: [25, 26],
-      frameTiming: [300, 300],
-    },
-    [AnimationType.PUSH_RIGHT]: {
-      frames: [17, 18],
-      frameTiming: [300, 300],
-    },
-    [AnimationType.PULL_DOWN]: {
-      frames: [3, 4],
-      frameTiming: [400, 400],
-    },
-    [AnimationType.PULL_UP]: {
-      frames: [11, 12],
-      frameTiming: [400, 400],
-    },
-    [AnimationType.PULL_LEFT]: {
-      frames: [27, 28],
-      frameTiming: [400, 400],
-    },
-    [AnimationType.PULL_RIGHT]: {
-      frames: [19, 20],
-      frameTiming: [400, 400],
-    },
-    [AnimationType.JUMP_DOWN]: {
-      frames: [5, 6, 7, 5],
-      frameTiming: [300, 150, 100, 300],
-      loop: false,
-    },
-    [AnimationType.JUMP_UP]: {
-      frames: [13, 14, 15, 13],
-      frameTiming: [300, 150, 100, 300],
-      loop: false,
-    },
-    [AnimationType.JUMP_LEFT]: {
-      frames: [29, 30, 31, 29],
-      frameTiming: [300, 150, 100, 300],
-      loop: false,
-    },
-    [AnimationType.JUMP_RIGHT]: {
-      frames: [21, 22, 23, 21],
-      frameTiming: [300, 150, 100, 300],
-      loop: false,
-    },
   };
 
   useFrame((_, delta) => {

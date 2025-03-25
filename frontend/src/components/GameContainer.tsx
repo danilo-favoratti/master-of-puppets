@@ -1,9 +1,8 @@
 import { Canvas } from "@react-three/fiber";
 import React, { useRef, useState } from "react";
-import { Point } from "./CharacterSprite";
+import { Point } from "./character/CharacterSprite";
 import Game from "./Game";
 import GameUI from "./GameUI";
-
 interface GameContainerProps {
   executeCommand: (commandName: string, result: string, params: any) => void;
   registerCommandHandler: (

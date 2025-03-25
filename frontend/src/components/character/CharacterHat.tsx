@@ -2,73 +2,128 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
-// Import all outfit sprites
-// Different outfit types
-// Alchemist outfit variants
-import alchV01 from "../assets/spritesheets/1out/char_a_p1_1out_alch_v01.png";
-import alchV02 from "../assets/spritesheets/1out/char_a_p1_1out_alch_v02.png";
-import alchV03 from "../assets/spritesheets/1out/char_a_p1_1out_alch_v03.png";
-import alchV04 from "../assets/spritesheets/1out/char_a_p1_1out_alch_v04.png";
-import alchV05 from "../assets/spritesheets/1out/char_a_p1_1out_alch_v05.png";
-
-// Angler outfit variants
-import anglV01 from "../assets/spritesheets/1out/char_a_p1_1out_angl_v01.png";
-import anglV02 from "../assets/spritesheets/1out/char_a_p1_1out_angl_v02.png";
-import anglV03 from "../assets/spritesheets/1out/char_a_p1_1out_angl_v03.png";
-import anglV04 from "../assets/spritesheets/1out/char_a_p1_1out_angl_v04.png";
-import anglV05 from "../assets/spritesheets/1out/char_a_p1_1out_angl_v05.png";
-
-// Blacksmith outfit variants
-import bksmV01 from "../assets/spritesheets/1out/char_a_p1_1out_bksm_v01.png";
-import bksmV02 from "../assets/spritesheets/1out/char_a_p1_1out_bksm_v02.png";
-import bksmV03 from "../assets/spritesheets/1out/char_a_p1_1out_bksm_v03.png";
-import bksmV04 from "../assets/spritesheets/1out/char_a_p1_1out_bksm_v04.png";
-import bksmV05 from "../assets/spritesheets/1out/char_a_p1_1out_bksm_v05.png";
-
-// Forester outfit variants
-import fstrV01 from "../assets/spritesheets/1out/char_a_p1_1out_fstr_v01.png";
-import fstrV02 from "../assets/spritesheets/1out/char_a_p1_1out_fstr_v02.png";
-import fstrV03 from "../assets/spritesheets/1out/char_a_p1_1out_fstr_v03.png";
-import fstrV04 from "../assets/spritesheets/1out/char_a_p1_1out_fstr_v04.png";
-import fstrV05 from "../assets/spritesheets/1out/char_a_p1_1out_fstr_v05.png";
-
-// Pathfinder outfit variants
-import pfdrV01 from "../assets/spritesheets/1out/char_a_p1_1out_pfdr_v01.png";
-import pfdrV02 from "../assets/spritesheets/1out/char_a_p1_1out_pfdr_v02.png";
-import pfdrV03 from "../assets/spritesheets/1out/char_a_p1_1out_pfdr_v03.png";
-import pfdrV04 from "../assets/spritesheets/1out/char_a_p1_1out_pfdr_v04.png";
-import pfdrV05 from "../assets/spritesheets/1out/char_a_p1_1out_pfdr_v05.png";
-
 // Import animation types from CharacterSprite
-import React from "react";
-import { AnimationType } from "./CharacterSprite.tsx";
+import { AnimationType } from "../../types/animations";
 
-// Define outfit types
-export enum OutfitStyle {
-  ALCHEMIST = "alchemist",
-  ANGLER = "angler",
-  BLACKSMITH = "blacksmith",
-  FORESTER = "forester",
-  PATHFINDER = "pathfinder",
+// Import all hat sprites
+// Headband (band)
+import bandV01 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_band_v01.png";
+import bandV02 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_band_v02.png";
+import bandV03 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_band_v03.png";
+import bandV04 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_band_v04.png";
+import bandV05 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_band_v05.png";
+
+// Hood (hddn)
+import hddnV01 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v01.png";
+import hddnV02 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v02.png";
+import hddnV03 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v03.png";
+import hddnV04 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v04.png";
+import hddnV05 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v05.png";
+import hddnV06 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v06.png";
+import hddnV07 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v07.png";
+import hddnV08 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v08.png";
+import hddnV09 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v09.png";
+import hddnV10 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hddn_v10.png";
+
+// Helmet (hdpl)
+import hdplV01 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v01.png";
+import hdplV02 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v02.png";
+import hdplV03 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v03.png";
+import hdplV04 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v04.png";
+import hdplV05 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v05.png";
+import hdplV06 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v06.png";
+import hdplV07 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v07.png";
+import hdplV08 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v08.png";
+import hdplV09 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v09.png";
+import hdplV10 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_hdpl_v10.png";
+
+// Pointy hat (pnty)
+import pntyV01 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pnty_v01.png";
+import pntyV02 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pnty_v02.png";
+import pntyV03 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pnty_v03.png";
+import pntyV04 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pnty_v04.png";
+import pntyV05 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pnty_v05.png";
+
+// Round hat (rnht)
+import rnhtV01 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_rnht_v01.png";
+import rnhtV02 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_rnht_v02.png";
+import rnhtV03 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_rnht_v03.png";
+import rnhtV04 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_rnht_v04.png";
+import rnhtV05 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_rnht_v05.png";
+
+// Puff ball hat (pfbn)
+import pfbnV01 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v01.png";
+import pfbnV02 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v02.png";
+import pfbnV03 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v03.png";
+import pfbnV04 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v04.png";
+import pfbnV05 from "/src/assets/spritesheets/5hat/char_a_p1_5hat_pfbn_v05.png";
+
+// Define hat styles
+export enum HatStyle {
+  HEADBAND = "headband",
+  HOOD = "hood",
+  HELMET = "helmet",
+  POINTY = "pointy",
+  ROUND = "round",
+  PUFFBALL = "puffball",
+  NONE = "none", // Added for possibility of no hat
 }
 
-// Group outfit sprites by style
-const OUTFITS = {
-  [OutfitStyle.ALCHEMIST]: [alchV01, alchV02, alchV03, alchV04, alchV05],
-  [OutfitStyle.ANGLER]: [anglV01, anglV02, anglV03, anglV04, anglV05],
-  [OutfitStyle.BLACKSMITH]: [bksmV01, bksmV02, bksmV03, bksmV04, bksmV05],
-  [OutfitStyle.FORESTER]: [fstrV01, fstrV02, fstrV03, fstrV04, fstrV05],
-  [OutfitStyle.PATHFINDER]: [pfdrV01, pfdrV02, pfdrV03, pfdrV04, pfdrV05],
+// Group hat sprites by style
+const HATS = {
+  [HatStyle.HEADBAND]: [bandV01, bandV02, bandV03, bandV04, bandV05],
+  [HatStyle.HOOD]: [
+    hddnV01,
+    hddnV02,
+    hddnV03,
+    hddnV04,
+    hddnV05,
+    hddnV06,
+    hddnV07,
+    hddnV08,
+    hddnV09,
+    hddnV10,
+  ],
+  [HatStyle.HELMET]: [
+    hdplV01,
+    hdplV02,
+    hdplV03,
+    hdplV04,
+    hdplV05,
+    hdplV06,
+    hdplV07,
+    hdplV08,
+    hdplV09,
+    hdplV10,
+  ],
+  [HatStyle.POINTY]: [pntyV01, pntyV02, pntyV03, pntyV04, pntyV05],
+  [HatStyle.ROUND]: [rnhtV01, rnhtV02, rnhtV03, rnhtV04, rnhtV05],
+  [HatStyle.PUFFBALL]: [pfbnV01, pfbnV02, pfbnV03, pfbnV04, pfbnV05],
 };
 
-// Function to get a random outfit
-const getRandomOutfit = () => {
-  // Get random style type
-  const styles = Object.values(OutfitStyle);
+// Function to get a random hat or none (with a certain probability)
+const getRandomHat = (chanceOfNoHat: number = 25) => {
+  // First, determine if we should have no hat (default 25% chance)
+  if (Math.random() * 100 < chanceOfNoHat) {
+    return {
+      style: HatStyle.NONE,
+      sprite: null,
+    };
+  }
+
+  // Get random style type (excluding NONE)
+  const styles = [
+    HatStyle.HEADBAND,
+    HatStyle.HOOD,
+    HatStyle.HELMET,
+    HatStyle.POINTY,
+    HatStyle.ROUND,
+    HatStyle.PUFFBALL,
+  ];
   const randomStyleType = styles[Math.floor(Math.random() * styles.length)];
 
   // Get random color variant from that style
-  const styleVariants = OUTFITS[randomStyleType];
+  const styleVariants = HATS[randomStyleType as keyof typeof HATS];
   const randomVariant =
     styleVariants[Math.floor(Math.random() * styleVariants.length)];
 
@@ -78,83 +133,91 @@ const getRandomOutfit = () => {
   };
 };
 
-interface CharacterOutfitProps {
+interface CharacterHatProps {
   position?: [number, number, number];
   scale?: [number, number, number];
   rows?: number;
   cols?: number;
   animation?: AnimationType;
   frame?: number;
-  outfitStyle?: OutfitStyle; // Optional specific outfit style
-  zOffset?: number; // Optional Z offset to position the outfit relative to the character
+  hatStyle?: HatStyle; // Optional specific hat style
+  zOffset?: number; // Optional Z offset to position the hat relative to the character
+  chanceOfNoHat?: number; // Percentage chance (0-100) that no hat will be shown
   onAnimationComplete?: (animation: AnimationType) => void;
 }
 
-const CharacterOutfit = ({
+const CharacterHat = ({
   position = [0, 0, 0],
   scale = [1, 1, 1],
   rows = 8,
   cols = 8,
   animation = AnimationType.IDLE_DOWN,
   frame = undefined,
-  outfitStyle = undefined, // If not specified, will pick randomly
-  zOffset = 0.005, // Default small offset to place outfit in front of character but behind hair
+  hatStyle = undefined, // If not specified, will pick randomly
+  zOffset = 0.03, // Default offset to place hat in front of character, cloak, and face
+  chanceOfNoHat = 25, // 25% chance of no hat by default
   onAnimationComplete,
-}: CharacterOutfitProps) => {
+}: CharacterHatProps) => {
+  const currentFrameRef = useRef(0);
+  const frameTimeAccumulatorRef = useRef(0);
   const meshRef = useRef<THREE.Mesh>(null);
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [frameTimeAccumulator, setFrameTimeAccumulator] = useState(0);
   const animationRef = useRef(animation);
-  const [selectedOutfit, setSelectedOutfit] = useState<{
-    style: OutfitStyle;
-    sprite: string;
+  const [selectedHat, setSelectedHat] = useState<{
+    style: HatStyle;
+    sprite: string | null;
   } | null>(null);
 
-  // Set random outfit on first render
+  // Set random hat on first render
   useEffect(() => {
-    if (!outfitStyle) {
-      setSelectedOutfit(getRandomOutfit());
+    if (!hatStyle) {
+      setSelectedHat(getRandomHat(chanceOfNoHat));
+    } else if (hatStyle === HatStyle.NONE) {
+      setSelectedHat({
+        style: HatStyle.NONE,
+        sprite: null,
+      });
     } else {
       // Use the specified style with a random variant
-      const styleVariants = OUTFITS[outfitStyle];
+      const styleVariants = HATS[hatStyle as keyof typeof HATS];
       const randomVariant =
         styleVariants[Math.floor(Math.random() * styleVariants.length)];
-      setSelectedOutfit({
-        style: outfitStyle,
+      setSelectedHat({
+        style: hatStyle,
         sprite: randomVariant,
       });
     }
-  }, [outfitStyle]);
+  }, [hatStyle, chanceOfNoHat]);
 
-  // Load texture when selectedOutfit changes
+  // Load texture when selectedHat changes
   useEffect(() => {
-    if (!selectedOutfit) return;
+    if (
+      !selectedHat ||
+      selectedHat.style === HatStyle.NONE ||
+      !selectedHat.sprite
+    ) {
+      // No hat to show
+      return;
+    }
 
-    console.log("Loading outfit texture...");
     const textureLoader = new THREE.TextureLoader();
     textureLoader.load(
-      selectedOutfit.sprite,
+      selectedHat.sprite,
       (loadedTexture) => {
-        console.log("Outfit texture loaded successfully!", loadedTexture);
         loadedTexture.magFilter = THREE.NearestFilter;
         loadedTexture.minFilter = THREE.NearestFilter;
         loadedTexture.wrapS = loadedTexture.wrapT = THREE.RepeatWrapping;
         loadedTexture.repeat.set(1 / cols, 1 / rows);
         setTexture(loadedTexture);
       },
-      (progress) => {
-        console.log(
-          `Loading outfit progress: ${Math.round(
-            (progress.loaded / progress.total) * 100
-          )}%`
-        );
-      },
+      undefined,
       (error) => {
-        console.error("Error loading outfit texture:", error);
+        // Handle error silently
       }
     );
-  }, [selectedOutfit, rows, cols]);
+  }, [selectedHat, rows, cols]);
 
   // Update animation ref when animation prop changes
   useEffect(() => {
@@ -175,7 +238,7 @@ const CharacterOutfit = ({
     texture.offset.set(col / cols, 1 - (row + 1) / rows);
   };
 
-  // Animation definitions from CharacterSprite
+  // Animation definitions
   const ANIMATIONS: Record<
     AnimationType,
     { frames: number[]; frameTiming: number[]; loop?: boolean }
@@ -347,7 +410,8 @@ const CharacterOutfit = ({
     }
   });
 
-  if (!texture || !selectedOutfit) {
+  // If no hat or texture, don't render anything
+  if (!texture || !selectedHat || selectedHat.style === HatStyle.NONE) {
     return null;
   }
 
@@ -370,4 +434,4 @@ const CharacterOutfit = ({
   );
 };
 
-export default CharacterOutfit;
+export default CharacterHat;
