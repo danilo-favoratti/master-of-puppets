@@ -1,8 +1,8 @@
 from collections import defaultdict
 from typing import List, Optional
 
-from .entity import Entity, Position
-from .game_object import GameObject
+from entity import Entity, Position
+from game_object import GameObject
 
 
 class Board:

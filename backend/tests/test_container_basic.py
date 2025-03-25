@@ -11,8 +11,8 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 # Import from the model package
-from model.game import Game
-from model.game_object import Container, GameObject
+from game import Game
+from game_object import Container, GameObject
 
 def main():
     """Run basic container test"""

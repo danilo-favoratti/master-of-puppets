@@ -1,11 +1,11 @@
-fastapi==0.110.0
-uvicorn==0.27.0.post1
+fastapi~=0.115.11
+uvicorn~=0.34.0
 websockets==12.0
-openai==1.14.0
+openai~=1.68.2
 openai-agents
 aiofiles
 colorama>=0.4.6
-tensorflow
+tensorflow==2.12.0
 termcolor
 python-dotenv==1.0.1
 pydantic==2.6.1
@@ -13,3 +13,7 @@ numpy>=2.2.0,<3.0.0
 python-multipart==0.0.19
 deepgram-sdk==3.10.1
 pyaudio==0.2.13 
+pip~=25.0.1
+attrs~=25.1.0
+PySocks~=1.7.1
+tornado~=6.4.2

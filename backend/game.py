@@ -1,11 +1,11 @@
 import uuid
 from typing import Dict, List, Any
 
-from .board import Board
-from .entity import Entity, Position
-from .factory_game import WeatherSystem, WeatherFactory, WeatherType, WeatherParameters
-from .game_object import GameObject, Container
-from .person import Person
+from board import Board
+from entity import Entity, Position
+from factory_game import WeatherSystem, WeatherFactory, WeatherType, WeatherParameters
+from game_object import GameObject, Container
+from person import Person
 
 
 class Game:

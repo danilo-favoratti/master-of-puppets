@@ -5,11 +5,10 @@ from typing import List, Tuple
 
 from colorama import init, Fore, Style
 
+from game_object import Container
+
 # Add the parent directory to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-import model
-from model import Person, Container, GameObject, Position
 
 # Initialize colorama for cross-platform colored terminal output
 init()
