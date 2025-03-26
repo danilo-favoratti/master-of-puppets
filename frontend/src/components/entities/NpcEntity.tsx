@@ -203,7 +203,6 @@ export const NpcEntity = ({
           e.position?.y === Math.floor(newPos.y)
       );
       if (entity && entity.type !== "npc") {
-        console.log("entity", entity.type);
         return;
       }
 

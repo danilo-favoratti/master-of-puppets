@@ -1,9 +1,8 @@
 import { Canvas } from "@react-three/fiber";
-import React, { useRef, useState, useEffect } from "react";
-import { Point } from "./CharacterSprite";
+import React, { useEffect, useState } from "react";
+import '../LoadingSpinner.css';
 import Game from "./Game";
 import GameUI from "./GameUI";
-import '../LoadingSpinner.css';
 
 interface GameContainerProps {
   executeCommand: (commandName: string, result: string, params: any) => void;
