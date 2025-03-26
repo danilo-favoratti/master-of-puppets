@@ -149,7 +149,7 @@ venv.bak/
 frontend/.idea
 node_modules
 backend/output.mp3
-
+backend/.idea
 # mypy
 .mypy_cache/
 .dmypy.json

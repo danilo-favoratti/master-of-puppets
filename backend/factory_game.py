@@ -27,7 +27,6 @@ VERSION = "2.0"  # Removed landmark and NPC functionality
 def create_game(map_size: int = MAP_SIZE, 
                 border_size: int = BORDER_SIZE,
                 chest_count: int = 5,
-                camp_count: int = 3,
                 obstacle_count: int = 10,
                 campfire_count: int = 4,
                 backpack_count: int = 3,
@@ -45,7 +44,6 @@ def create_game(map_size: int = MAP_SIZE,
         map_size: Size of the map (square)
         border_size: Size of the water border
         chest_count: Number of chests to place
-        camp_count: Number of camps to place
         obstacle_count: Number of land obstacles to place
         campfire_count: Number of campfires to place
         backpack_count: Number of backpacks to place
@@ -63,7 +61,6 @@ def create_game(map_size: int = MAP_SIZE,
     factory = GameFactory(map_size, border_size)
     world = factory.generate_world(
         chest_count=chest_count, 
-        camp_count=camp_count,
         obstacle_count=obstacle_count,
         campfire_count=campfire_count,
         backpack_count=backpack_count,
@@ -415,131 +412,6 @@ class BedrollFactory:
         )
         
         return bedroll.to_dict()
-
-
-# Camp types
-CAMP_TYPES = {
-    "bandit": {
-        "description": "A hostile camp of bandits that will attack on sight",
-        "hostility": "aggressive",
-        "sizes": ["small", "medium", "large"],
-        "npcs": ["bandit_scout", "bandit_thug", "bandit_archer", "bandit_leader"]
-    },
-    "traveler": {
-        "description": "A peaceful camp of travelers resting or trading goods",
-        "hostility": "friendly",
-        "sizes": ["small", "medium"],
-        "npcs": ["merchant", "guard", "wanderer", "storyteller"]
-    },
-    "merchant": {
-        "description": "A well-established trading post with valuable goods",
-        "hostility": "neutral",
-        "sizes": ["medium", "large"],
-        "npcs": ["trader", "guard", "craftsman", "collector"]
-    },
-    "abandoned": {
-        "description": "A deserted camp with possible loot but also possible danger",
-        "hostility": "neutral",
-        "sizes": ["small", "medium", "large"],
-        "npcs": ["wildlife", "scavenger", "ghost"]
-    },
-    "military": {
-        "description": "A well-organized camp of soldiers or guards",
-        "hostility": "neutral",
-        "sizes": ["medium", "large"],
-        "npcs": ["soldier", "commander", "scout", "archer"]
-    }
-}
-
-# Size configurations
-CAMP_SIZES = {
-    "small": {
-        "radius": 1,
-        "occupants": (1, 3),
-        "structures": (1, 2)
-    },
-    "medium": {
-        "radius": 2,
-        "occupants": (3, 6),
-        "structures": (2, 4)
-    },
-    "large": {
-        "radius": 3,
-        "occupants": (5, 10),
-        "structures": (4, 7)
-    }
-}
-
-# Structure types that can appear in camps
-STRUCTURES = {
-    "bandit": ["tent", "campfire", "weapon_rack", "cage", "lookout"],
-    "traveler": ["tent", "campfire", "cart", "animal_pen"],
-    "merchant": ["shop", "storage", "tent", "campfire", "animal_pen", "forge"],
-    "abandoned": ["ruined_tent", "cold_campfire", "broken_cart", "debris"],
-    "military": ["barracks", "armory", "watchtower", "command_tent", "training_area"]
-}
-
-def create_camp(camp_type: str = None, size: str = None) -> Dict[str, Any]:
-    """
-    Create a random camp or one of a specific type and size.
-    
-    Args:
-        camp_type (str, optional): Type of camp to create. If None, a random type is chosen.
-        size (str, optional): Size of the camp. If None, a random appropriate size is chosen.
-        
-    Returns:
-        Dict: A camp object with properties
-    """
-    # Choose a random camp type if none specified
-    if camp_type is None:
-        camp_type = random.choice(list(CAMP_TYPES.keys()))
-    
-    # Get camp type data
-    camp_data = CAMP_TYPES[camp_type]
-    
-    # Choose a random appropriate size if none specified
-    if size is None:
-        size = random.choice(camp_data["sizes"])
-    
-    # Get size configuration
-    size_config = CAMP_SIZES[size]
-    
-    # Determine number of occupants and structures
-    num_occupants = random.randint(*size_config["occupants"])
-    num_structures = random.randint(*size_config["structures"])
-    
-    # Select occupants
-    occupants = []
-    for _ in range(num_occupants):
-        npc_type = random.choice(camp_data["npcs"])
-        occupants.append({
-            "type": npc_type,
-            "level": random.randint(1, 5),
-            "hostile": camp_data["hostility"] == "aggressive"
-        })
-    
-    # Select structures
-    structures = []
-    available_structures = STRUCTURES.get(camp_type, ["tent", "campfire"])
-    for _ in range(num_structures):
-        structure_type = random.choice(available_structures)
-        structures.append({
-            "type": structure_type,
-            "condition": random.choice(["poor", "fair", "good"]) if camp_type != "abandoned" else "poor"
-        })
-    
-    # Create the camp object
-    camp = {
-        "type": camp_type,
-        "size": size,
-        "radius": size_config["radius"],
-        "description": camp_data["description"],
-        "hostility": camp_data["hostility"],
-        "occupants": occupants,
-        "structures": structures
-    }
-    
-    return camp
 
 
 @dataclass
@@ -2332,7 +2204,6 @@ class GameFactory:
         
     def generate_world(self, 
                       chest_count: int = 5, 
-                      camp_count: int = 3,
                       obstacle_count: int = 10,
                       campfire_count: int = 4,
                       backpack_count: int = 3,
@@ -2348,7 +2219,6 @@ class GameFactory:
         
         Args:
             chest_count: Number of chests to place
-            camp_count: Number of camps to place
             obstacle_count: Number of land obstacles to place
             campfire_count: Number of campfires to place
             backpack_count: Number of backpacks to place
@@ -2368,7 +2238,7 @@ class GameFactory:
         
         # Place objects in order of importance
         self.place_objects("obstacles", obstacle_count)
-        self.place_objects("camps", camp_count)
+        # Removed camps placement
         self.place_objects("campfires", campfire_count)
         self.place_objects("tents", tent_count)
         self.place_objects("bedrolls", bedroll_count)
@@ -2577,8 +2447,6 @@ class GameFactory:
             # Create the object
             if object_type == "chests":
                 obj = create_chest()
-            elif object_type == "camps":
-                obj = create_camp()
             elif object_type == "obstacles":
                 obj = create_land_obstacle()
             elif object_type == "campfires":
@@ -2636,21 +2504,6 @@ class GameFactory:
                 display_grid[y][x] = "MPT"
             else:  # big
                 display_grid[y][x] = "BPT"
-        
-        # Then camps and camp-related items
-        for camp in self.objects["camps"]:
-            x, y = camp["position"]
-            
-            if camp["type"] == "bandit":
-                display_grid[y][x] = "BND"
-            elif camp["type"] == "traveler":
-                display_grid[y][x] = "TRV"
-            elif camp["type"] == "merchant":
-                display_grid[y][x] = "MRC"
-            elif camp["type"] == "military":
-                display_grid[y][x] = "MIL"
-            else:  # abandoned
-                display_grid[y][x] = "ABD"
                 
         for campfire in self.objects["campfires"]:
             x, y = campfire["position"]
@@ -2715,8 +2568,6 @@ class GameFactory:
         print(f"{Fore.YELLOW}{Back.BLACK}CHW{Style.RESET_ALL} Wooden Chest   {Fore.YELLOW}{Back.BLACK}CHS{Style.RESET_ALL} Silver Chest   "
               f"{Fore.YELLOW}{Back.BLACK}CHG{Style.RESET_ALL} Golden Chest   {Fore.YELLOW}{Back.BLACK}CHM{Style.RESET_ALL} Magical Chest")
         print(f"{Fore.YELLOW}{Back.BLACK}BPK{Style.RESET_ALL} Backpack")
-        print(f"{Fore.RED}{Back.BLACK}BND{Style.RESET_ALL} Bandit Camp   {Fore.RED}{Back.BLACK}TRV{Style.RESET_ALL} Traveler Camp   "
-              f"{Fore.RED}{Back.BLACK}MRC{Style.RESET_ALL} Merchant Camp   {Fore.RED}{Back.BLACK}ABD{Style.RESET_ALL} Abandoned Camp")
         print(f"{Fore.RED}{Back.BLACK}CFR{Style.RESET_ALL} Campfire   {Fore.RED}{Back.BLACK}TNT{Style.RESET_ALL} Tent   "
               f"{Fore.RED}{Back.BLACK}BDR{Style.RESET_ALL} Bedroll   {Fore.RED}{Back.BLACK}LST{Style.RESET_ALL} Log Stool")
         print(f"{Fore.RED}{Back.BLACK}CSP{Style.RESET_ALL} Campfire Spit   {Fore.RED}{Back.BLACK}CPT{Style.RESET_ALL} Campfire Pot   "
@@ -2893,7 +2744,7 @@ class GameFactory:
         # Convert campfires
         for i, campfire in enumerate(self.objects["campfires"]):
             entities.append({
-                "id": f"campfire-{i+1}",
+                "id": campfire.get("id", f"campfire-{i+1}"),
                 "type": "campfire",
                 "name": "Camp Fire",
                 "position": {"x": campfire["position"][0], "y": campfire["position"][1]},
@@ -2912,23 +2763,23 @@ class GameFactory:
         # Convert pots
         for i, pot in enumerate(self.objects["pots"]):
             entities.append({
-                "id": f"pot-{i+1}",
+                "id": pot.get("id", f"pot-{i+1}"),
                 "type": "pot",
                 "name": "Pot",
                 "position": {"x": pot["position"][0], "y": pot["position"][1]},
-                "state": pot.get("state", "idle"),
+                "state": pot.get("state", "default"),
                 "variant": "1",
                 "isMovable": pot.get("is_movable", True),
                 "isJumpable": pot.get("is_jumpable", False),
                 "isUsableAlone": True,
                 "isCollectable": False,
                 "isWearable": False,
-                "weight": pot.get("weight", 3),
+                "weight": pot.get("weight", 10),
                 "capacity": pot.get("capacity", 5),
-                "durability": pot.get("durability", 100),
-                "maxDurability": pot.get("max_durability", 100),
+                "durability": pot.get("durability", 75),
+                "maxDurability": pot.get("max_durability", 75),
                 "size": pot.get("size", "medium"),
-                "description": pot.get("description", "A container that can hold items.")
+                "description": pot.get("description", "A simple pot, useful for various tasks.")
             })
 
         # Convert chests
@@ -2953,32 +2804,68 @@ class GameFactory:
             })
 
         # Convert camp items (tents, bedrolls, log stools, etc.)
-        for item_type in ["tents", "bedrolls", "log_stools", "campfire_spits", "campfire_pots", "firewood"]:
+        camp_items = {
+            "tents": ("tent", "A shelter for resting and protection from weather."),
+            "bedrolls": ("bedroll", "A comfortable place to sleep."),
+            "log_stools": ("log_stool", "A simple seat made from a log."),
+            "campfire_spits": ("campfire_spit", "A device for cooking over a fire."),
+            "campfire_pots": ("campfire_pot", "A pot for cooking over a campfire."),
+            "firewood": ("firewood", "Wood that can be used to start or maintain a fire."),
+            "backpacks": ("backpack", "A container for carrying items."),
+        }
+        
+        for item_type, (type_name, default_desc) in camp_items.items():
             for i, item in enumerate(self.objects[item_type]):
                 base_name = item_type[:-1].replace("_", " ").title()
+                
+                # Convert possible actions to camelCase format
+                possible_actions = []
+                if "possible_actions" in item:
+                    possible_actions = item["possible_actions"]
+                elif "possible_alone_actions" in item:
+                    possible_actions = item["possible_alone_actions"]
+                
                 entities.append({
-                    "id": item.get("id", f"{item_type[:-1]}-{i+1}"),
-                    "type": item_type[:-1],
-                    "name": f"{item.get('quality', 'Standard')} {base_name}",
+                    "id": item.get("id", f"{type_name}-{i+1}"),
+                    "type": type_name,
+                    "name": item.get("name", base_name),
                     "position": {"x": item["position"][0], "y": item["position"][1]},
-                    "state": item.get("state", "idle"),
-                    "variant": "1",
+                    "state": item.get("state", "default"),
+                    "variant": item.get("variant", "1"),
                     "isMovable": item.get("is_movable", True),
                     "isJumpable": item.get("is_jumpable", False),
                     "isUsableAlone": item.get("is_usable_alone", True),
                     "isCollectable": item.get("is_collectable", False),
                     "isWearable": item.get("is_wearable", False),
                     "weight": item.get("weight", 2),
-                    "quality": item.get("quality", "standard"),
-                    "durability": item.get("durability", 100),
-                    "maxDurability": item.get("max_durability", 100),
-                    "description": item.get("description", f"A {base_name.lower()} that can be used in camp.")
+                    "possibleActions": possible_actions,
+                    "description": item.get("description", default_desc)
                 })
+        
+        # Convert obstacles
+        for i, obstacle in enumerate(self.objects["obstacles"]):
+            obstacle_type = obstacle.get("type", "obstacle")
+            entities.append({
+                "id": obstacle.get("id", f"obstacle-{i+1}"),
+                "type": obstacle_type,
+                "name": obstacle.get("name", f"{obstacle_type.capitalize()}"),
+                "position": {"x": obstacle["position"][0], "y": obstacle["position"][1]},
+                "state": obstacle.get("state", "default"),
+                "variant": obstacle.get("variant", "1"),
+                "isMovable": obstacle.get("is_movable", False),
+                "isJumpable": obstacle.get("is_jumpable", True),
+                "isUsableAlone": obstacle.get("is_usable_alone", False),
+                "isCollectable": obstacle.get("is_collectable", False),
+                "isWearable": False,
+                "weight": obstacle.get("weight", 5),
+                "possibleActions": [],
+                "description": obstacle.get("description", f"A {obstacle_type} blocking the path.")
+            })
             
         return {
             "map": {
                 "size": self.map_size,
-                "border_size": self.border_size,
+                "borderSize": self.border_size,
                 "grid": ui_grid
             },
             "entities": entities
@@ -2991,7 +2878,6 @@ if __name__ == "__main__":
     # Generate a world with all object types
     world = factory.generate_world(
         chest_count=8, 
-        camp_count=4, 
         obstacle_count=12,
         campfire_count=6,
         backpack_count=5,

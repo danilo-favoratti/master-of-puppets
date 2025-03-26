@@ -1,13 +1,15 @@
-import json
 import logging
 import os
 import traceback
+from dataclasses import dataclass
 from typing import Dict, Any, List, Tuple, Optional
 
-from agents import Runner, Agent, function_tool, RunContextWrapper, TContext
+from agents import Runner, Agent, function_tool, RunContextWrapper
 from deepgram import DeepgramClient
 from openai import OpenAI
+from pydantic import BaseModel, Field
 
+from agent_copywriter_pydantic import GameMap
 from factory_game import MAP_SIZE
 
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
@@ -15,15 +17,91 @@ logging.basicConfig(level=logging.DEBUG if DEBUG_MODE else logging.INFO)
 logger = logging.getLogger(__name__)
 logger.debug("Debug mode enabled.")
 
+class Environment(BaseModel):
+    size: int
+    border_size: int
+    grid: List[List[int]]
 
-# Define our GameContext as a subclass of AgentContext
-class GameContext:
-    def __init__(self, name: str = "game_context"):
-        self.name = name
-        self.theme: Optional[str] = None
-        self.environment: Optional[Dict[str, Any]] = None
-        self.entities: List[Dict[str, Any]] = []
-        self.quest: Optional[Dict[str, Any]] = None
+class Position(BaseModel):
+    x: int
+    y: int
+
+class SmallEntity(BaseModel):
+    id: Optional[str] = None
+    type: Optional[str] = None
+    name: str
+    position: Optional[Position] = None
+    state: Optional[str] = None
+    variant: Optional[str] = None
+    isMovable: Optional[bool] = False
+    isJumpable: Optional[bool] = False
+    isUsableAlone: Optional[bool] = False
+    isCollectable: Optional[bool] = False
+    isWearable: Optional[bool] = False
+    weight: int = 1
+    possibleActions: List[str] = Field(default_factory=list, alias="possibleActions")
+    durability: Optional[int] = None
+    maxDurability: Optional[int] = Field(default=None, alias="maxDurability")
+    size: Optional[str] = None
+    description: Optional[str] = None
+
+class Entity(BaseModel):
+    id: Optional[str] = None
+    type: Optional[str] = None
+    name: str
+    position: Optional[Position] = None
+    state: Optional[str] = None
+    variant: Optional[str] = None
+    isMovable: Optional[bool] = False
+    isJumpable: Optional[bool] = False
+    isUsableAlone: Optional[bool] = False
+    isCollectable: Optional[bool] = False
+    isWearable: Optional[bool] = False
+    weight: int = 1
+    possibleActions: List[str] = Field(default_factory=list, alias="possibleActions")
+    durability: Optional[int] = None
+    maxDurability: Optional[int] = Field(default=None, alias="maxDurability")
+    size: Optional[str] = None
+    description: Optional[str] = None
+    contents: Optional[List[SmallEntity]] = None
+    capacity: Optional[int] = None
+
+    class Config:
+        allow_population_by_field_name = True
+
+class Quest(BaseModel):
+    objectives: List[str]
+
+class StoryTellerGameContext(BaseModel):
+    name: str = "game_context"
+    theme: Optional[str] = None
+    environment: Optional[Environment] = None
+    entities: List[Entity] = Field(default_factory=list)
+    quest: Optional[Quest] = None
+    game_instructions: Optional[str] = Field(default=None, alias="game-instructions")
+
+    class Config:
+        allow_population_by_field_name = True
+
+
+@dataclass
+class GameContext(BaseModel):
+    name: str
+    theme: Optional[str]
+    environment: Optional[Dict[str, Any]]
+    entities: List[Dict[str, Any]]
+    quest: Optional[Dict[str, Any]]
+    game_instructions: str
+
+    def __init__(self, /, **data: Any):
+        super().__init__(**data)
+        self.name = "game_context"
+        self.theme = None
+        self.environment = None
+        self.entities = []
+        self.quest = None
+        self.game_instructions = None
+
 
 @function_tool
 async def create_map(
@@ -40,8 +118,8 @@ async def create_map(
         campfire_spit_count: int,
         campfire_pot_count: int,
         pot_count: int
-) -> str:
-    logger.debug("Entered create_map function.")
+) -> Dict[str, Any]:
+    logger.info("Entered create_map function.")
     try:
         logger.info("Starting map creation process.")
         # Set defaults for any missing parameters
@@ -66,7 +144,7 @@ async def create_map(
         )
 
         from factory_game import create_game
-        logger.debug("Imported create_game from factory_game.")
+        logger.info("Imported create_game from factory_game.")
 
         logger.info("Creating game world...")
 
@@ -86,11 +164,19 @@ async def create_map(
             campfire_pot_count=campfire_pot_count,
             pot_count=pot_count
         )
-        logger.debug("GameFactory instance created.")
+        logger.info("GameFactory instance created.")
         logger.info("Exporting UI JSON from game factory...")
 
         ui_json = factory.export_world_ui_json()
         logger.info("UI JSON exported successfully.")
+
+        # Create a GameMap object from the UI JSON
+        try:
+            game_map = GameMap.from_factory_json(ui_json)
+            logger.info(f"GameMap created with {len(game_map.entities or [])} entities")
+        except ValueError as e:
+            logger.error(f"Error creating GameMap: {str(e)}")
+            return {"error": str(e)}
 
         # Save map details in context
         logger.info("Storing map details in context.")
@@ -99,17 +185,14 @@ async def create_map(
             "map_data": ui_json
         }
 
-        success_message = "Successfully created a new game map with theme: " + (ctx.context.theme or "default")
-        message = json.dumps({
-            "success_message": success_message,
-            "map": ui_json
-        })
-        logger.info(f"Map creation completed: {message}")
-        return message
+        # Convert to dict for return value
+        map_dict = game_map.dict() if hasattr(game_map, 'dict') else game_map.model_dump()
+        logger.info(f"Map creation completed with {len(map_dict.get('entities', []))} entities")
+        return map_dict
     except Exception as e:
         error_message = f"Error creating map: {str(e)}"
         logger.error(error_message, exc_info=True)
-        return error_message
+        return {"error": error_message}
 
 
 class CopywriterAgent:
@@ -123,19 +206,19 @@ class CopywriterAgent:
             deepgram_api_key: str = os.getenv("DEEPGRAM_API_KEY"),
             voice: str = os.getenv("CHARACTER_VOICE"),
     ):
-        logger.debug("Initializing CopywriterAgent.")
+        logger.info("Initializing CopywriterAgent.")
         self.openai_key = openai_api_key
         self.voice = voice
 
         self.openai_client = OpenAI(api_key=openai_api_key)
-        logger.debug("Initialized OpenAI client.")
+        logger.info("Initialized OpenAI client.")
 
         # Use the GameContext as our AgentContext
-        self.game_context = GameContext(name="game_context")
-        logger.debug("Game context initialized.")
+        self.game_context = StoryTellerGameContext(name="game_context")
+        logger.info("Game context initialized.")
 
         self.agent_data = self.setup_agent()
-        logger.debug("Agent data setup completed.")
+        logger.info("Agent data setup completed.")
 
         try:
             self.deepgram_client = DeepgramClient(api_key=deepgram_api_key)
@@ -144,7 +227,7 @@ class CopywriterAgent:
             logger.error(f"Failed to initialize Deepgram client: {e}", exc_info=True)
 
     def setup_agent(self) -> Dict:
-        logger.debug("Setting up the OpenAI agent with system prompt and tools.")
+        logger.info("Setting up the OpenAI agent with system prompt and tools.")
         system_prompt = """
 # MISSION
 You are a creative copywriter tasked with crafting the core of an RPG game story. Your goal is to design a rich narrative structure with all necessary game parameters.
@@ -162,45 +245,150 @@ You are a creative copywriter tasked with crafting the core of an RPG game story
 
 Example JSON Structure:
 {
-  "theme": "<THEME>",
-  "map": { <JSON MAP FROM TOOL> },
-  "entities": [
-    { "name": "<ENTITY NAME>", "actions": ["<ACTION1>", "<ACTION2>"] }
+  "name": "Great Day To Die Alone"
+  "theme": "Abandoned Island",
+  "environment": {
+    "size": 4,
+    "border_size": 1,
+    "grid": [
+      [0, 0, 0, 0],
+      [0, 1, 1, 0],
+      [0, 1, 1, 0],
+      [0, 0, 0, 0]
+    ]
+  },
+  "entities": { 
+    "anyOf": [
+        {
+          "id": "campfire-1",
+          "type": "campfire",
+          "name": "Camp Fire",
+          "position": {
+            "x": 2,
+            "y": 2
+          },
+          "state": "unlit",
+          "variant": "1",
+          "isMovable": false,
+          "isJumpable": true,
+          "isUsableAlone": true,
+          "isCollectable": false,
+          "isWearable": false,
+          "weight": 5,
+          "possibleActions": [
+            "light",
+            "extinguish"
+          ],
+          "description": "A pile of dry wood ready to be lit."
+        },
+        {
+          "id": "chest-1",
+          "type": "chest",
+          "name": "Magical Chest",
+          "position": {
+            "x": 1,
+            "y": 1
+          },
+          "state": "locked",
+          "variant": "magical",
+          "isMovable": false,
+          "isJumpable": false,
+          "isUsableAlone": true,
+          "isCollectable": false,
+          "isWearable": false,
+          "weight": 10,
+          "contents": [
+            {
+              "name": "legendary_weapon",
+              "tier": "magical",
+              "quantity": 2
+            },
+            {
+              "name": "magic_wand",
+              "tier": "golden",
+              "quantity": 1
+            }
+          ],
+          "description": "A container for storing valuable items."
+        },
+        {
+          "id": "pot-1",
+          "type": "pot",
+          "name": "Pot",
+          "position": {
+            "x": 0,
+            "y": 3
+          },
+          "state": "default",
+          "variant": "1",
+          "isMovable": true,
+          "isJumpable": false,
+          "isUsableAlone": true,
+          "isCollectable": false,
+          "isWearable": false,
+          "weight": 10,
+          "capacity": 5,
+          "durability": 75,
+          "maxDurability": 75,
+          "size": "medium",
+          "description": "A simple pot, useful for various tasks."
+        }
+    }
   ],
   "quest": {
     "objectives": [
-      "<OBJECTIVE 1>",
-      "<OBJECTIVE 2>"
+      "Open the Chest",
+      "Get the key"
     ]
   },
-  "gameInstructions": "..."
+  "game-instructions": "You have to find a open secret treasure chest."
 }
 
+
 # GAME WORD
-This document explains the structure of the source code for various game objects and mechanics. It outlines the objects, their properties, available actions, the factory methods used to create them, and how they integrate with the overall game world (including the board, player, and weather systems). Use this as a comprehensive reference when prompting your game-creation agent.
+This document explains the structure of the source code for various game objects and mechanics. 
+It outlines the objects, their properties, available actions, the factory methods used to create them, 
+and how they integrate with the overall game world (including the board, player, and weather systems). 
+Use this as a comprehensive reference when prompting your game-creation agent.
 
 ---
 
+## Entity
+
+All Items are Entities and they can have this values: 
+id: str = None
+type: str = None
+name: str
+position: Position = None
+state: str = None
+variant: str = None
+isMovable: bool = False
+isJumpable: bool = False
+isUsableAlone: bool = False
+isCollectable: bool = False
+isWearable: bool = False
+weight: int = 1
+possibleActions: List[str] = Field(default_factory=list, alias="possibleActions")
+durability: int = None
+maxDurability: int = Field(default=None, alias="maxDurability")
+size: str = None
+description: str = None
+contents: List[SmallEntity]] = None
+capacity: int] = None
+
+SmallEntity is a Entity without contents and capacity 
+
+Position is x, y
+
 ## 1. Interactive Items and Their Factories
 
-### 1.1. Backpack
+### 1.1. Backpack (Entity)
 - **Class:** `Backpack` (inherits from `GameObject`)
 - **Properties:**
-  - `description`: A text description.
-  - `max_capacity`: Maximum number of items (default is 5).
   - `contained_items`: A list of item names currently held.
   - `possible_alone_actions`: A set of actions available when the backpack is used alone.
-  - **Interaction Flags:**
-    - `is_movable`: `True`
-    - `is_jumpable`: `False`
-    - `is_usable_alone`: `True`
-    - `is_wearable`: `True` (backpacks can be worn)
   - `weight`: Set to `2`
   - `usable_with`: Initially an empty set.
-- **Methods:**
-  - `to_dict()`: Converts the backpack into a dictionary.
-- **Factory:** `BackpackFactory`
-  - **Variants:** `"small"` (only variant available)
   - **Preset Data:**
     - Name: `"Small Backpack"`
     - Description: `"A small backpack that can hold a few items."`
@@ -208,302 +396,214 @@ This document explains the structure of the source code for various game objects
   - **ID Generation:** Automatically generates an ID if not provided.
 
 ---
+# Simplified Game Object Definitions
 
-### 1.2. Bedroll
+---
+
+## 1.2. Bedroll
 - **Class:** `Bedroll` (inherits from `GameObject`)
 - **Properties:**
-  - `description`
-  - `max_capacity`: `1` (one person)
-  - `contained_items`: List holding people using the bedroll.
-  - `possible_alone_actions`: Set initialized to include the sleep action.
-- **Interaction Flags:**
-  - `is_movable`: `True`
-  - `is_jumpable`: `False`
-  - `is_usable_alone`: `True`
-  - `weight`: `2`
-  - `usable_with`: Empty set.
-- **Action:** Uses `ACTION_SLEEP` (string `"sleep"`)
-- **Methods:**
-  - `to_dict()`
-- **Factory:** `BedrollFactory`
-  - **Variant:** `"standard"`
+  - `max_capacity`: 1 (holds one person)
+  - `contained_items`: list of users
+  - `possible_alone_actions`: includes `"sleep"`
+  - `weight`: 2  
+  - **Interaction Flags:** movable, not jumpable, usable alone
+- **Action:** Uses `"sleep"`
+- **Methods:** `to_dict()`
+- **Factory:** `BedrollFactory` (variant: `"standard"`)
   - **Preset Data:**
     - Name: `"Bedroll"`
     - Description: `"A comfortable bedroll for sleeping."`
-  - **ID Generation:** Auto-generates if missing.
+- **ID Generation:** Auto-generated if missing
 
 ---
 
-### 1.3. Campfire Pot
+## 1.3. Campfire Pot
 - **Class:** `CampfirePot` (inherits from `GameObject`)
 - **Properties:**
-  - `description`
-  - `pot_type`: Either a tripod or a spit (default: `POT_TRIPOD`)
-  - `state`: Initial state is `POT_EMPTY` (other states: cooking, burning, cooked)
-  - `max_items`: Maximum of `1` item
-  - `contained_items`: Items being cooked
-- **Interaction Flags:**
-  - `is_movable`: `True`
-  - `is_jumpable`: `False`
-  - `is_usable_alone`: `True`
-  - `weight`: `3`
+  - `pot_type`: defaults to `POT_TRIPOD`
+  - `state`: starts as `POT_EMPTY`
+  - `max_items`: 1 (for one cooking item)
+  - `contained_items`: items being cooked
+  - `weight`: 3  
+  - **Interaction Flags:** movable, not jumpable, usable alone  
   - `usable_with`: `{CAMPFIRE_BURNING, CAMPFIRE_DYING}`
-- **Possible Actions:** (determined by state)
-  - If empty: `{ACTION_PLACE}`
-  - If cooking or burning: `{ACTION_REMOVE}`
-  - If cooked: `{ACTION_REMOVE, ACTION_EMPTY}`
-- **Methods:**
-  - `to_dict()`
+- **Possible Actions:**
+  - Empty: `{ACTION_PLACE}`
+  - Cooking/Burning: `{ACTION_REMOVE}`
+  - Cooked: `{ACTION_REMOVE, ACTION_EMPTY}`
+- **Methods:** `to_dict()`
 - **Factory:** `CampfirePotFactory`
-  - **Variants:** Defined in `_pot_data` for keys:
-    - `POT_TRIPOD`
-    - `POT_SPIT`
   - **Preset Data Example:**
-    - **Tripod:**  
-      - Name: `"Cooking Tripod"`
-      - Description: `"A sturdy metal tripod designed to hold cooking pots over a fire."`
-    - **Spit:**  
-      - Name: `"Roasting Spit"`
-      - Description: `"A long metal spit perfect for roasting meat over a fire."`
-  - **ID Generation:** Automatically generated if not provided.
+    - **Tripod:** Name: `"Cooking Tripod"`, Description: `"A sturdy metal tripod for cooking."`
+    - **Spit:** Name: `"Roasting Spit"`, Description: `"A long metal spit for roasting meat."`
+- **ID Generation:** Auto-generated if not provided
 
 ---
 
-### 1.4. Spit Item
+## 1.4. Spit Item
 - **Class:** `SpitItem` (inherits from `GameObject`)
 - **Properties:**
-  - `description`
-  - `item_type`: E.g., `SPIT_BIRD` (other options include fish or meat)
-  - `state`: Starts as `SPIT_ITEM_RAW` (other states: cooking, burning, cooked)
-  - `cooking_time`: Number of turns to cook (default `5`)
+  - `item_type`: e.g., `SPIT_BIRD`
+  - `state`: begins as `SPIT_ITEM_RAW`
+  - `cooking_time`: default is 5 turns
   - `is_edible`: `True`
-- **Interaction Flags:**
-  - `is_movable`: `True`
-  - `is_jumpable`: `False`
-  - `is_usable_alone`: `True`
-  - `weight`: `1`
+  - `weight`: 1  
+  - **Interaction Flags:** movable, not jumpable, usable alone  
   - `usable_with`: `{POT_SPIT}`
-- **Possible Actions:** Depending on state:
-  - If raw: `{ACTION_PLACE_ON_SPIT}`
-  - If cooking or burning: `{ACTION_REMOVE_FROM_SPIT}`
-  - If cooked: `{ACTION_REMOVE_FROM_SPIT, ACTION_EAT}`
-- **Methods:**
-  - `to_dict()`
+- **Possible Actions:**
+  - Raw: `{ACTION_PLACE_ON_SPIT}`
+  - Cooking/Burning: `{ACTION_REMOVE_FROM_SPIT}`
+  - Cooked: `{ACTION_REMOVE_FROM_SPIT, ACTION_EAT}`
+- **Methods:** `to_dict()`
 - **Factory:** `SpitItemFactory`
-  - **Variants:** In `_item_data` for keys:
-    - `SPIT_BIRD`
-    - `SPIT_FISH`
-    - `SPIT_MEAT`
-  - **Preset Data Example:**
-    - For `SPIT_BIRD`:  
-      - Name: `"Raw Bird"`
-      - Description: `"A plucked bird ready for roasting."`
-      - Cooking Time: `5`
-  - **ID Generation:** Handled automatically if not provided.
+  - **Preset Data Example (for SPIT_BIRD):**
+    - Name: `"Raw Bird"`
+    - Description: `"A plucked bird ready for roasting."`
+- **ID Generation:** Auto-generated if not provided
 
 ---
 
-### 1.5. Campfire Spit
+## 1.5. Campfire Spit
 - **Class:** `CampfireSpit` (inherits from `GameObject`)
 - **Properties:**
-  - `description`
-  - `quality`: E.g., `SPIT_QUALITY_BASIC` (other qualities: sturdy, reinforced)
-  - `durability` and `max_durability`: Varies with quality (default 100)
-  - `cooking_bonus`: Extra bonus (default `0`)
-- **Interaction Flags:**
-  - `is_movable`: `True`
-  - `is_jumpable`: `False`
-  - `is_usable_alone`: `True`
-  - `weight`: `2`
+  - `quality`: e.g., `SPIT_QUALITY_BASIC`
+  - `durability` & `max_durability`: default 100 (may vary with quality)
+  - `cooking_bonus`: default 0 (may vary with quality)
+  - `weight`: 2  
+  - **Interaction Flags:** movable, not jumpable, usable alone  
   - `usable_with`: `{POT_SPIT}`
-- **Methods:**
-  - `to_dict()`
+- **Methods:** `to_dict()`
 - **Factory:** `CampfireSpitFactory`
-  - **Variants:**  
-    - `SPIT_QUALITY_BASIC`:  
-      - Name: `"Basic Campfire Spit"`
-      - Durability: `100`, Bonus: `0`
-    - `SPIT_QUALITY_STURDY`:  
-      - Name: `"Sturdy Campfire Spit"`
-      - Durability: `150`, Bonus: `1`
-    - `SPIT_QUALITY_REINFORCED`:  
-      - Name: `"Reinforced Campfire Spit"`
-      - Durability: `200`, Bonus: `2`
-  - **ID Generation:** Auto-generated if not provided.
+  - **Variants:**
+    - **Basic:** Name: `"Basic Campfire Spit"`, Durability: 100, Bonus: 0
+    - **Sturdy:** Name: `"Sturdy Campfire Spit"`, Durability: 150, Bonus: 1
+    - **Reinforced:** Name: `"Reinforced Campfire Spit"`, Durability: 200, Bonus: 2
+- **ID Generation:** Auto-generated if missing
 
 ---
 
-### 1.6. Campfire
+## 1.6. Campfire
 - **Class:** `Campfire` (inherits from `GameObject`)
 - **Properties:**
-  - `description`
-  - `state`: Can be one of:
-    - `CAMPFIRE_UNLIT`
-    - `CAMPFIRE_BURNING`
-    - `CAMPFIRE_DYING`
-    - `CAMPFIRE_EXTINGUISHED`
-- **Interaction Flags:**
-  - `is_movable`: `False`
-  - `is_jumpable`: `True`
-  - `is_usable_alone`: `True`
-  - `weight`: `5`
-  - `usable_with`: Empty set (but can be used with items like wood or water)
-- **Possible Actions:** Based on state:
-  - If unlit: `{ACTION_LIGHT}`
-  - If burning/dying: `{ACTION_EXTINGUISH}`
-  - If extinguished: `{ACTION_LIGHT}`
-- **Methods:**
-  - `to_dict()`
+  - `state`: one of `CAMPFIRE_UNLIT`, `CAMPFIRE_BURNING`, `CAMPFIRE_DYING`, `CAMPFIRE_EXTINGUISHED`
+  - `weight`: 5  
+  - **Interaction Flags:** not movable, jumpable, usable alone
+  - `usable_with`: empty set (but can interact with items like wood or water)
+- **Possible Actions:**
+  - Unlit or Extinguished: `{ACTION_LIGHT}`
+  - Burning/Dying: `{ACTION_EXTINGUISH}`
+- **Methods:** `to_dict()`
 - **Factory:** `CampfireFactory`
-  - **Variants:** Based on `_campfire_data` (e.g., `"Unlit Campfire"`, `"Burning Campfire"`, etc.)
-  - **ID Generation:** Provided if not specified.
+- **ID Generation:** Provided if missing
 
 ---
 
-### 1.7. Chest
+## 1.7. Chest
 - **Class:** `Chest` (inherits from `Container`)
 - **Properties:**
-  - `chest_type`: Identifies the type of chest.
-  - `is_locked`: Boolean flag.
-  - `lock_difficulty`: Difficulty level (0–10) for lock picking.
-  - `durability`: Value between 0 and 100.
-- **Interaction Flags:**
-  - `is_movable`: `True`
-  - `is_jumpable`: `False`
-  - `is_usable_alone`: `True`
-  - `weight`: Varies (base value around `10`)
+  - `chest_type`: type identifier (e.g., `CHEST_BASIC_WOODEN`, etc.)
+  - `is_locked`: boolean flag
+  - `lock_difficulty`: scale from 0 to 10
+  - `durability`: value from 0 to 100
+  - `weight`: typically around 10 (may vary)
+  - **Interaction Flags:** movable, not jumpable, usable alone
 - **Factories:**
-  - **ChestFactory:** Contains a detailed `_chest_data` dictionary with many chest types such as:
-    - `CHEST_BASIC_WOODEN`
-    - `CHEST_FORESTWOOD`
-    - `CHEST_BRONZE_BANDED`
-    - `CHEST_BEASTS_MAW`
-    - `CHEST_DARK_IRON`, etc.
-  - **Random Chest Creation:**  
-    - Function `create_chest(chest_type: str = None)` randomly selects a chest type if not specified.
-    - **Contents:**  
-      - Uses rarity tiers: `"wooden"`, `"silver"`, `"golden"`, `"magical"`
-      - **Items:** Defined in `CHEST_ITEMS` for each tier (e.g., `"apple"`, `"health_potion"`, `"magic_wand"`, `"legendary_weapon"`, etc.)
-    - **Lock Types:** Chosen from `LOCK_TYPES` based on chest rarity.
+  - **ChestFactory:** Contains a variety of chest types
+  - **Random Creation:** `create_chest(chest_type: str = None)` randomly selects a type
+  - **Contents & Lock Types:** Defined by rarity tiers and preset item lists
+- **ID Generation:** Managed automatically
 
 ---
 
-### 1.8. Firewood
+## 1.8. Firewood
 - **Class:** `Firewood` (inherits from `GameObject`)
 - **Properties:**
   - `description`
-- **Interaction Flags:**
-  - `is_movable`: `True`
-  - `is_jumpable`: `False`
-  - `is_usable_alone`: `True`
-  - `is_collectable`: `True`
-  - `weight`: `1`
-  - `possible_alone_actions`: `{ACTION_COLLECT}` (string `"collect"`)
-- **Methods:**
-  - `to_dict()`
-- **Factory:** `FirewoodFactory`
-  - **Variant:** `"branch"`
+  - `weight`: 1  
+  - **Interaction Flags:** movable, not jumpable, usable alone, collectable  
+  - `possible_alone_actions`: includes `"collect"`
+- **Methods:** `to_dict()`
+- **Factory:** `FirewoodFactory` (variant: `"branch"`)
   - **Preset Data:**
     - Name: `"Fallen Branch"`
     - Description: `"A dry branch that can be collected for firewood."`
-  - **ID Generation:** Handled automatically.
+- **ID Generation:** Auto-handled
 
 ---
 
-### 1.9. Land Obstacles
-**LandObstacleFactory** provides static methods to create various environmental obstacles:
-
-- **`create_hole`:**
-  - Default name: `"Hole"`
-  - **Flags:**  
-    - Jumpable, not movable, not collectable; weight is `0`.
-- **`create_fallen_log`:**
-  - Accepts a `size` parameter (`small`, `medium`, `large`)
-  - **Names:** E.g., `"Small Fallen Log"`, `"Fallen Log"`, `"Massive Fallen Log"`
-  - **Properties:** Adjusted weight and mobility based on size.
-- **`create_tree_stump`:**
-  - Accepts `height` (1–3) and sets name and weight accordingly.
-- **`create_rock`:**
-  - Types: `"pebble"`, `"stone"`, `"boulder"`
-  - **Properties:** Vary by rock type.
-- **`create_plant`:**
-  - Types include: `"bush"`, `"wild-bush"`, `"leafs"`, `"soft-grass"`, `"tall-grass"`, `"dense-bush"`, `"grass"`
-- **`create_chestnut_tree`:**
-  - A special, non-jumpable tree.
-- **`create_random_obstacle`:**
-  - Randomly chooses one of the above.
-- **Wrapper Function:**  
-  - `create_land_obstacle(obstacle_type: str = None, **props)`  
-  - Can select a specific obstacle type (`"hole"`, `"log"`, `"stump"`, `"rock"`, `"plant"`, `"tree"`) or default to random.
+## 1.9. Land Obstacles
+- **Factory:** `LandObstacleFactory` provides static creation methods for environmental obstacles:
+  - **`create_hole`:**
+    - Name: `"Hole"`
+    - **Flags:** non-movable, non-collectable, jumpable; weight: 0
+  - **`create_fallen_log`:**
+    - Size options: `small`, `medium`, `large`
+    - Name varies accordingly (e.g., `"Small Fallen Log"`)
+  - **`create_tree_stump`:**
+    - Accepts a height (1–3) to set name and weight
+  - **`create_rock`:**
+    - Types: `"pebble"`, `"stone"`, `"boulder"` (properties vary)
+  - **`create_plant`:**
+    - Types include `"bush"`, `"wild-bush"`, `"leafs"`, `"tall-grass"`, etc.
+  - **`create_chestnut_tree`:**
+    - A special non-jumpable tree
+  - **`create_random_obstacle`:**
+    - Randomly selects one of the obstacles
+  - **Wrapper Function:** `create_land_obstacle(obstacle_type: str = None, **props)`
+- **ID Generation:** Not explicitly specified
 
 ---
 
-### 1.10. Log Stool
+## 1.10. Log Stool
 - **Class:** `LogStool` (inherits from `GameObject`)
 - **Properties:**
   - `description`
-- **Interaction Flags:**
-  - `is_movable`: `True`
-  - `is_jumpable`: `False`
-  - `is_usable_alone`: `True`
-  - `weight`: `3`
-  - `possible_alone_actions`: `{ACTION_SIT}` (string `"sit"`)
-- **Methods:**
-  - `to_dict()`
-- **Factory:** `LogStoolFactory`
-  - **Variant:** `"squat"`
+  - `weight`: 3  
+  - **Interaction Flags:** movable, not jumpable, usable alone  
+  - `possible_alone_actions`: includes `"sit"`
+- **Methods:** `to_dict()`
+- **Factory:** `LogStoolFactory` (variant: `"squat"`)
   - **Preset Data:**
     - Name: `"Squat Log"`
     - Description: `"A short, sturdy log that can be used as a stool."`
-  - **ID Generation:** Auto-generated if missing.
 
 ---
 
-### 1.11. Pot
+## 1.11. Pot
 - **Class:** `Pot` (inherits from `Container`)
 - **Properties:**
-  - `pot_size`: Options are `"small"`, `"medium"`, `"big"`
-  - `state`: One of `POT_STATE_DEFAULT`, `POT_STATE_BREAKING`, or `POT_STATE_BROKEN`
-  - `max_durability` and `current_durability`: Set based on pot size
+  - `pot_size`: options: `"small"`, `"medium"`, `"big"`
+  - `state`: one of `POT_STATE_DEFAULT`, `POT_STATE_BREAKING`, or `POT_STATE_BROKEN`
+  - `max_durability` & `current_durability`: set according to pot size
   - `capacity`:  
-    - Small: `3` items  
-    - Medium: `5` items  
-    - Big: `8` items
-  - `weight`: Varies with pot size (5, 10, or 20)
-- **Interaction Flags:**
-  - `is_usable_alone`: `True`
-  - `is_collectable`: `False`
+    - `"small"`: 3 items  
+    - `"medium"`: 5 items  
+    - `"big"`: 8 items
+  - `weight`: varies (e.g., 5, 10, or 20)
+  - **Interaction Flags:** usable alone, not collectable
 - **Additional Methods:**
-  - `damage(amount)`: Reduces durability and updates state (possibly to breaking or broken)
-  - `add_item(item)`: Disallows adding items if the pot is broken
+  - `damage(amount)`: reduces durability and updates state
+  - `add_item(item)`: prevents adding items if broken
   - `to_dict()`
 - **Factory:** `PotFactory`
-  - **Preset Data:** Stored in `_pot_data` for each size
-  - **Helper Function:**  
-    - `create_pot(size: str = None, state: str = None)` creates a pot (choosing a random size if none is provided)
+  - **Preset Data:** stored in `_pot_data`
+  - **Helper Function:** `create_pot(size: str = None, state: str = None)` (chooses random size if none specified)
 
 ---
 
-### 1.12. Tent
+## 1.12. Tent
 - **Class:** `Tent` (inherits from `GameObject`)
 - **Properties:**
-  - `description`
-  - `max_capacity`: `1` (for one person)
-  - `contained_items`: People sheltered inside
-- **Interaction Flags:**
-  - `is_movable`: `True`
-  - `is_jumpable`: `False`
-  - `is_usable_alone`: `True`
-  - `weight`: `5`
-  - **Possible Actions:** `{ACTION_ENTER, ACTION_EXIT}` (to enter or exit the tent)
-- **Methods:**
-  - `to_dict()`
-- **Factory:** `TentFactory`
-  - **Variant:** `"small"`
+  - `max_capacity`: 1 (for one person)
+  - `contained_items`: list of sheltered users
+  - `weight`: 5  
+  - **Interaction Flags:** movable, not jumpable, usable alone
+  - **Possible Actions:** `{ACTION_ENTER, ACTION_EXIT}` (for entering and exiting)
+- **Factory:** `TentFactory` (variant: `"small"`)
   - **Preset Data:**
     - Name: `"Tent"`
     - Description: `"A small tent that can shelter one person."`
-  - **ID Generation:** Automatically provided if missing.
 
 ---
 
@@ -683,8 +783,9 @@ This detailed markdown explanation provides a complete reference to all objects,
             name="Copywriter",
             instructions=system_prompt,
             tools=[create_map],
+            output_type=StoryTellerGameContext
         )
-        logger.debug("Agent created with system prompt and tools.")
+        logger.info("Agent created with system prompt and tools.")
         return {"agent": agent}
 
     async def process_user_input(
@@ -692,7 +793,7 @@ This detailed markdown explanation provides a complete reference to all objects,
             user_input: str,
             conversation_history: List[Dict[str, Any]] = None
     ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-        logger.debug("Processing user input through Copywriter agent.")
+        logger.info("Processing user input through Copywriter agent.")
         agent = self.agent_data["agent"]
 
         # Check if this is a theme selection
@@ -700,33 +801,66 @@ This detailed markdown explanation provides a complete reference to all objects,
             # Extract theme after the "theme:" prefix
             theme = user_input
             self.game_context.theme = theme
-            logger.debug(f"Theme set in game context: {self.game_context.theme}")
+            logger.info(f"Theme set in game context: {self.game_context.theme}")
 
         # Normal processing for non-theme messages
         try:
             result = await Runner.run(
                 starting_agent=agent,
-                input=user_input,
-                context=self.game_context
+                input=user_input
             )
-            logger.debug("Runner.run completed in CopywriterAgent.")
+            logger.info(f"Runner.run completed. Result type: {type(result).__name__}")
 
+            # Process the result
             try:
-                result_json = json.loads(result.final_output)
-                if "answers" in result_json:
-                    formatted_text = "\n".join([a.get("description", "") for a in result_json.get("answers", [])])
-                    response = {"type": "text", "content": formatted_text}
-                    logger.debug("Formatted JSON response processed from agent.")
-                    return response, conversation_history
-            except json.JSONDecodeError:
-                logger.debug("Result not in JSON format; using raw output.")
+                logger.info("Adapting runner output")
+                result_json = adapter.adapt_runner_output(result)
+                logger.info(
+                    f"Adapted result to JSON. Keys: {list(result_json.keys()) if isinstance(result_json, dict) else 'not a dict'}")
+            except Exception as adapter_error:
+                logger.error(f"Adapter error: {str(adapter_error)}", exc_info=True)
+                # Fallback to direct output
+                if hasattr(result, 'final_output'):
+                    result_json = {"text": result.final_output}
+                else:
+                    result_json = {"text": str(result)}
 
-            response = {"type": "text", "content": result.final_output}
-            logger.info("Default text response generated.")
-            return response, conversation_history
+            # Handle the result and store in context
+            if isinstance(result_json, dict) and "error" not in result_json:
+                # Check if this is a map result (from create_map)
+                if "grid" in result_json and "size" in result_json:
+                    # This is the direct output from create_map function
+                    self.game_context.environment = result_json
+                    self.game_context.entities = result_json.get("entities", [])
+                    logger.info(f"Map data stored directly in context with {len(self.game_context.entities)} entities")
+                else:
+                    # Otherwise, this is a regular response from the agent with multiple parts
+                    self.game_context.environment = result_json.get("map", {})
+                    self.game_context.entities = result_json.get("entities", [])
+                    self.game_context.quest = result_json.get("quest", {})
+                    logger.info("Full game data stored in context")
+
+                response = {"type": "system", "content": "Adventure Created"}
+                logger.info("Formatted JSON response processed from agent.")
+                return response, conversation_history
+            else:
+                logger.info("Result not in valid JSON format; using raw output.")
+                # Check if result is an error message
+                if isinstance(result_json, dict) and "error" in result_json:
+                    error_msg = result_json["error"]
+                    response = {"type": "error", "content": f"Error: {error_msg}"}
+                else:
+                    response = {"type": "text",
+                                "content": str(result.final_output) if hasattr(result, 'final_output') else str(result)}
+                return response, conversation_history
 
         except Exception as e:
             logger.error(f"Error processing user input: {e}", exc_info=True)
+            # More detailed error information
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(
+                f"Error during agent execution. Context: {vars(self.game_context) if hasattr(self.game_context, '__dict__') else 'no context vars'}")
+
             traceback.print_exc()
             response = {"type": "text", "content": f"Error: {str(e)}"}
             return response, conversation_history

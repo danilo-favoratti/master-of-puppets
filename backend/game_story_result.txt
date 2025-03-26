@@ -1,0 +1,54 @@
+### Game Title: "Whispers of the Forest"
+
+---
+
+#### Introduction
+
+The player finds themselves enveloped in a **haunting and mysterious atmosphere**. It's a **fog-drenched forest where shadows dance among twisted trees** and eerie whispers echo through the air. This foreboding backdrop sets the stage for a tale of curiosity and courage in the heart of a **Scary Place**.
+
+---
+
+#### Entity Descriptions
+
+- **Forestwood Chest:** A chest crafted from ancient forest wood, naturally resistant to decay. It sits under the looming canopy, whispering forgotten tales.
+  
+- **Large Boulder:** This imposing boulder is etched with cryptic runes that glow faintly in the dark. It challenges the brave to uncover its secrets.
+  
+- **Unlit Campfire:** Surrounded by a circle of stones, this pile of dry wood waits silently for the spark that will bring warmth to the cold night.
+  
+- **Small Tent:** The tent flaps gently in the breeze, its fabric seemingly alive with the whispering wind.
+  
+- **Chestnut Tree:** Towering with twisted branches, this tree casts eerie shadows, making it appear almost alive.
+
+---
+
+#### Interactions
+
+- **Forestwood Chest:** The chest creaks open, releasing a musty aroma. *Inside, you find a dusty old journal filled with cryptic notes.*
+  
+- **Large Boulder:** As you examine the boulder, your touch causes the runes to glow brighter, hinting at hidden secrets.
+  
+- **Unlit Campfire:** Lighting the campfire brings it to life, casting comforting shadows that push the chill away.
+  
+- **Small Tent:** As you enter the tent, the howling winds fade to a distant whisper, and you feel a sense of safety.
+  
+- **Chestnut Tree:** Examining the tree, you see faces in the gnarled bark. The shadows shift, deepening the mystery.
+
+---
+
+#### Quest: Whispers of the Forest
+
+**Description:** Investigate the eerie happenings in the forest and uncover the mystery.
+
+**Objectives:**
+
+1. Find the Forestwood Chest and examine its contents.
+2. Illuminate the stone runes of the Large Boulder to reveal hidden secrets.
+3. Light the Unlit Campfire to ward off the chilling fog.
+4. Seek refuge in the Small Tent to gather your thoughts.
+
+**Reward:** Unravel the mystery of the disappearing townsfolk and receive the Tree Spirit's blessing.
+
+---
+
+Embark on this thrilling adventure, guided by curiosity and courage, ready to unearth the secrets hidden within the mist and shadows of the **Scary Place**.

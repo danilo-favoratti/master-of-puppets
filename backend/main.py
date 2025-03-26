@@ -15,7 +15,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent_puppet_master import create_puppet_master
-from agent_copywriter import CopywriterAgent, GameContext as CopywriterGameContext
+from agent_copywriter import CopywriterAgent, StoryTellerGameContext
 from agent_storyteller import StorytellerAgent, GameContext as StorytellerGameContext
 
 # Load environment variables
@@ -39,6 +39,7 @@ app.add_middleware(
 # Dictionary to store active WebSocket connections and their session data.
 active_connections: Dict[WebSocket, Dict[str, Any]] = {}
 
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize resources on server startup."""
@@ -46,6 +47,7 @@ async def startup_event():
         raise ValueError("OPENAI_API_KEY environment variable is not set")
     if not DEEPGRAM_API_KEY:
         raise ValueError("DEEPGRAM_API_KEY environment variable is not set")
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -57,7 +59,7 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
 
     # Initialize a shared game context (can be used for both agents)
-    shared_context = CopywriterGameContext(name="game_context")
+    shared_context = StoryTellerGameContext(name="game-context")
     # Initialize agents:
     copywriter_agent = CopywriterAgent(OPENAI_API_KEY, DEEPGRAM_API_KEY, CHARACTER_VOICE)
     copywriter_agent.game_context = shared_context
@@ -189,7 +191,8 @@ async def websocket_endpoint(websocket: WebSocket):
 
                         if not session_data["copywriter_done"]:
                             # Process initial text with CopywriterAgent
-                            response_data, session_data["conversation_history"] = await copywriter_agent.process_user_input(
+                            response_data, session_data[
+                                "conversation_history"] = await copywriter_agent.process_user_input(
                                 text_message, session_data["conversation_history"]
                             )
                             await websocket.send_text(json.dumps(response_data))
@@ -202,7 +205,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                 }))
                         else:
                             # Process subsequent text with StorytellerAgent
-                            response_data, session_data["conversation_history"] = await storyteller_agent.process_text_input(
+                            response_data, session_data[
+                                "conversation_history"] = await storyteller_agent.process_text_input(
                                 text_message, session_data["conversation_history"]
                             )
                             if response_data["type"] == "text":
@@ -228,7 +232,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                 print(f"Processing audio buffer ({len(audio_data)} bytes)")
                                 print(f"First 20 bytes of audio: {audio_data[:20]}")
                                 response_text, command_info = await storyteller_agent.process_audio(
-                                    audio_data, on_transcription, on_response, on_audio, session_data["conversation_history"]
+                                    audio_data, on_transcription, on_response, on_audio,
+                                    session_data["conversation_history"]
                                 )
                                 if command_info.get("name"):
                                     await send_command(command_info["name"], command_info.get("params", {}))
@@ -268,6 +273,8 @@ async def websocket_endpoint(websocket: WebSocket):
         if websocket in active_connections:
             del active_connections[websocket]
 
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)

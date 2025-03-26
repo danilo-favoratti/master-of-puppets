@@ -8,6 +8,7 @@ from agents import Runner, Agent
 from deepgram import DeepgramClient, PrerecordedOptions
 from openai import OpenAI
 
+from agent_copywriter import StoryTellerGameContext, GameContext
 from agent_puppet_master import create_puppet_master
 
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
@@ -15,17 +16,22 @@ logging.basicConfig(level=logging.DEBUG if DEBUG_MODE else logging.INFO)
 logger = logging.getLogger(__name__)
 logger.debug("Debug mode enabled.")
 
+from typing import List
+from pydantic import BaseModel, Field
 
-# Reuse the same GameContext for consistency
-class GameContext:
-    def __init__(self, name: str = "game_context"):
-        logger.debug(f"Initializing GameContext with name: {name}")
-        self.theme: Optional[str] = None
-        self.environment: Optional[Dict[str, Any]] = None
-        self.entities: List[Dict[str, Any]] = []
-        self.quest: Optional[Dict[str, Any]] = None
-        self.puppet_master_agent: Any = None
+class Answer(BaseModel):
+    type: str = Field(..., description="The type of answer, e.g. 'text'.")
+    description: str = Field(
+        ...,
+        description="Text message with a maximum of 20 words."
+    )
+    options: List[str] = Field(
+        default_factory=list,
+        description="List of options, each with a maximum of 5 words."
+    )
 
+class AnswerSet(BaseModel):
+    answers: List[Answer]
 
 class StorytellerAgent:
     """
@@ -41,11 +47,10 @@ class StorytellerAgent:
         self.openai_client = OpenAI(api_key=openai_api_key)
         logger.debug("Initialized OpenAI client.")
 
-        self.game_context = GameContext(name="game_context")
+        self.game_context = StoryTellerGameContext(name="game_context")
         logger.debug("Game context initialized.")
 
         self.puppet_master_agent = puppet_master_agent
-        self.game_context.puppet_master_agent = self.puppet_master_agent
         logger.debug("Person agent created and stored in game context.")
 
         self.agent_data = self.setup_agent()
@@ -594,7 +599,7 @@ This detailed markdown explanation provides a complete reference to all objects,
                     tool_description="Tool for interacting with the environment (move, jump, examine, etc.)."
                 )
             ],
-            output_type="json_object"
+            output_type=AnswerSet
         )
         logger.debug("Storyteller agent created with system prompt and tools.")
         return {"agent": agent}
