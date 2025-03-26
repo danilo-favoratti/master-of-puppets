@@ -734,7 +734,7 @@ This detailed markdown explanation provides a complete reference to all objects,
                     await on_response(response_data["content"])
                     response_text = response_data["result"]  # For TTS
                 else:
-                response_text = response_data["result"]
+                    response_text = response_data["result"]
                     await on_response(response_text)
                 
                 command_info = {
@@ -745,21 +745,21 @@ This detailed markdown explanation provides a complete reference to all objects,
 
             # Only generate speech if we have text
             if response_text and response_text.strip():
-            logger.debug(f"Generating speech for response: '{response_text}'")
-            speech_response = self.openai_client.audio.speech.create(
-                model="tts-1",
-                    voice=self.voice,
-                input=response_text
-            )
+                logger.debug(f"Generating speech for response: '{response_text}'")
+                speech_response = self.openai_client.audio.speech.create(
+                    model="tts-1",
+                        voice=self.voice,
+                    input=response_text
+                )
 
-            collected_audio = bytearray()
-            for chunk in speech_response.iter_bytes():
-                collected_audio.extend(chunk)
-                await on_audio(chunk)
-                logger.debug("Sent an audio chunk to on_audio callback.")
+                collected_audio = bytearray()
+                for chunk in speech_response.iter_bytes():
+                    collected_audio.extend(chunk)
+                    await on_audio(chunk)
+                    logger.debug("Sent an audio chunk to on_audio callback.")
 
-            logger.debug("Sending __AUDIO_END__ marker")
-            await on_audio(b"__AUDIO_END__")
+                logger.debug("Sending __AUDIO_END__ marker")
+                await on_audio(b"__AUDIO_END__")
             else:
                 logger.warning("No response text to convert to speech")
                 

@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import React, { useEffect, useRef, useState } from "react";
 import gameDataJSON from "../config/gameData.json";
 import { useGameStore } from "../store/gameStore";
-import { AnimationType } from "../types/animations";
+import {CharacterAnimationType} from "../types/animations";
 import {
   CampFireEntity,
   GameEntity,
@@ -11,7 +11,7 @@ import {
   PotEntity,
 } from "../types/entities";
 import { GameData } from "../types/game";
-import CharacterSprite, { Point } from "./CharacterSprite";
+import CharacterBody from "./character/CharacterBody.tsx";
 import GameEntities from "./GameEntities";
 import MapDisplay from "./MapDisplay";
 
@@ -132,23 +132,23 @@ const Game = ({
     const commandMap: Record<string, (params: any) => void> = {
       jump: (params) => {
         const direction = params?.direction || "down";
-        let animation: AnimationType;
+        let animation: CharacterAnimationType;
         const originalPos = position;
         switch (direction) {
           case "up":
-            animation = AnimationType.JUMP_UP;
+            animation = CharacterAnimationType.JUMP_UP;
             animateMovement(0.2, 0.5, "up");
             break;
           case "left":
-            animation = AnimationType.JUMP_LEFT;
+            animation = CharacterAnimationType.JUMP_LEFT;
             animateMovement(0.2, 0.5, "left");
             break;
           case "right":
-            animation = AnimationType.JUMP_RIGHT;
+            animation = CharacterAnimationType.JUMP_RIGHT;
             animateMovement(0.2, 0.5, "right");
             break;
           default:
-            animation = AnimationType.JUMP_DOWN;
+            animation = CharacterAnimationType.JUMP_DOWN;
             animateMovement(0.2, 0.5, "down");
         }
         setAnimation(animation);
@@ -167,72 +167,72 @@ const Game = ({
 
       walk: (params) => {
         const direction = params?.direction || "down";
-        let animation: AnimationType;
+        let animation: CharacterAnimationType;
         const moveDistance = 1.0; // Distance to move
         switch (direction) {
           case "up":
-            animation = AnimationType.WALK_UP;
+            animation = CharacterAnimationType.WALK_UP;
             animateMovement(1.0, 1.0, "up");
             break;
           case "left":
-            animation = AnimationType.WALK_LEFT;
+            animation = CharacterAnimationType.WALK_LEFT;
             animateMovement(1.0, 1.0, "left");
             break;
           case "right":
-            animation = AnimationType.WALK_RIGHT;
+            animation = CharacterAnimationType.WALK_RIGHT;
             animateMovement(1.0, 1.0, "right");
             break;
           default:
-            animation = AnimationType.WALK_DOWN;
+            animation = CharacterAnimationType.WALK_DOWN;
             animateMovement(1.0, 1.0, "down");
         }
         setAnimation(animation);
         // After walking duration, revert to idle animation
         setTimeout(() => {
-          if (animation === AnimationType.WALK_UP) {
-            setAnimation(AnimationType.IDLE_UP);
-          } else if (animation === AnimationType.WALK_LEFT) {
-            setAnimation(AnimationType.IDLE_LEFT);
-          } else if (animation === AnimationType.WALK_RIGHT) {
-            setAnimation(AnimationType.IDLE_RIGHT);
+          if (animation === CharacterAnimationType.WALK_UP) {
+            setAnimation(CharacterAnimationType.IDLE_UP);
+          } else if (animation === CharacterAnimationType.WALK_LEFT) {
+            setAnimation(CharacterAnimationType.IDLE_LEFT);
+          } else if (animation === CharacterAnimationType.WALK_RIGHT) {
+            setAnimation(CharacterAnimationType.IDLE_RIGHT);
           } else {
-            setAnimation(AnimationType.IDLE_DOWN);
+            setAnimation(CharacterAnimationType.IDLE_DOWN);
           }
         }, 1000);
       },
 
       run: (params) => {
         const direction = params?.direction || "down";
-        let animation: AnimationType;
+        let animation: CharacterAnimationType;
         const moveDistance = 2.0; // Distance to move when running
         switch (direction) {
           case "up":
-            animation = AnimationType.RUN_UP;
+            animation = CharacterAnimationType.RUN_UP;
             animateMovement(2.0, 0.6, "up");
             break;
           case "left":
-            animation = AnimationType.RUN_LEFT;
+            animation = CharacterAnimationType.RUN_LEFT;
             animateMovement(2.0, 0.6, "left");
             break;
           case "right":
-            animation = AnimationType.RUN_RIGHT;
+            animation = CharacterAnimationType.RUN_RIGHT;
             animateMovement(2.0, 0.6, "right");
             break;
           default:
-            animation = AnimationType.RUN_DOWN;
+            animation = CharacterAnimationType.RUN_DOWN;
             animateMovement(2.0, 0.6, "down");
         }
         setAnimation(animation);
         // After running, revert to idle
         setTimeout(() => {
-          if (animation === AnimationType.RUN_UP) {
-            setAnimation(AnimationType.IDLE_UP);
-          } else if (animation === AnimationType.RUN_LEFT) {
-            setAnimation(AnimationType.IDLE_LEFT);
-          } else if (animation === AnimationType.RUN_RIGHT) {
-            setAnimation(AnimationType.IDLE_RIGHT);
+          if (animation === CharacterAnimationType.RUN_UP) {
+            setAnimation(CharacterAnimationType.IDLE_UP);
+          } else if (animation === CharacterAnimationType.RUN_LEFT) {
+            setAnimation(CharacterAnimationType.IDLE_LEFT);
+          } else if (animation === CharacterAnimationType.RUN_RIGHT) {
+            setAnimation(CharacterAnimationType.IDLE_RIGHT);
           } else {
-            setAnimation(AnimationType.IDLE_DOWN);
+            setAnimation(CharacterAnimationType.IDLE_DOWN);
           }
         }, 600);
       },
@@ -240,64 +240,64 @@ const Game = ({
       // Other commands (push, pull) remain unchanged
       push: (params) => {
         const direction = params?.direction || "down";
-        let animation: AnimationType;
+        let animation: CharacterAnimationType;
         switch (direction) {
           case "up":
-            animation = AnimationType.PUSH_UP;
+            animation = CharacterAnimationType.PUSH_UP;
             break;
           case "left":
-            animation = AnimationType.PUSH_LEFT;
+            animation = CharacterAnimationType.PUSH_LEFT;
             break;
           case "right":
-            animation = AnimationType.PUSH_RIGHT;
+            animation = CharacterAnimationType.PUSH_RIGHT;
             break;
           default:
-            animation = AnimationType.PUSH_DOWN;
+            animation = CharacterAnimationType.PUSH_DOWN;
         }
         setAnimation(animation);
         setIsPushing(true);
         setTimeout(() => {
           setIsPushing(false);
-          if (animation === AnimationType.PUSH_UP) {
-            setAnimation(AnimationType.IDLE_UP);
-          } else if (animation === AnimationType.PUSH_LEFT) {
-            setAnimation(AnimationType.IDLE_LEFT);
-          } else if (animation === AnimationType.PUSH_RIGHT) {
-            setAnimation(AnimationType.IDLE_RIGHT);
+          if (animation === CharacterAnimationType.PUSH_UP) {
+            setAnimation(CharacterAnimationType.IDLE_UP);
+          } else if (animation === CharacterAnimationType.PUSH_LEFT) {
+            setAnimation(CharacterAnimationType.IDLE_LEFT);
+          } else if (animation === CharacterAnimationType.PUSH_RIGHT) {
+            setAnimation(CharacterAnimationType.IDLE_RIGHT);
           } else {
-            setAnimation(AnimationType.IDLE_DOWN);
+            setAnimation(CharacterAnimationType.IDLE_DOWN);
           }
         }, 800);
       },
 
       pull: (params) => {
         const direction = params?.direction || "down";
-        let animation: AnimationType;
+        let animation: CharacterAnimationType;
         switch (direction) {
           case "up":
-            animation = AnimationType.PULL_UP;
+            animation = CharacterAnimationType.PULL_UP;
             break;
           case "left":
-            animation = AnimationType.PULL_LEFT;
+            animation = CharacterAnimationType.PULL_LEFT;
             break;
           case "right":
-            animation = AnimationType.PULL_RIGHT;
+            animation = CharacterAnimationType.PULL_RIGHT;
             break;
           default:
-            animation = AnimationType.PULL_DOWN;
+            animation = CharacterAnimationType.PULL_DOWN;
         }
         setAnimation(animation);
         setIsPulling(true);
         setTimeout(() => {
           setIsPulling(false);
-          if (animation === AnimationType.PULL_UP) {
-            setAnimation(AnimationType.IDLE_UP);
-          } else if (animation === AnimationType.PULL_LEFT) {
-            setAnimation(AnimationType.IDLE_LEFT);
-          } else if (animation === AnimationType.PULL_RIGHT) {
-            setAnimation(AnimationType.IDLE_RIGHT);
+          if (animation === CharacterAnimationType.PULL_UP) {
+            setAnimation(CharacterAnimationType.IDLE_UP);
+          } else if (animation === CharacterAnimationType.PULL_LEFT) {
+            setAnimation(CharacterAnimationType.IDLE_LEFT);
+          } else if (animation === CharacterAnimationType.PULL_RIGHT) {
+            setAnimation(CharacterAnimationType.IDLE_RIGHT);
           } else {
-            setAnimation(AnimationType.IDLE_DOWN);
+            setAnimation(CharacterAnimationType.IDLE_DOWN);
           }
         }, 800);
       },
@@ -404,7 +404,7 @@ const Game = ({
         />
       )}
 
-      <CharacterSprite
+      <CharacterBody
         ref={characterRef}
         position={position}
         scale={[2, 2, 2]}
@@ -417,17 +417,17 @@ const Game = ({
           console.log("Movimento completo");
           // Converter a animação de movimento para a respectiva animação idle
           switch (currentAnimation) {
-            case AnimationType.WALK_UP:
-              setAnimation(AnimationType.IDLE_UP);
+            case CharacterAnimationType.WALK_UP:
+              setAnimation(CharacterAnimationType.IDLE_UP);
               break;
-            case AnimationType.WALK_LEFT:
-              setAnimation(AnimationType.IDLE_LEFT);
+            case CharacterAnimationType.WALK_LEFT:
+              setAnimation(CharacterAnimationType.IDLE_LEFT);
               break;
-            case AnimationType.WALK_RIGHT:
-              setAnimation(AnimationType.IDLE_RIGHT);
+            case CharacterAnimationType.WALK_RIGHT:
+              setAnimation(CharacterAnimationType.IDLE_RIGHT);
               break;
             default:
-              setAnimation(AnimationType.IDLE_DOWN);
+              setAnimation(CharacterAnimationType.IDLE_DOWN);
           }
         }}
         zOffset={0.01}
