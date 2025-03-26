@@ -22,7 +22,7 @@ const GameContainer: React.FC<GameContainerProps> = ({
   const [lightIntensity, setLightIntensity] = useState(1.3);
   const [lightDistance, setLightDistance] = useState(4);
   const [lightDecay, setLightDecay] = useState(0.5);
-  const [ambientLightIntensity, setAmbientLightIntensity] = useState(0);
+  const [ambientLightIntensity, setAmbientLightIntensity] = useState(1);
 
   return (
     <div className="relative w-full h-full">

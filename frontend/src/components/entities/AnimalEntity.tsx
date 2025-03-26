@@ -1,4 +1,4 @@
-// PigSprite.tsx
+// AnimalEntity.tsx
 
 import { Text } from "@react-three/drei";
 import { ThreeEvent, useFrame } from "@react-three/fiber";
@@ -8,7 +8,7 @@ import { AnimalPigConfType, getRandomPig } from "../../types/animal-pig";
 import { Entity, Position } from "../../types/game";
 import AnimatedSprite from "../AnimatedSprite";
 
-interface PigSpriteProps {
+interface AnimalEntityProps {
   id: string;
   entity?: Entity;
   position: Position;
@@ -90,7 +90,7 @@ const animationConfig = {
   },
 };
 
-export const PigSprite = ({
+export const AnimalEntity = ({
   id,
   type = "npc",
   name = "NPC",
@@ -103,7 +103,7 @@ export const PigSprite = ({
   body = getRandomPig(),
   canMove = true,
   moveInterval = 3000,
-}: PigSpriteProps) => {
+}: AnimalEntityProps) => {
   const initialPosition = useRef(position);
   const imageUrl = body.sprite;
   const [currentPosition, setCurrentPosition] = useState<Position>(position);
