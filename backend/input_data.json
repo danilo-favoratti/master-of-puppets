@@ -1,0 +1,309 @@
+{
+  "map_land": [
+    {
+      "width": 4
+    },
+    {
+      "height": 4
+    },
+    {
+      "grid": [
+        [
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0
+        ]
+      ]
+    }
+  ],
+  "abstract_entities": [
+    {
+      "type": "chest",
+      "possible_states": [
+        "locked",
+        "unlocked",
+        "open",
+        "closed"
+      ],
+      "possible_actions": [
+        "open",
+        "close",
+        "unlock",
+        "destroy",
+        "examine"
+      ],
+      "variants": [
+        "wooden",
+        "silver",
+        "golden",
+        "magical"
+      ],
+      "can_be_at_water": false,
+      "can_be_at_land": true,
+      "might_be_movable": true,
+      "might_be_jumpable": false,
+      "might_be_used_alone": true,
+      "is_container": true,
+      "is_collectable": false,
+      "is_wearable": false
+    },
+    {
+      "type": "rock",
+      "possible_states": [
+        "broken",
+        "unbroken"
+      ],
+      "possible_actions": [
+        "break",
+        "throw",
+        "examine"
+      ],
+      "variants": [
+        "small",
+        "medium",
+        "big"
+      ],
+      "can_be_at_water": true,
+      "can_be_at_land": true,
+      "might_be_movable": true,
+      "might_be_jumpable": true,
+      "might_be_used_alone": true,
+      "is_container": false,
+      "is_collectable": true,
+      "is_wearable": false
+    },
+    {
+      "type": "campfire",
+      "possible_states": [
+        "unlit",
+        "burning",
+        "dying",
+        "extinguished"
+      ],
+      "possible_actions": [
+        "light",
+        "extinguish",
+        "cook",
+        "warm"
+      ],
+      "variants": [
+        "small",
+        "medium",
+        "large"
+      ],
+      "can_be_at_water": false,
+      "can_be_at_land": true,
+      "might_be_movable": false,
+      "might_be_jumpable": true,
+      "might_be_used_alone": true,
+      "is_container": false,
+      "is_collectable": false,
+      "is_wearable": false
+    },
+    {
+      "type": "tent",
+      "possible_states": [
+        "folded",
+        "setup",
+        "damaged"
+      ],
+      "possible_actions": [
+        "enter",
+        "exit",
+        "setup",
+        "pack"
+      ],
+      "variants": [
+        "small",
+        "medium",
+        "large"
+      ],
+      "can_be_at_water": false,
+      "can_be_at_land": true,
+      "might_be_movable": true,
+      "might_be_jumpable": false,
+      "might_be_used_alone": true,
+      "is_container": true,
+      "is_collectable": false,
+      "is_wearable": false
+    },
+    {
+      "type": "pot",
+      "possible_states": [
+        "default",
+        "breaking",
+        "broken"
+      ],
+      "possible_actions": [
+        "fill",
+        "empty",
+        "cook",
+        "examine"
+      ],
+      "variants": [
+        "small",
+        "medium",
+        "big"
+      ],
+      "can_be_at_water": true,
+      "can_be_at_land": true,
+      "might_be_movable": true,
+      "might_be_jumpable": false,
+      "might_be_used_alone": true,
+      "is_container": true,
+      "is_collectable": false,
+      "is_wearable": false
+    },
+    {
+      "type": "backpack",
+      "possible_states": [
+        "empty",
+        "filled"
+      ],
+      "possible_actions": [
+        "open",
+        "close",
+        "wear",
+        "remove"
+      ],
+      "variants": [
+        "small",
+        "medium",
+        "large"
+      ],
+      "can_be_at_water": false,
+      "can_be_at_land": true,
+      "might_be_movable": true,
+      "might_be_jumpable": false,
+      "might_be_used_alone": true,
+      "is_container": true,
+      "is_collectable": true,
+      "is_wearable": true
+    },
+    {
+      "type": "bedroll",
+      "possible_states": [
+        "rolled",
+        "unrolled"
+      ],
+      "possible_actions": [
+        "sleep",
+        "roll",
+        "unroll"
+      ],
+      "variants": [
+        "basic",
+        "comfort",
+        "luxury"
+      ],
+      "can_be_at_water": false,
+      "can_be_at_land": true,
+      "might_be_movable": true,
+      "might_be_jumpable": false,
+      "might_be_used_alone": true,
+      "is_container": false,
+      "is_collectable": true,
+      "is_wearable": false
+    },
+    {
+      "type": "firewood",
+      "possible_states": [
+        "dry",
+        "wet",
+        "burning"
+      ],
+      "possible_actions": [
+        "collect",
+        "burn",
+        "stack"
+      ],
+      "variants": [
+        "branch",
+        "log",
+        "kindling"
+      ],
+      "can_be_at_water": false,
+      "can_be_at_land": true,
+      "might_be_movable": true,
+      "might_be_jumpable": false,
+      "might_be_used_alone": true,
+      "is_container": false,
+      "is_collectable": true,
+      "is_wearable": false
+    },
+    {
+      "type": "log_stool",
+      "possible_states": [
+        "default",
+        "occupied"
+      ],
+      "possible_actions": [
+        "sit",
+        "stand",
+        "move"
+      ],
+      "variants": [
+        "small",
+        "medium",
+        "large"
+      ],
+      "can_be_at_water": false,
+      "can_be_at_land": true,
+      "might_be_movable": true,
+      "might_be_jumpable": false,
+      "might_be_used_alone": true,
+      "is_container": false,
+      "is_collectable": false,
+      "is_wearable": false
+    },
+    {
+      "type": "obstacle",
+      "possible_states": [
+        "default",
+        "broken",
+        "moved"
+      ],
+      "possible_actions": [
+        "examine",
+        "break",
+        "climb",
+        "jump"
+      ],
+      "variants": [
+        "rock",
+        "plant",
+        "log",
+        "stump",
+        "hole",
+        "tree"
+      ],
+      "can_be_at_water": true,
+      "can_be_at_land": true,
+      "might_be_movable": true,
+      "might_be_jumpable": true,
+      "might_be_used_alone": true,
+      "is_container": false,
+      "is_collectable": false,
+      "is_wearable": false
+    }
+  ]
+}

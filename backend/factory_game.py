@@ -18,8 +18,8 @@ init()
 MAP_SIZE = 60
 BORDER_SIZE = 15
 WATER_LEVEL = 0.5  # Values below this are water, above are land
-WATER_SYMBOL = "~~~"
-LAND_SYMBOL = "$$$"
+WATER_SYMBOL = 0
+LAND_SYMBOL = 1
 
 # Version information
 VERSION = "2.0"  # Removed landmark and NPC functionality
@@ -162,7 +162,7 @@ def create_distance_map(width: int, height: int, method: Literal["square_bump", 
     
     return distance_map
 
-def generate_island_map(size: int = MAP_SIZE, border_size: int = BORDER_SIZE) -> List[List[str]]:
+def generate_island_map(size: int = MAP_SIZE, border_size: int = BORDER_SIZE) -> List[List[int]]:
     """
     Generate a map with islands surrounded by water.
     

@@ -5,11 +5,10 @@ openai~=1.68.2
 openai-agents
 aiofiles
 colorama>=0.4.6
-tensorflow==2.12.0
+tensorflow
 termcolor
 python-dotenv==1.0.1
-pydantic==2.6.1
-numpy>=2.2.0,<3.0.0
+pydantic
 python-multipart==0.0.19
 deepgram-sdk==3.10.1
 pyaudio==0.2.13 

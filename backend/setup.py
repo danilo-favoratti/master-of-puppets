@@ -10,7 +10,6 @@ setup(
         "websockets",
         "openai",
         "deepgram-sdk",
-        "colorama",
-        "numpy"
+        "colorama"
     ]
 ) 
