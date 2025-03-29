@@ -4,10 +4,9 @@ import Chat from "./components/Chat";
 import GameContainer from "./components/GameContainer";
 import { GameData } from "./types/game";
 
-// Fix the WebSocket URL declaration to avoid TypeScript error
-const WS_URL =
-    (import.meta as any).env?.VITE_WS_URL ||
-    "wss://masterofpuppets.favoratti.com/ws";
+// Fix the WebSocket URL declaration - Add type assertion
+const WS_URL = (import.meta as any).env.VITE_WS_URL ||
+    ((import.meta as any).env.DEV ? `ws://localhost:8080/ws` : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`);
 
 // Global variables to maintain a single WebSocket connection across component mounts
 let globalSocket: WebSocket | null = null;
@@ -78,8 +77,8 @@ function App() {
                 return;
             }
 
-            // Use port 8080 for WebSocket in development
-            const wsUrl = import.meta.env.DEV
+            // Use port 8080 for WebSocket in development - Add type assertion
+            const wsUrl = (import.meta as any).env.DEV
                 ? `ws://localhost:8080/ws`
                 : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
 
@@ -290,10 +289,6 @@ function App() {
                     setIsWaitingForResponse(false);
                     break;
 
-                case "map_created":
-                    handleMapCreated(data);
-                    break;
-
                 case "info":
                     console.log("Info message received:", data.content);
                     // Add to messages if it's informative to the user
@@ -320,51 +315,6 @@ function App() {
             console.error("Error processing server message:", err);
         } finally {
             setIsThinking(false);
-        }
-    };
-
-    // Helper function to handle map creation messages
-    const handleMapCreated = (data: any) => {
-        console.log('Map created in App:', data);
-
-        // Check if the new top-level 'environment' and 'entities' exist
-        if (data.environment && data.entities && data.environment.grid) {
-            // Check for backend error within environment
-            if (data.environment.error) {
-                console.error('Map data contains error:', data.environment.error);
-                if (!isMapCreated) {
-                    console.log('Retrying map generation with theme message');
-                    setIsMapCreated(true);
-                    setTimeout(() => {
-                        requestMapGeneration('abandoned prisioner');
-                    }, 500);
-                }
-            } else {
-                // Construct the internal GameData structure
-                const newMapData: GameData = {
-                    map: {
-                        width: data.environment.width, // Use new width
-                        height: data.environment.height, // Use new height
-                        grid: data.environment.grid // Use grid from environment
-                    },
-                    entities: data.entities // Use top-level entities
-                };
-
-                console.log('Valid map data received, updating state:', newMapData);
-                setMapData(newMapData);
-                setIsMapReady(true);
-                setIsMapCreated(true);
-                addMessage("Map created successfully! Wanna know more about this world?", "character");
-            }
-        } else {
-            // Log error if the expected structure isn't present
-            console.error('Received map_created event but data is missing expected properties (environment.grid, entities)', data);
-            if (!isMapCreated) {
-                setIsMapCreated(true);
-                setTimeout(() => {
-                    requestMapGeneration('abandoned prisioner');
-                }, 500);
-            }
         }
     };
 
@@ -441,126 +391,94 @@ function App() {
     };
 
     // Fix the map generation function to use the correct format "generate_world"
-    const requestMapGeneration = (theme: string) => {
-        // First check if socket exists and is connected
-        if (!socket) {
-            console.error('Socket not initialized, cannot generate map');
-            return;
-        }
+    // THIS FUNCTION IS NO LONGER NEEDED FOR MAP GEN - THEME SELECTION HANDLES IT.
+    // const requestMapGeneration = (theme: string) => {
+    //     // ... existing implementation ...
+    // };
 
-        if (socket.readyState !== WebSocket.OPEN) {
-            console.error('WebSocket not connected (state:', socket.readyState, ')');
-
-            // Retry after a short delay if socket exists but not in OPEN state
-            setTimeout(() => {
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                    console.log('Retrying map generation after connection delay');
-                    doSendMapRequest(theme);
-                } else {
-                    console.error('Still not connected, cannot generate map');
-                }
-            }, 1000);
-            return;
-        }
-
-        doSendMapRequest(theme);
-    };
-
-    // Helper function to actually send the map request
-    const doSendMapRequest = (theme: string) => {
+    // Helper function to actually send the map request - NOW SENDS THEME
+    // Renamed for clarity
+    const sendThemeSelection = (theme: string) => {
         // Safety check again to make sure socket exists
-        if (!socket) {
-            console.error('Socket became null before sending request');
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            console.error('Socket not connected or null, cannot send theme');
+            addMessage("Error: Not connected to server. Please wait or refresh.", "system", true);
+            setIsThinking(false); // Stop thinking indicator
+            setThemeIsSelected(false); // Allow re-selection
             return;
         }
 
-        console.log('Sending map generation request for theme:', theme);
-        setIsThinking(true);
+        console.log('Sending theme selection request for theme:', theme);
+        setIsThinking(true); // Indicate processing
+        setLoadingMap(true); // Indicate map loading specifically
 
-        // Use the text format with theme prefix - the format the server actually accepts
+        // Use the NEW format the server expects
         const message = {
-            type: 'text',
-            content: `${theme}`
+            type: 'set_theme', // <--- Use set_theme type
+            theme: theme      // <--- Send theme name
         };
 
         try {
             socket.send(JSON.stringify(message));
-            console.log('Map generation request sent successfully');
+            console.log('Theme selection request sent successfully');
+            // Backend will respond with create_map or error
         } catch (err) {
-            console.error('Error sending map generation request:', err);
+            console.error('Error sending theme selection request:', err);
             setIsThinking(false);
+            setLoadingMap(false);
+            setThemeIsSelected(false); // Allow re-selection on error
+            addMessage("Error sending theme choice. Please try again.", "system", true);
         }
     };
 
-    // Update the handleThemeSelection function
+    // Update the handleThemeSelection function to directly call sendThemeSelection
     const handleThemeSelection = (theme: string) => {
+        setThemeIsSelected(true); // Mark theme as selected immediately for UI
+
         // Check if socket exists but isn't connected yet
         if (!socket) {
             console.error("Socket not initialized, cannot send theme");
-            // Show a message to the user
             addMessage("Connecting to server... Please try again in a moment.", "system", true);
+            setThemeIsSelected(false); // Revert selection on error
             return;
         }
 
         if (socket.readyState !== WebSocket.OPEN) {
             console.log(`WebSocket not ready yet (state: ${socket.readyState}). Waiting...`);
             addMessage("Connecting to server... Please wait.", "system");
-
-            // Set a loading indicator
-            setIsThinking(true);
+            setIsThinking(true); // Show thinking while waiting
 
             // Try again after a delay
             const connectionTimer = setTimeout(() => {
                 if (socket && socket.readyState === WebSocket.OPEN) {
                     console.log("WebSocket now connected, sending theme");
-                    setIsThinking(true);
-                    requestMapGeneration(theme);
-                    setThemeIsSelected(true);
+                    sendThemeSelection(theme);
+                    // setThemeIsSelected is already true
                 } else {
                     console.error("WebSocket connection failed after waiting");
                     setIsThinking(false);
                     addMessage("Could not connect to server. Please refresh the page and try again.", "system", true);
+                    setThemeIsSelected(false); // Revert selection on error
                 }
-            }, 2000); // Wait 2 seconds before retrying
+            }, 2000); // Wait 2 seconds
 
-            return;
+            // Cleanup timer if component unmounts or socket connects sooner elsewhere
+            return () => clearTimeout(connectionTimer);
         }
 
         // If we get here, the socket is connected and ready
-        setIsThinking(true);
-        requestMapGeneration(theme);
-        setThemeIsSelected(true);
+        sendThemeSelection(theme);
     };
 
-    // Update the themeSelect function to use handleThemeSelection
-    const themeSelect = (theme) => {
-        setThemeIsSelected(true);
+    // This function remains the same, just calls the updated handleThemeSelection
+    const themeSelect = (theme: string) => {
+        // Prevent selecting another theme if one is already loading/selected
+        if (themeIsSelected || loadingMap) {
+             console.warn("Theme already selected or loading.");
+             return;
+        }
         handleThemeSelection(theme);
     };
-
-    // Add a useEffect to listen to WebSocket messages for map creation
-    useEffect(() => {
-        if (socket) {
-            const handleWebSocketMessage = (event: MessageEvent) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'map_created') {
-                        console.log('Map created in App:', data);
-                        setMapData(data.environment);
-                        setIsMapReady(true);
-                    }
-                } catch (err) {
-                    console.error('Error processing websocket message in App:', err);
-                }
-            };
-
-            socket.addEventListener('message', handleWebSocketMessage);
-
-            return () => {
-                socket.removeEventListener('message', handleWebSocketMessage);
-            };
-        }
-    }, [socket]);
 
     return (
         <div className="flex flex-col h-screen">
@@ -612,7 +530,7 @@ function App() {
                                 </div>
                             </div>
                             <button
-                                onClick={() => themeSelect("Abandoned Prisioner")}
+                                onClick={() => themeSelect("Abandoned_Prisioner")}
                                 style={{
                                     backgroundColor: "#3B82F6",
                                     color: "white",
@@ -629,7 +547,7 @@ function App() {
                                 Abandoned Prisioner
                             </button>
                             <button
-                                onClick={() => themeSelect("Crash in the Sea")}
+                                onClick={() => themeSelect("Crash_in_the_Sea")}
                                 style={{
                                     backgroundColor: "#3B82F6",
                                     color: "white",
@@ -646,7 +564,7 @@ function App() {
                                 Crash in the Sea
                             </button>
                             <button
-                                onClick={() => themeSelect("Lost Memory")}
+                                onClick={() => themeSelect("Lost_Memory")}
                                 style={{
                                     backgroundColor: "#3B82F6",
                                     color: "white",

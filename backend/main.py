@@ -9,9 +9,10 @@ import json
 import os
 import time
 from typing import Dict, Any
+from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent_puppet_master import create_puppet_master
@@ -75,7 +76,8 @@ async def websocket_endpoint(websocket: WebSocket):
         "audio_sent_metadata": False,
         "conversation_history": [],
         # Flag indicating whether the copywriter stage is complete.
-        "copywriter_done": False
+        "copywriter_done": False,
+        "game_context": None  # <-- Add placeholder for loaded game data
     }
 
     active_connections[websocket] = session_data
@@ -178,7 +180,80 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     data = json.loads(message["text"])
                     print(f"Received message: {data} | Copywriter Done? {session_data['copywriter_done']}")
-                    if data.get("type") == "text":
+
+                    # Handle theme selection before copywriter is done
+                    if data.get("type") == "set_theme" and not session_data["copywriter_done"]:
+                        theme_name = data.get("theme")
+
+                        if not theme_name or not isinstance(theme_name, str):
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "content": "Invalid theme name provided."
+                            }))
+                            continue # Wait for a valid theme
+
+                        # Sanitize theme name slightly just in case (prevent directory traversal)
+                        safe_theme_name = Path(theme_name).name
+                        # map_file_path = Path("backend/map") / f"{safe_theme_name}.json" # Old path
+
+                        # --- Construct path relative to this script file --- 
+                        script_dir = Path(__file__).resolve().parent
+                        map_file_path = script_dir / "map" / f"{safe_theme_name}.json"
+                        print(f"[DEBUG] Attempting to load map file from: {map_file_path}") # Debug print
+                        # --- End path fix ---
+
+                        if not map_file_path.is_file():
+                            print(f"Error: Map file not found at {map_file_path}")
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "content": f"Theme file '{safe_theme_name}.json' not found."
+                            }))
+                            continue # Wait for a valid theme
+
+                        try:
+                            with open(map_file_path, "r") as f:
+                                game_data = json.load(f)
+                        except json.JSONDecodeError:
+                            print(f"Error: Could not decode JSON from {map_file_path}")
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "content": f"Error reading theme file '{safe_theme_name}.json'."
+                            }))
+                            continue # Wait for a valid theme
+                        except Exception as e:
+                            print(f"Error reading map file {map_file_path}: {e}")
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "content": "An error occurred while loading the theme."
+                            }))
+                            continue # Wait for a valid theme
+
+                        # Store game context and mark copywriter as done
+                        session_data["game_context"] = game_data
+                        session_data["copywriter_done"] = True
+                        copywriter_agent.game_context = game_data # Update agent context if needed
+
+                        # Send map creation command to frontend
+                        map_create_command = {
+                            "type": "command",
+                            "name": "create_map",
+                            "map_data": game_data.get("environment", {}),
+                            "entities": game_data.get("entities", []), # Send entities too
+                            "narrative": game_data.get("complete_narrative", ""), # Send narrative
+                            "result": f"Map loaded for theme: {safe_theme_name}",
+                            "params": {
+                                "map_name": game_data.get("theme", safe_theme_name),
+                                "map_description": game_data.get("terrain_description", "No description available.")
+                            }
+                        }
+                        await websocket.send_text(json.dumps(map_create_command))
+
+                        await websocket.send_text(json.dumps({
+                            "type": "info",
+                            "content": f"Theme '{safe_theme_name}' loaded. You can now interact with the world."
+                        }))
+
+                    elif data.get("type") == "text":
                         text_message = data["content"]
                         # Echo the user's text message
                         await websocket.send_text(json.dumps({
@@ -187,40 +262,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         }))
 
                         if not session_data["copywriter_done"]:
-                            # Process initial text with CopywriterAgent
-                            # response_data = await GameCopywriterAgent().process_game_data(text_message)
-                            # Load game data from the Abandoned Prisoner JSON file
-                            with open("game_output/20250328-222025-Abandoned_Prisoner.json", "r") as f:
-                                response_data = json.load(f)
-
-                            command = {
-                                "type": "command",
-                                "name": "create_map",
-                                "map_data": response_data.get("environment", {}),
-                                "result": "Map created",
-                                "params": {
-                                    "map_name": "My Map",
-                                    "map_description": "A map made by a game character."
-                                }
-                            }
-
-                            await websocket.send_text(json.dumps(command))
-
-                            copywriter_agent.game_context = response_data
-
-                            # Check if the game context (map/story) is ready
-                            if response_data.environment:
-                                session_data["copywriter_done"] = True
-                                session_data["response_data"] = response_data
-                                await websocket.send_text(json.dumps({
-                                    "type": "info",
-                                    "content": "Map Loaded."
-                                }))
+                            # If copywriter isn't done, prompt user to select a theme
+                             await websocket.send_text(json.dumps({
+                                "type": "info",
+                                "content": "Please select a theme first to start the game."
+                            }))
                         else:
-                            # Process subsequent text with StorytellerAgent
+                            # Process subsequent text with StorytellerAgent using loaded context
                             response_data, session_data[
                                 "conversation_history"] = await storyteller_agent.process_text_input(
-                                text_message, session_data["conversation_history"]
+                                text_message,
+                                session_data["conversation_history"],
+                                game_context=session_data.get("game_context") # Pass context
                             )
                             if response_data["type"] == "text":
                                 await on_response(response_data["content"])
@@ -244,12 +297,20 @@ async def websocket_endpoint(websocket: WebSocket):
                             try:
                                 print(f"Processing audio buffer ({len(audio_data)} bytes)")
                                 print(f"First 20 bytes of audio: {audio_data[:20]}")
-                                response_text, command_info = await storyteller_agent.process_audio(
-                                    audio_data, on_transcription, on_response, on_audio,
-                                    session_data["conversation_history"]
-                                )
-                                if command_info.get("name"):
-                                    await send_command(command_info["name"], command_info.get("params", {}))
+                                # Ensure copywriter is done before processing audio
+                                if not session_data["copywriter_done"]:
+                                    await websocket.send_text(json.dumps({
+                                        "type": "info",
+                                        "content": "Please select a theme first to start the game."
+                                    }))
+                                else:
+                                    response_text, command_info = await storyteller_agent.process_audio(
+                                        audio_data, on_transcription, on_response, on_audio,
+                                        session_data["conversation_history"],
+                                        game_context=session_data.get("game_context") # Pass context
+                                    )
+                                    if command_info.get("name"):
+                                        await send_command(command_info["name"], command_info.get("params", {}))
                             except Exception as e:
                                 print(f"Error processing audio: {e}")
                                 await websocket.send_text(json.dumps({

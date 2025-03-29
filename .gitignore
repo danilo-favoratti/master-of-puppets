@@ -150,6 +150,7 @@ frontend/.idea
 node_modules
 backend/output.mp3
 backend/.idea
+backend/game_output/*
 # mypy
 .mypy_cache/
 .dmypy.json
