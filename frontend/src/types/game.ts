@@ -64,8 +64,8 @@ export interface GameObjectConfig {
 
 export interface GameData {
   map: {
-    size: number;
-    border_size: number;
+    width: number;
+    height: number;
     grid: number[][];
   };
   entities: GameEntity[];

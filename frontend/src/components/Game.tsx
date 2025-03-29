@@ -25,7 +25,7 @@ interface GameProps {
   lightDistance: number;
   lightDecay: number;
   ambientLightIntensity?: number;
-  gameData?: any; // Optional game data from backend
+  gameData?: GameData | null; // Updated type to GameData | null
 }
 
 const Game = ({
@@ -433,9 +433,13 @@ const Game = ({
         zOffset={0.01}
       />
 
-      {/* Only render map if grid data exists */}
-      {gameDataState?.map?.grid && (
-        <MapDisplay mapGridData={gameDataState.map.grid} />
+      {/* Only render map if grid, width, and height exist */}
+      {gameDataState?.map?.grid && gameDataState.map.width && gameDataState.map.height && (
+        <MapDisplay 
+          mapGridData={gameDataState.map.grid} 
+          width={gameDataState.map.width} 
+          height={gameDataState.map.height} 
+        />
       )}
     </>
   );

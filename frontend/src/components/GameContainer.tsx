@@ -9,7 +9,7 @@ interface GameContainerProps {
   registerCommandHandler: (
       handler: (cmd: string, result: string, params: any) => void
   ) => void;
-  mapData: any;
+  mapData: GameData | null;
   isMapReady: boolean;
   characterRef: React.RefObject<any>;
   websocket?: WebSocket | null;
@@ -35,19 +35,18 @@ const GameContainer = ({
 
   // Log mapData changes from props
   useEffect(() => {
-    if (mapData) {
-      console.log('MapData prop changed:', mapData);
-      setLocalMapData(mapData);
-
-      // If we received valid map data, initialize the game
-      if (!mapData.error && mapData.map) {
-        setGameData(mapData);
-        setIsLoading(false);
-        setMapInitialized(true);
-        console.log('Game initialized with valid map data from props');
+    if (mapData && isMapReady) {
+      console.log('MapData prop changed and ready:', mapData);
+      if (mapData.map && mapData.entities) {
+          setGameData(mapData);
+          setIsLoading(false);
+          setMapInitialized(true);
+          console.log('Game initialized with valid map data from props');
+      } else {
+          console.error('Received mapData prop is missing map or entities:', mapData);
       }
     }
-  }, [mapData]);
+  }, [mapData, isMapReady]);
 
   // WebSocket handler for direct map update events
   useEffect(() => {
@@ -58,14 +57,23 @@ const GameContainer = ({
           if (data.type === 'map_created') {
             console.log('Map created event received in GameContainer:', data);
 
-            // If we have valid map data in the event
-            if (data.map_data && !data.map_data.error) {
-              console.log('Valid map data received in WebSocket event, updating game');
-              setLocalMapData(data.map_data);
-              setGameData(data.map_data);
+            if (data.environment && data.entities && !data.environment.error && data.environment.grid) {
+                const newMapData: GameData = {
+                    map: {
+                        width: data.environment.width,
+                        height: data.environment.height,
+                        grid: data.environment.grid
+                    },
+                    entities: data.entities
+                };
+
+              console.log('Valid map data received in WebSocket event, updating game:', newMapData);
+              setGameData(newMapData);
               setIsLoading(false);
               setMapInitialized(true);
               setHasTriedGenerateWorld(false);
+            } else {
+                 console.error('Received map_created event via WebSocket missing expected properties or contains error:', data);
             }
           }
         } catch (error) {
@@ -98,10 +106,9 @@ const GameContainer = ({
         // Only try to generate world once to prevent infinite loops
         if (!hasTriedGenerateWorld && websocket && websocket.readyState === WebSocket.OPEN) {
           console.log('Attempting to generate world (first attempt)');
-          // Try directly asking the server for a map
           websocket.send(JSON.stringify({
-            type: 'create_map',
-            theme: 'abandoned prisioner'
+            type: 'text',
+            content: 'abandoned prisioner'
           }));
           setHasTriedGenerateWorld(true);
 
@@ -111,31 +118,31 @@ const GameContainer = ({
           console.log('Already attempted to generate world, showing fallback data');
           // After one attempt, use fallback data to avoid blocking UI
           setGameData({
-            grid: [],
-            entities: [],
-            environment: { theme: "Lost Arch" }
+            map: { width: 0, height: 0, grid: [] },
+            entities: []
           });
           setIsLoading(false);
+          setMapInitialized(true);
         }
-      } else {
+      } else if (localMapData) {
         // We have valid map data
         console.log('Valid map data found in localMapData');
-        setGameData(localMapData);
         setIsLoading(false);
         setMapInitialized(true);
       }
     }
   }, [localMapData, hasTriedGenerateWorld, websocket, mapInitialized]);
 
-  // Initial world generation request - try once on mount
+  // Initial world generation request - adjusted
   useEffect(() => {
     if (!mapInitialized && !hasTriedGenerateWorld && websocket && websocket.readyState === WebSocket.OPEN) {
       console.log('Initial mount - requesting map generation');
       websocket.send(JSON.stringify({
-        type: 'create_map',
-        theme: 'abandoned prisioner'
+        type: 'text',
+        content: 'abandoned prisioner'
       }));
       setHasTriedGenerateWorld(true);
+      setIsLoading(true);
     }
   }, [websocket, hasTriedGenerateWorld, mapInitialized]);
 
@@ -177,7 +184,7 @@ const GameContainer = ({
             lightDecay={lightDecay}
             ambientLightIntensity={ambientLightIntensity}
             onLightIntensityChange={setLightIntensity}
-            onLightDistanceChange={setLightDistance}ws:
+            onLightDistanceChange={setLightDistance}
             onAmbientLightIntensityChange={setAmbientLightIntensity}
         />
       </div>

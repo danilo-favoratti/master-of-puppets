@@ -2,20 +2,28 @@ import alea from "alea";
 import React, {useMemo} from "react";
 import {createNoise2D} from "simplex-noise";
 import {Vector3} from "three";
-import {useGameStore} from "../store/gameStore";
 import ForestTile from "./ForestTile";
 
-const MapDisplay: React.FC<{ mapGridData: number[][] }> = ({ mapGridData }) => {
-  const { board } = useGameStore();
+interface MapDisplayProps {
+  mapGridData: number[][];
+  width: number;
+  height: number;
+}
 
+const MapDisplay: React.FC<MapDisplayProps> = ({ mapGridData, width, height }) => {
   const terrainMap = useMemo(() => {
     // Create a seeded random number generator
     const prng = alea("seed"); // You can change 'seed' to any string to get different terrain
     const noise2D = createNoise2D(prng);
     const scale = 0.1;
 
-    const map = Array.from({ length: mapGridData.length }).map((_, y) =>
-      Array.from({ length: mapGridData.length }).map((_, x) => {
+    const map = Array.from({ length: height }).map((_, y) =>
+      Array.from({ length: width }).map((_, x) => {
+        if (x >= mapGridData.length || y >= mapGridData[x]?.length) {
+            console.error(`MapDisplay: Out of bounds access at x=${x}, y=${y}. Grid dimensions: ${mapGridData.length}x${mapGridData[0]?.length}, Requested dimensions: ${width}x${height}`);
+            return { tileX: 0, tileY: 0 }; // Default/error tile
+        }
+
         const noiseValue = noise2D(x * scale, y * scale);
 
         if (mapGridData[x][y] === 1) {
@@ -31,7 +39,7 @@ const MapDisplay: React.FC<{ mapGridData: number[][] }> = ({ mapGridData }) => {
     );
 
     return map;
-  }, [board.width, board.height]);
+  }, [mapGridData, width, height]);
 
   return (
     <group position={new Vector3(0, 0, 0)}>

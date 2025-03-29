@@ -15,8 +15,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent_puppet_master import create_puppet_master
-from agent_copywriter import CopywriterAgent, StoryTellerGameContext
-from agent_storyteller import StorytellerAgent, GameContext as StorytellerGameContext
+from agent_copywriter_direct import GameCopywriterAgent, CompleteStoryResult
+from old.agent_storyteller import StorytellerAgent
 
 # Load environment variables
 load_dotenv()
@@ -58,16 +58,13 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     await websocket.accept()
 
-    # Initialize a shared game context (can be used for both agents)
-    shared_context = StoryTellerGameContext(name="game-context")
     # Initialize agents:
-    copywriter_agent = CopywriterAgent(OPENAI_API_KEY, DEEPGRAM_API_KEY, CHARACTER_VOICE)
-    copywriter_agent.game_context = shared_context
+    copywriter_agent = GameCopywriterAgent(OPENAI_API_KEY)
 
     # Create a character controller agent (for example purposes)
     char_controller_agent = create_puppet_master("Jan Character")
+
     storyteller_agent = StorytellerAgent(char_controller_agent, OPENAI_API_KEY, DEEPGRAM_API_KEY, CHARACTER_VOICE)
-    storyteller_agent.game_context = shared_context
 
     session_data = {
         "copywriter_agent": copywriter_agent,
@@ -147,7 +144,7 @@ async def websocket_endpoint(websocket: WebSocket):
     # Send a welcome message
     await websocket.send_text(json.dumps({
         "type": "text",
-        "content": "Hey there, I'm your quirky game character! Speak or send a text message."
+        "content": "Hey there, Let's begin your journey! Speak or send a text message."
     }))
 
     try:
@@ -191,17 +188,33 @@ async def websocket_endpoint(websocket: WebSocket):
 
                         if not session_data["copywriter_done"]:
                             # Process initial text with CopywriterAgent
-                            response_data, session_data[
-                                "conversation_history"] = await copywriter_agent.process_user_input(
-                                text_message, session_data["conversation_history"]
-                            )
-                            await websocket.send_text(json.dumps(response_data))
+                            # response_data = await GameCopywriterAgent().process_game_data(text_message)
+                            # Load game data from the Abandoned Prisoner JSON file
+                            with open("game_output/20250328-222025-Abandoned_Prisoner.json", "r") as f:
+                                response_data = json.load(f)
+
+                            command = {
+                                "type": "command",
+                                "name": "create_map",
+                                "map_data": response_data.get("environment", {}),
+                                "result": "Map created",
+                                "params": {
+                                    "map_name": "My Map",
+                                    "map_description": "A map made by a game character."
+                                }
+                            }
+
+                            await websocket.send_text(json.dumps(command))
+
+                            copywriter_agent.game_context = response_data
+
                             # Check if the game context (map/story) is ready
-                            if shared_context.environment:
+                            if response_data.environment:
                                 session_data["copywriter_done"] = True
+                                session_data["response_data"] = response_data
                                 await websocket.send_text(json.dumps({
                                     "type": "info",
-                                    "content": "Map created and story initialized. Continuing conversation..."
+                                    "content": "Map Loaded."
                                 }))
                         else:
                             # Process subsequent text with StorytellerAgent

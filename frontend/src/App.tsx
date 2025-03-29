@@ -1,7 +1,8 @@
-import React, {useCallback, useEffect, useRef, useState} from "react";
+import React, {useCallback, useEffect, useRef, useState, useLayoutEffect} from "react";
 import "./App.css";
 import Chat from "./components/Chat";
 import GameContainer from "./components/GameContainer";
+import { GameData } from "./types/game";
 
 // Fix the WebSocket URL declaration to avoid TypeScript error
 const WS_URL =
@@ -46,7 +47,7 @@ function App() {
         }>
     >([]);
     const [isMapCreated, setIsMapCreated] = useState(false);
-    const [mapData, setMapData] = useState(null);
+    const [mapData, setMapData] = useState<GameData | null>(null);
     const [isMapReady, setIsMapReady] = useState(false);
     const [gameStarted, setGameStarted] = useState(false);
     const [loadingMap, setLoadingMap] = useState(false);
@@ -173,34 +174,54 @@ function App() {
                         setLoadingMap(false);
                     } else if (data.type === "command") {
                         if (data.name === "create_map") {
-                            console.log("Creating map with data:", data.params.map_data);
-                            setMapData(data.params.map_data);
-                            setGameStarted(true);
-                            setLoadingMap(false);
+                            // Check if map_data exists in the message
+                            if (data.map_data && data.map_data.grid) {
+                                console.log("Processing create_map command with map_data:", data.map_data);
+                                
+                                // Construct the internal GameData structure from map_data
+                                const newMapData: GameData = {
+                                    map: {
+                                        width: data.map_data.width,
+                                        height: data.map_data.height,
+                                        grid: data.map_data.grid
+                                    },
+                                    // Use top-level entities if they exist, otherwise default to empty array
+                                    entities: data.entities || [] 
+                                };
 
-                            // Also add the map creation message to the chat
-                            if (data.content) {
-                                // Filter out any thinking messages
-                                setMessages((prevMessages) =>
-                                    prevMessages
-                                        .filter(msg => {
-                                            const msgJson = tryParseJsonInString(msg.content);
-                                            return !(msgJson?.answers?.some((a: any) => a.isThinking === true));
-                                        })
-                                        .concat([{content: data.content, sender: "assistant"}])
-                                );
+                                setMapData(newMapData);
+                                setIsMapReady(true); // Mark map as ready
+                                setIsMapCreated(true); // Also set this flag
+                                setGameStarted(true);
+                                setLoadingMap(false);
+
+                                // Add the result message to the chat if it exists
+                                if (data.result) {
+                                    addMessage(data.result, "assistant"); // Use addMessage helper
+                                }
+
+                            } else {
+                                console.error("Received create_map command but map_data is missing or invalid:", data);
+                                setLoadingMap(false);
+                                // Optionally, add an error message to the chat
+                                addMessage("Error: Failed to process map data from server.", "system", true);
                             }
                         } else {
                             // Other command, just show the result as a message
-                            setMessages((prevMessages) => [
-                                ...prevMessages,
-                                {content: data.result, sender: "assistant"},
-                            ]);
+                            // Using addMessage ensures consistent handling
+                            if (data.result) {
+                                addMessage(data.result, "assistant");
+                            }
                         }
                     }
 
-                    // Clear thinking state
-                    setIsThinking(false);
+                    // Clear thinking state (might need adjustment based on message flow)
+                    // Check if the message indicates thinking should stop
+                    const jsonContent = data.type === 'json' ? tryParseJsonInString(data.content) : null;
+                    const isStillThinking = jsonContent?.answers?.some((a: any) => a.isThinking === true);
+                    if (!isStillThinking) {
+                        setIsThinking(false);
+                    }
                 } catch (error) {
                     console.error("Error processing message:", error);
                     setIsThinking(false);
@@ -306,28 +327,38 @@ function App() {
     const handleMapCreated = (data: any) => {
         console.log('Map created in App:', data);
 
-        if (data.map_data) {
-            if (data.map_data.error) {
-                console.error('Map data contains error:', data.map_data.error);
-                // Simply retry the map generation with the correct text format
+        // Check if the new top-level 'environment' and 'entities' exist
+        if (data.environment && data.entities && data.environment.grid) {
+            // Check for backend error within environment
+            if (data.environment.error) {
+                console.error('Map data contains error:', data.environment.error);
                 if (!isMapCreated) {
                     console.log('Retrying map generation with theme message');
-                    setIsMapCreated(true); // Set this first to prevent multiple retries
-
-                    // Short delay before retry
+                    setIsMapCreated(true);
                     setTimeout(() => {
                         requestMapGeneration('abandoned prisioner');
                     }, 500);
                 }
             } else {
-                console.log('Valid map data received, updating state');
-                setMapData(data.map_data);
+                // Construct the internal GameData structure
+                const newMapData: GameData = {
+                    map: {
+                        width: data.environment.width, // Use new width
+                        height: data.environment.height, // Use new height
+                        grid: data.environment.grid // Use grid from environment
+                    },
+                    entities: data.entities // Use top-level entities
+                };
+
+                console.log('Valid map data received, updating state:', newMapData);
+                setMapData(newMapData);
                 setIsMapReady(true);
                 setIsMapCreated(true);
                 addMessage("Map created successfully! Wanna know more about this world?", "character");
             }
         } else {
-            console.error('Received map_created event but data is missing map_data property');
+            // Log error if the expected structure isn't present
+            console.error('Received map_created event but data is missing expected properties (environment.grid, entities)', data);
             if (!isMapCreated) {
                 setIsMapCreated(true);
                 setTimeout(() => {
@@ -388,13 +419,13 @@ function App() {
         addMessage(result, "command");
 
         // Handle create_map command
-        if (commandName === "create_map" && params.map_data) {
+        if (commandName === "create_map" && params.environment) {
             // Send the map data to the game container
             if (gameCommandHandlerRef.current) {
                 gameCommandHandlerRef.current(
                     "update_map",
                     "Map updated",
-                    params.map_data
+                    params.environment
                 );
             }
         }
@@ -515,7 +546,7 @@ function App() {
                     const data = JSON.parse(event.data);
                     if (data.type === 'map_created') {
                         console.log('Map created in App:', data);
-                        setMapData(data.map_data);
+                        setMapData(data.environment);
                         setIsMapReady(true);
                     }
                 } catch (err) {

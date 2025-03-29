@@ -2,14 +2,13 @@ import json
 import logging
 import os
 import traceback
-from typing import Dict, Any, List, Tuple, Optional, Awaitable, Callable
+from typing import Dict, Any, Tuple, Awaitable, Callable
 
 from agents import Runner, Agent
 from deepgram import DeepgramClient, PrerecordedOptions
 from openai import OpenAI
 
-from agent_copywriter import StoryTellerGameContext, GameContext
-from agent_puppet_master import create_puppet_master
+from agent_copywriter_direct import CompleteStoryResult
 
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
 logging.basicConfig(level=logging.DEBUG if DEBUG_MODE else logging.INFO)
@@ -47,7 +46,7 @@ class StorytellerAgent:
         self.openai_client = OpenAI(api_key=openai_api_key)
         logger.debug("Initialized OpenAI client.")
 
-        self.game_context = StoryTellerGameContext(name="game_context")
+        #self.game_context = CompleteStoryResult()
         logger.debug("Game context initialized.")
 
         self.puppet_master_agent = puppet_master_agent
@@ -590,7 +589,7 @@ When instructing your game-creation agent, mention that the game world includes:
 
 This detailed markdown explanation provides a complete reference to all objects, constants, subitems, and available interactions present in the source code, ensuring your agent can fully utilize these elements when creating your game.
 """
-        agent = Agent[GameContext](
+        agent = Agent[CompleteStoryResult](
             name="Game Character",
             instructions=system_prompt,
             tools=[

@@ -1,7 +1,7 @@
 # Add a router to direct messages to the appropriate agent
 from agents import Runner
 
-from agent_copywriter import CopywriterAgent
+from old.agent_copywriter import CopywriterAgent
 from agent_puppet_master import GameState, create_puppet_master
 from game_object import Container
 from simple_cli_game import GameBoard
