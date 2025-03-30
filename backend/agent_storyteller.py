@@ -11,9 +11,17 @@ from openai import OpenAI
 from agent_copywriter_direct import CompleteStoryResult
 
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
-logging.basicConfig(level=logging.DEBUG if DEBUG_MODE else logging.INFO)
+logging.basicConfig(level=logging.DEBUG if DEBUG_MODE else logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+DEFAULT_VOICE = "nova"
+
+# --- Logging Setup ---
+root_logger = logging.getLogger()
+if root_logger.hasHandlers():
+    root_logger.handlers.clear()
+
 logger = logging.getLogger(__name__)
-logger.debug("Debug mode enabled.")
+if DEBUG_MODE:
+    logger.info("Debug mode enabled.")
 
 from typing import List
 from pydantic import BaseModel, Field
@@ -70,12 +78,12 @@ You are Jan "The Man", a funny, ironic, non-binary video game character with a w
 # INSTRUCTIONS
 - **Game Interaction:** Use the provided JSON (including theme, map, entities, quest) to run the game.
 - **Dialogue:** Respond in brief, entertaining text messages (max 20 words).
-- **Format:** Every response must be in JSON with the structure:
+- **Format:** Every response should have 1 to 3 answers and 2 to 3 options in the last/single one. It must be in JSON with the structure:
 {
   "answers": [
     { "type": "text", "description": "<TEXT MESSAGE MAX 20 WORDS>", "options": [] },
-    { "type": "text", "description": "<TEXT MESSAGE MAX 20 WORDS>", "options": [] },
-    { "type": "text", "description": "<TEXT MESSAGE MAX 20 WORDS>", "options": ["<OPTION MAX 5 WORDS>", "<OPTION MAX 5 WORDS>"] }
+    ...
+    { "type": "text", "description": "<TEXT MESSAGE MAX 20 WORDS>", "options": ["<OPTION MAX 2 WORDS>", ..., "<OPTION MAX 2 WORDS>"] }
   ]
 }
 
@@ -589,13 +597,13 @@ When instructing your game-creation agent, mention that the game world includes:
 
 This detailed markdown explanation provides a complete reference to all objects, constants, subitems, and available interactions present in the source code, ensuring your agent can fully utilize these elements when creating your game.
 """
-        agent = Agent[CompleteStoryResult](
+        agent = Agent[Dict[str, Any]](
             name="Game Character",
             instructions=system_prompt,
             tools=[
                 self.puppet_master_agent.as_tool(
                     tool_name="interact_char",
-                    tool_description="Tool for interacting with the environment (move, jump, examine, etc.)."
+                    tool_description="Tool for interacting with the environment (move, open, get, examine, etc.)."
                 )
             ],
             output_type=AnswerSet
@@ -663,13 +671,13 @@ This detailed markdown explanation provides a complete reference to all objects,
     async def process_text_input(
             self,
             user_input: str,
-            conversation_history: List[Dict[str, Any]] = None
+            game_context: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Process text input through the OpenAI agent.
         """
         logger.debug("Processing text input through OpenAI agent.")
-        return await self.process_user_input(user_input, conversation_history)
+        return await self.process_user_input(user_input, game_context)
 
     async def process_audio(
             self,
@@ -677,7 +685,8 @@ This detailed markdown explanation provides a complete reference to all objects,
             on_transcription: Callable[[str], Awaitable[None]],
             on_response: Callable[[str], Awaitable[None]],
             on_audio: Callable[[bytes], Awaitable[None]],
-            conversation_history: List[Dict[str, Any]] = None
+            conversation_history: List[Dict[str, Any]] = None,
+            game_context: Dict[str, Any] = None
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Process audio data: transcribe with Deepgram and then process through OpenAI agent.
@@ -701,7 +710,8 @@ This detailed markdown explanation provides a complete reference to all objects,
                 await on_response(error_json_str)
                 return error_json_str, {"name": "", "params": {}}
 
-            response_data, conversation_history = await self.process_user_input(transcription, conversation_history)
+            # Pass game_context to process_user_input
+            response_data, conversation_history = await self.process_user_input(transcription, game_context or conversation_history)
             logger.debug("User input processed by OpenAI agent.")
 
             # Extract response text for TTS
@@ -788,17 +798,33 @@ This detailed markdown explanation provides a complete reference to all objects,
     async def process_user_input(
             self,
             user_input: str,
-            conversation_history: List[Dict[str, Any]] = None
-    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+            game_context: Dict[str, Any] = None
+    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         logger.debug("Processing user input through Storyteller agent.")
         agent = self.agent_data["agent"]
+        
+        # Initialize conversation history if None
+        if game_context is None:
+            game_context = {}
+        
+        conversation_history = game_context.get("history", [])
 
-        # Check if this is a theme message
-        is_theme_message = "theme" in user_input.lower() and not self.game_context.theme
+        # Check if this is a theme message - game_context might be a dict, not an object
+        is_theme_message = "theme" in user_input.lower() and not game_context.get("theme")
         
         if is_theme_message:
-            self.game_context.theme = user_input
-            logger.debug(f"Theme set in game context: {self.game_context.theme}")
+            # Store the theme properly in game_context
+            if isinstance(game_context, dict):
+                game_context["theme"] = user_input
+            else:
+                # Try to set attribute if it's an object
+                try:
+                    game_context.theme = user_input
+                except:
+                    # Fall back to dict if needed
+                    game_context = {"theme": user_input}
+                    
+            logger.debug(f"Theme set in game context: {user_input}")
             
             # Send thinking indicator immediately before processing
             thinking_json = {
@@ -815,40 +841,109 @@ This detailed markdown explanation provides a complete reference to all objects,
             result = await Runner.run(
                 starting_agent=agent,
                 input=user_input,
-                context=self.game_context
+                context=game_context
             )
             logger.debug("Runner.run completed in StorytellerAgent.")
 
             # Try to parse the result as JSON with "answers" format
             try:
-                result_json = json.loads(result.final_output)
-                if "answers" in result_json:
-                    # Already in the correct format, just pass it through directly
-                    logger.debug("Response is already in the correct JSON format with 'answers' array")
-                    return {"type": "json", "content": json.dumps(result_json)}, conversation_history
-            except json.JSONDecodeError:
-                logger.debug("Result is not valid JSON, will convert to required format")
+                logger.debug(f"Result type: {type(result.final_output).__name__}")
+                
+                # Handle AnswerSet explicitly first before trying JSON parsing
+                # Use both the type checking and check the module to be absolutely sure
+                if (isinstance(result.final_output, AnswerSet) or 
+                    (type(result.final_output).__name__ == 'AnswerSet' and hasattr(result.final_output, 'answers'))):
+                    # Direct AnswerSet object from the agent
+                    logger.debug("Received AnswerSet object directly from agent")
+                    try:
+                        answers_list = result.final_output.answers
+                        logger.debug(f"AnswerSet contains {len(answers_list)} answers")
+                        
+                        # Check if all items in the list are Answer objects
+                        for i, answer in enumerate(answers_list):
+                            logger.debug(f"Answer {i} type: {type(answer).__name__}")
+                        
+                        # Try to convert each answer to a dict safely
+                        answer_dicts = []
+                        for answer in answers_list:
+                            try:
+                                answer_dict = answer.dict()
+                                answer_dicts.append(answer_dict)
+                            except Exception as e:
+                                logger.error(f"Error converting answer to dict: {e}")
+                                # Fallback to manual conversion
+                                answer_dict = {
+                                    "type": getattr(answer, "type", "text"),
+                                    "description": getattr(answer, "description", ""),
+                                    "options": getattr(answer, "options", [])
+                                }
+                                answer_dicts.append(answer_dict)
+                        
+                        answers_json = {"answers": answer_dicts}
+                        json_content = json.dumps(answers_json)
+                        logger.debug(f"Converted AnswerSet to JSON: {json_content[:100]}...")
+                        return {"type": "json", "content": json_content}, []
+                    except Exception as e:
+                        logger.error(f"Error processing AnswerSet: {e}")
+                        # Continue to fallback processing
+                elif hasattr(result.final_output, "answers") and isinstance(result.final_output.answers, list):
+                    # It might be an AnswerSet-like object without being the exact type
+                    logger.debug("Received object with answers attribute")
+                    answers_json = {"answers": []}
+                    for answer in result.final_output.answers:
+                        if hasattr(answer, "dict"):
+                            answers_json["answers"].append(answer.dict())
+                        elif hasattr(answer, "__dict__"):
+                            answers_json["answers"].append(answer.__dict__)
+                    return {"type": "json", "content": json.dumps(answers_json)}, []
+                elif isinstance(result.final_output, str):
+                    # If we have a string, try to parse it as JSON
+                    result_json = json.loads(result.final_output)
+                    if "answers" in result_json:
+                        # Already in the correct format, just pass it through directly
+                        logger.debug("Response is already in the correct JSON format with 'answers' array")
+                        return {"type": "json", "content": json.dumps(result_json)}, []
+                else:
+                    # Log that we're not handling this type and will convert to text format
+                    logger.debug(f"Not handling result type {type(result.final_output).__name__} directly, will convert to text format")
+            except (json.JSONDecodeError, AttributeError) as e:
+                logger.debug(f"Result is not valid JSON or AnswerSet: {str(e)}")
+                logger.debug("Will convert to required format")
 
             # Handle tool calls for map creation and interaction
             if hasattr(result, "tool_calls") and result.tool_calls:
                 for tool_call in result.tool_calls:
                     if tool_call.name == "create_map":
                         # Create a proper answers JSON for map creation
+                        theme_text = ""
+                        if isinstance(game_context, dict) and "theme" in game_context:
+                            theme_text = game_context["theme"]
+                        elif hasattr(game_context, "theme"):
+                            theme_text = game_context.theme
+                        
                         answers_json = {
                             "answers": [
                                 {"type": "text", "description": "Creating a new adventure map!", "options": []},
-                                {"type": "text", "description": f"A world of {self.game_context.theme} awaits...", "options": []},
+                                {"type": "text", "description": f"A world of {theme_text} awaits...", "options": []},
                                 {"type": "text", "description": "Map created! What would you like to do?", 
                                  "options": ["Explore", "Check quest", "Look around"]}
                             ]
                         }
+                        
+                        # Get map data from the appropriate source
+                        map_data = {}
+                        if isinstance(game_context, dict) and "environment" in game_context:
+                            map_data = game_context["environment"].get("map_data", {})
+                        elif hasattr(game_context, "environment") and game_context.environment:
+                            map_data = getattr(game_context.environment, "map_data", {})
+                        
                         response = {
                             "type": "command",
                             "name": "create_map",
                             "result": tool_call.output,
                             "content": json.dumps(answers_json),
                             "params": {
-                                "map_data": self.game_context.environment.get("map_data", {}) if self.game_context.environment else {}
+                                "map_data": map_data
                             }
                         }
                         logger.info("Tool call for create_map processed and formatted as JSON answers")
@@ -877,19 +972,38 @@ This detailed markdown explanation provides a complete reference to all objects,
                         return response, conversation_history
 
             # For any other response, convert to the required JSON format
-            # Instead of chunking by word count, use the full response as a single answer
-            response_text = result.final_output
+            # Process the response as text and create appropriate answers
+            response_text = str(result.final_output)
             
             # Make sure we don't have an empty response
             if not response_text or response_text.strip() == "":
                 response_text = "I'm ready to continue our adventure. What would you like to do next?"
             
-            # Create a single answer with the full text
-            answers = [
-                {"type": "text", "description": response_text, "options": ["Yes", "No", "Tell me more"]}
-            ]
+            # Create answers in the proper format
+            answers = []
             
-            # Ensure we have at least one answer (this should always be true now)
+            # Split by newlines or chunks to create multiple messages if needed
+            lines = [line for line in response_text.split('\n') if line.strip()]
+            
+            if not lines:
+                lines = [response_text]
+                
+            # Add all lines except the last one without options
+            for i, line in enumerate(lines[:-1]):
+                if line.strip():
+                    answers.append({"type": "text", "description": line.strip(), "options": []})
+            
+            # Add the last line with default options for interaction
+            if lines:
+                last_line = lines[-1].strip()
+                if last_line:
+                    answers.append({
+                        "type": "text", 
+                        "description": last_line, 
+                        "options": ["Continue", "Tell me more", "What now?"]
+                    })
+            
+            # Ensure we have at least one answer
             if not answers:
                 answers = [
                     {"type": "text", "description": "I'm ready to help!", "options": ["Tell me more", "What now?"]}

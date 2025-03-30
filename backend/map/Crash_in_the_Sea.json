@@ -1780,7 +1780,7 @@
   },
   "entities": [
     {
-      "id": "chest_bronze_banded",
+      "id": "chest_bronze_banded-1",
       "type": "chest",
       "name": "Bronze Banded Chest",
       "position": {
@@ -1798,7 +1798,7 @@
       "contents": []
     },
     {
-      "id": "chest_basic_wooden",
+      "id": "chest_basic_wooden-1",
       "type": "chest",
       "name": "Basic Wooden Chest",
       "position": {
@@ -1816,7 +1816,7 @@
       "contents": []
     },
     {
-      "id": "chest_bronze_banded",
+      "id": "chest_bronze_banded-2",
       "type": "chest",
       "name": "Bronze Banded Chest",
       "position": {
@@ -1834,7 +1834,7 @@
       "contents": []
     },
     {
-      "id": "chest_basic_wooden",
+      "id": "chest_basic_wooden-2",
       "type": "chest",
       "name": "Basic Wooden Chest",
       "position": {
@@ -1852,7 +1852,7 @@
       "contents": []
     },
     {
-      "id": "chest_bronze_banded",
+      "id": "chest_bronze_banded-3",
       "type": "chest",
       "name": "Bronze Banded Chest",
       "position": {

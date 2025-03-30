@@ -8,16 +8,16 @@ import asyncio
 import json
 import os
 import time
-from typing import Dict, Any
 from pathlib import Path
+from typing import Dict, Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from agent_copywriter_direct import GameCopywriterAgent
 from agent_puppet_master import create_puppet_master
-from agent_copywriter_direct import GameCopywriterAgent, CompleteStoryResult
-from old.agent_storyteller import StorytellerAgent
+from agent_storyteller import StorytellerAgent
 
 # Load environment variables
 load_dotenv()
@@ -86,13 +86,15 @@ async def websocket_endpoint(websocket: WebSocket):
     async def on_transcription(text: str):
         await websocket.send_text(json.dumps({
             "type": "user_message",
-            "content": text
+            "content": text,
+            "sender": "user"  # Specify this is from the user
         }))
 
     async def on_response(text: str):
         await websocket.send_text(json.dumps({
             "type": "text",
-            "content": text
+            "content": text,
+            "sender": "character"  # Specify this is from the character/assistant
         }))
 
     async def on_audio(audio_chunk: bytes):
@@ -140,14 +142,16 @@ async def websocket_endpoint(websocket: WebSocket):
             "type": "command",
             "name": name,
             "result": result,
-            "params": params
+            "params": params,
+            "sender": "system"  # Commands are system messages
         }))
 
     # Send a welcome message
-    await websocket.send_text(json.dumps({
+    """ await websocket.send_text(json.dumps({
         "type": "text",
-        "content": "Hey there, Let's begin your journey! Speak or send a text message."
-    }))
+        "content": "Loading game...",
+        "sender": "system"  # Welcome message is from the character/assistant
+    })) """
 
     try:
         while True:
@@ -188,9 +192,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         if not theme_name or not isinstance(theme_name, str):
                             await websocket.send_text(json.dumps({
                                 "type": "error",
-                                "content": "Invalid theme name provided."
+                                "content": "Invalid theme name provided.",
+                                "sender": "system"
                             }))
-                            continue # Wait for a valid theme
+                            continue  # Wait for a valid theme
 
                         # Sanitize theme name slightly just in case (prevent directory traversal)
                         safe_theme_name = Path(theme_name).name
@@ -199,16 +204,17 @@ async def websocket_endpoint(websocket: WebSocket):
                         # --- Construct path relative to this script file --- 
                         script_dir = Path(__file__).resolve().parent
                         map_file_path = script_dir / "map" / f"{safe_theme_name}.json"
-                        print(f"[DEBUG] Attempting to load map file from: {map_file_path}") # Debug print
+                        print(f"[DEBUG] Attempting to load map file from: {map_file_path}")  # Debug print
                         # --- End path fix ---
 
                         if not map_file_path.is_file():
                             print(f"Error: Map file not found at {map_file_path}")
                             await websocket.send_text(json.dumps({
                                 "type": "error",
-                                "content": f"Theme file '{safe_theme_name}.json' not found."
+                                "content": f"Theme file '{safe_theme_name}.json' not found.",
+                                "sender": "system"
                             }))
-                            continue # Wait for a valid theme
+                            continue  # Wait for a valid theme
 
                         try:
                             with open(map_file_path, "r") as f:
@@ -217,64 +223,74 @@ async def websocket_endpoint(websocket: WebSocket):
                             print(f"Error: Could not decode JSON from {map_file_path}")
                             await websocket.send_text(json.dumps({
                                 "type": "error",
-                                "content": f"Error reading theme file '{safe_theme_name}.json'."
+                                "content": f"Error reading theme file '{safe_theme_name}.json'.",
+                                "sender": "system"
                             }))
-                            continue # Wait for a valid theme
+                            continue  # Wait for a valid theme
                         except Exception as e:
                             print(f"Error reading map file {map_file_path}: {e}")
                             await websocket.send_text(json.dumps({
                                 "type": "error",
-                                "content": "An error occurred while loading the theme."
+                                "content": "An error occurred while loading the theme.",
+                                "sender": "system"
                             }))
-                            continue # Wait for a valid theme
+                            continue  # Wait for a valid theme
 
                         # Store game context and mark copywriter as done
                         session_data["game_context"] = game_data
                         session_data["copywriter_done"] = True
-                        copywriter_agent.game_context = game_data # Update agent context if needed
+                        copywriter_agent.game_context = game_data  # Update agent context if needed
 
                         # Send map creation command to frontend
                         map_create_command = {
                             "type": "command",
                             "name": "create_map",
                             "map_data": game_data.get("environment", {}),
-                            "entities": game_data.get("entities", []), # Send entities too
-                            "narrative": game_data.get("complete_narrative", ""), # Send narrative
-                            "result": f"Map loaded for theme: {safe_theme_name}",
+                            "entities": game_data.get("entities", []),  # Send entities too
+                            "narrative": game_data.get("complete_narrative", ""),  # Send narrative
+                            "result": f"`{safe_theme_name.replace('_', ' ')}` loaded.",
                             "params": {
                                 "map_name": game_data.get("theme", safe_theme_name),
                                 "map_description": game_data.get("terrain_description", "No description available.")
-                            }
+                            },
+                            "sender": "system"
                         }
                         await websocket.send_text(json.dumps(map_create_command))
-
-                        await websocket.send_text(json.dumps({
-                            "type": "info",
-                            "content": f"Theme '{safe_theme_name}' loaded. You can now interact with the world."
-                        }))
 
                     elif data.get("type") == "text":
                         text_message = data["content"]
                         # Echo the user's text message
                         await websocket.send_text(json.dumps({
                             "type": "user_message",
-                            "content": text_message
+                            "content": text_message,
+                            "sender": "user"
                         }))
 
                         if not session_data["copywriter_done"]:
                             # If copywriter isn't done, prompt user to select a theme
-                             await websocket.send_text(json.dumps({
+                            await websocket.send_text(json.dumps({
                                 "type": "info",
-                                "content": "Please select a theme first to start the game."
+                                "content": "Please select a theme first to start the game.",
+                                "sender": "system"
                             }))
                         else:
                             # Process subsequent text with StorytellerAgent using loaded context
                             response_data, session_data[
                                 "conversation_history"] = await storyteller_agent.process_text_input(
                                 text_message,
-                                session_data["conversation_history"],
-                                game_context=session_data.get("game_context") # Pass context
+                                game_context={
+                                    "map_data": game_data.get("environment", {}),
+                                    "entities": game_data.get("entities", []),  # Send entities too
+                                    "narrative": game_data.get("complete_narrative", ""),  # Send narrative
+                                }
                             )
+
+                            # #StorytellerAgent_Direct
+                            # response_data, session_data[
+                            #     "conversation_history"] = await storyteller_agent.process_text_input(
+                            #     text_message,
+                            #     conversation_history=session_data["conversation_history"]
+                            # )
                             if response_data["type"] == "text":
                                 await on_response(response_data["content"])
                                 # Generate TTS audio for the response
@@ -287,6 +303,29 @@ async def websocket_endpoint(websocket: WebSocket):
                                 for chunk in speech_response.iter_bytes():
                                     await on_audio(chunk)
                                 await on_audio(b"__AUDIO_END__")
+                            elif response_data["type"] == "json":
+                                # Send the JSON content directly to the client
+                                await on_response(response_data["content"])
+
+                                # Extract text from answers for TTS
+                                try:
+                                    json_content = json.loads(response_data["content"])
+                                    tts_text = " ".join([answer.get("description", "")
+                                                         for answer in json_content.get("answers", [])])
+
+                                    # Generate TTS audio for the response
+                                    if tts_text.strip():
+                                        speech_response = storyteller_agent.openai_client.audio.speech.create(
+                                            model="tts-1",
+                                            voice=storyteller_agent.voice,
+                                            input=tts_text
+                                        )
+                                        session_data["audio_sent_metadata"] = False
+                                        for chunk in speech_response.iter_bytes():
+                                            await on_audio(chunk)
+                                        await on_audio(b"__AUDIO_END__")
+                                except json.JSONDecodeError as e:
+                                    print(f"Error decoding JSON for TTS: {e}")
                             elif response_data["type"] == "command":
                                 await send_command(response_data["name"], response_data.get("params", {}))
 
@@ -301,13 +340,14 @@ async def websocket_endpoint(websocket: WebSocket):
                                 if not session_data["copywriter_done"]:
                                     await websocket.send_text(json.dumps({
                                         "type": "info",
-                                        "content": "Please select a theme first to start the game."
+                                        "content": "Please select a theme first to start the game.",
+                                        "sender": "system"
                                     }))
                                 else:
                                     response_text, command_info = await storyteller_agent.process_audio(
                                         audio_data, on_transcription, on_response, on_audio,
                                         session_data["conversation_history"],
-                                        game_context=session_data.get("game_context") # Pass context
+                                        game_context=session_data.get("game_context")
                                     )
                                     if command_info.get("name"):
                                         await send_command(command_info["name"], command_info.get("params", {}))
@@ -315,12 +355,14 @@ async def websocket_endpoint(websocket: WebSocket):
                                 print(f"Error processing audio: {e}")
                                 await websocket.send_text(json.dumps({
                                     "type": "error",
-                                    "content": f"Error processing voice: {str(e)}"
+                                    "content": f"Error processing voice: {str(e)}",
+                                    "sender": "system"
                                 }))
                         else:
                             await websocket.send_text(json.dumps({
                                 "type": "error",
-                                "content": "No audio data received. Please try recording again."
+                                "content": "No audio data received. Please try recording again.",
+                                "sender": "system"
                             }))
                         # Reset audio state regardless
                         session_data["audio_buffer"] = bytearray()
@@ -329,13 +371,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     else:
                         await websocket.send_text(json.dumps({
                             "type": "error",
-                            "content": "Unrecognized message type."
+                            "content": "Unrecognized message type.",
+                            "sender": "system"
                         }))
                 except json.JSONDecodeError:
                     try:
                         await websocket.send_text(json.dumps({
                             "type": "error",
-                            "content": "Invalid message format."
+                            "content": "Invalid message format.",
+                            "sender": "system"
                         }))
                     except Exception as sendError:
                         print(f"Error sending invalid format message: {sendError}")

@@ -174,6 +174,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setGameData: (gameData: GameData) => set({ gameData }),
   
   // New properties
-  position: [10, 10, 0],
+  position: [20, 20, 0],
   setPosition: (position: [number, number, number]) => set({ position })
 })); 

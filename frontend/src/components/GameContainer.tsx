@@ -77,7 +77,7 @@ const GameContainer = ({
             }
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+          console.error('Error parsing WebSocket message (it is ok if audio was sent):', error);
         }
       };
 

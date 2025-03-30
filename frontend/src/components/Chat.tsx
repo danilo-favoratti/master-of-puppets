@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
+import './Chat.css';  // Import the CSS file
 
 interface ChatProps {
-  messages: Array<{ content: string; sender: string; isError?: boolean; options?: string[]}>;
+  messages: Array<{ content: string; sender: string; isError?: boolean; options?: string[]; messageId?: string}>;
   sendTextMessage: (message: string) => void;
   isThinking: boolean;
   isConnected: boolean;
@@ -997,6 +998,20 @@ const Chat = ({
     }
   }, [messages]);
 
+  // Determine container class based on sender
+  const getContainerClass = (sender: string) => {
+    if (sender === 'user') return 'user-container';
+    if (sender === 'character') return 'character-container'; // Assuming 'character' is your assistant ID
+    return 'system-container'; // Default to system for others
+  };
+
+  // Determine message class based on sender
+  const getMessageClass = (sender: string) => {
+    if (sender === 'user') return 'user-message';
+    if (sender === 'character') return 'character-message';
+    return 'system-message'; // Default to system for others
+  };
+
   return (
     <div className="chat-container">
       <div className="chat-header">
@@ -1013,7 +1028,43 @@ const Chat = ({
       <div className="messages-container">
         {messages
           .filter(msg => !msg.content.trim().startsWith('```'))
+          // Add filter to remove Json_response messages
+          .filter(msg => !msg.content.trim().startsWith('Json_response'))
+          // Create a more robust deduplication algorithm
+          .filter((msg, index, self) => {
+            // First level: Use messageId for deduplication if available
+            if (msg.messageId) {
+              return self.findIndex(m => m.messageId === msg.messageId) === index;
+            }
+            
+            // Second level: For theme selections, handle case and format variations
+            const normalizedMsgContent = msg.content.toLowerCase().replace(/_/g, ' ');
+            const isThemeSelectionMsg = 
+              msg.sender === 'user' && 
+              (normalizedMsgContent.includes('abandoned prisioner') || 
+               normalizedMsgContent.includes('crash in the sea') ||
+               normalizedMsgContent.includes('lost memory'));
+            
+            if (isThemeSelectionMsg) {
+              // Find all theme selection messages and check if this is the first
+              // Check against other normalized theme messages
+              return false;
+            }
+            
+            // Third level: For messages without messageId, use content+sender combination
+            return self.findIndex(m => 
+              m.content === msg.content && m.sender === msg.sender
+            ) === index;
+          })
           .map((msg, index) => {
+          // Enhanced logging to debug message rendering
+          console.log(`Rendering message ${index}:`, { 
+            sender: msg.sender, 
+            content: msg.content.substring(0, 30),
+            containerClass: getContainerClass(msg.sender),
+            messageClass: getMessageClass(msg.sender)
+          });
+          
           // Try to parse JSON in content string
           const jsonContent = tryParseJsonInString(msg.content);
           
@@ -1024,32 +1075,23 @@ const Chat = ({
               answer && answer.description && answer.description.trim().length > 0
             );
             
-            // Check if any answers have the isThinking flag
-            const hasThinkingMessages = validAnswers.some(answer => answer.isThinking === true);
-            
             return (
               <React.Fragment key={index}>
                 {validAnswers.map((answer: any, answerIndex: number) => (
-                  <div key={`${index}-${answerIndex}`}>
-                    <div className={`message ${msg.sender}-message ${answer.isError ? 'error' : ''} ${answer.isThinking ? 'thinking-message' : ''}`}>
+                  <div key={`${index}-${answerIndex}`} className={`message-container ${getContainerClass(msg.sender)}`}>
+                    <div className={`message ${getMessageClass(msg.sender)} ${answer.isError ? 'error' : ''}`} data-sender={msg.sender}>
                       {answer.description}
-                      {answer.isThinking && (
-                        <div className="thinking-indicator-inline">
-                          <div className="dot"></div>
-                          <div className="dot"></div>
-                          <div className="dot"></div>
-                        </div>
-                      )}
                     </div>
-                    {/* Only show options on the last answer and not for thinking messages */}
-                    {answerIndex === validAnswers.length - 1 && !hasThinkingMessages && answer.options && answer.options.length > 0 && (
+                    {/* Only show options on the last answer */}
+                    {answerIndex === validAnswers.length - 1 && answer.options && answer.options.length > 0 && (
                       <div className="options-container">
                         {answer.options.map((option: string, optIndex: number) => (
                           <button
                             key={optIndex}
                             className="option-button"
                             onClick={() => {
-                              setMessage(option);
+                              // Only send the message, don't update the input field
+                              // setMessage(option);
                               sendTextMessage(option);
                             }}
                           >
@@ -1064,10 +1106,10 @@ const Chat = ({
             );
           }
           
-          // Regular message rendering
+          // Regular message rendering with explicit classes
           return (
-            <div key={index}>
-              <div className={`message ${msg.sender}-message ${msg.isError ? 'error' : ''}`}>
+            <div key={index} className={`message-container ${getContainerClass(msg.sender)}`}>
+              <div className={`message ${getMessageClass(msg.sender)} ${msg.isError ? 'error' : ''}`} data-sender={msg.sender}>
                 {msg.content}
               </div>
               {msg.options && msg.options.length > 0 && (
@@ -1077,7 +1119,7 @@ const Chat = ({
                       key={optIndex}
                       className="option-button"
                       onClick={() => {
-                        setMessage(option);
+                        // Only send the message, don't update the input field
                         sendTextMessage(option);
                       }}
                     >

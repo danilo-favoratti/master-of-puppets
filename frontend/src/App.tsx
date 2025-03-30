@@ -109,12 +109,15 @@ function App() {
                     const data = JSON.parse(event.data);
                     console.log("WEBSOCKET: Received message:", data);
 
+                    // Use the dedicated message handler instead of inline processing
+                    //handleServerMessage(data);
+
                     // Handle different message types
                     if (data.type === "text") {
                         // Simple text message
                         setMessages((prevMessages) => [
                             ...prevMessages,
-                            {content: data.content, sender: "assistant"},
+                            {content: data.content, sender: data.sender || "character"},
                         ]);
                         setLoadingMap(false);
                     } else if (data.type === "json") {
@@ -138,27 +141,27 @@ function App() {
                                             const msgJson = tryParseJsonInString(msg.content);
                                             return !(msgJson?.answers?.some((a: any) => a.isThinking === true));
                                         })
-                                        .concat([{content: data.content, sender: "assistant"}])
+                                        .concat([{content: data.content, sender: data.sender || "character"}])
                                 );
                             } else {
                                 // Regular handling for thinking messages - add them to the messages
                                 setMessages((prevMessages) => [
                                     ...prevMessages,
-                                    {content: data.content, sender: "assistant"},
+                                    {content: data.content, sender: data.sender || "character"},
                                 ]);
                             }
                         } catch (e) {
                             console.error("Error parsing JSON content:", e);
                             setMessages((prevMessages) => [
                                 ...prevMessages,
-                                {content: data.content, sender: "assistant"},
+                                {content: data.content, sender: data.sender || "character"},
                             ]);
                         }
                     } else if (data.type === "error") {
                         // Error message
                         setMessages((prevMessages) => [
                             ...prevMessages,
-                            {content: data.content, sender: "assistant", isError: true},
+                            {content: data.content, sender: data.sender || "system", isError: true},
                         ]);
                         setIsThinking(false);
                         setLoadingMap(false);
@@ -184,40 +187,10 @@ function App() {
                                 setIsMapCreated(true); // Also set this flag
                                 setGameStarted(true);
                                 setLoadingMap(false);
-                                if (data.map_data && data.map_data.grid) {
-                                    console.log("Processing create_map command with map_data:", data.map_data);
 
-                                    // Construct the internal GameData structure from map_data
-                                    const newMapData: GameData = {
-                                        map: {
-                                            width: data.map_data.width,
-                                            height: data.map_data.height,
-                                            grid: data.map_data.grid
-                                        },
-                                        // Use top-level entities if they exist, otherwise default to empty array
-                                        entities: data.entities || []
-                                    };
-
-                                    setMapData(newMapData);
-                                    setIsMapReady(true); // Mark map as ready
-                                    setIsMapCreated(true); // Also set this flag
-                                    setGameStarted(true);
-                                    setLoadingMap(false);
-
-                                    // Add the result message to the chat if it exists
-                                    if (data.result) {
-                                        addMessage(data.result, "assistant"); // Use addMessage helper
-                                    }
-
-                                } else {
-                                    console.error("Received create_map command but map_data is missing or invalid:", data);
-                                    setLoadingMap(false);
-                                    // Optionally, add an error message to the chat
-                                    addMessage("Error: Failed to process map data from server.", "system", true);
-                                }
                                 // Add the result message to the chat if it exists
                                 if (data.result) {
-                                    addMessage(data.result, "assistant"); // Use addMessage helper
+                                    addMessage(data.result, data.sender || "system"); // Use sender from backend or default to "system"
                                 }
 
                             } else {
@@ -230,9 +203,21 @@ function App() {
                             // Other command, just show the result as a message
                             // Using addMessage ensures consistent handling
                             if (data.result) {
-                                addMessage(data.result, "assistant");
+                                addMessage(data.result, data.sender || "system");
                             }
                         }
+                    } else if (data.type === "user_message") {
+                        // This is a user message from transcription
+                        setMessages((prevMessages) => [
+                            ...prevMessages,
+                            {content: data.content, sender: "user"},
+                        ]);
+                    } else if (data.type === "info") {
+                        // System info message
+                        setMessages((prevMessages) => [
+                            ...prevMessages,
+                            {content: data.content, sender: data.sender || "system"},
+                        ]);
                     }
 
                     // Clear thinking state (might need adjustment based on message flow)
@@ -283,11 +268,11 @@ function App() {
                     if (Array.isArray(data.answers)) {
                         data.answers.forEach((answer: any) => {
                             if (answer.type === "text") {
-                                addMessage(answer.description, "character", false, answer.options || []);
+                                addMessage(answer.description, "assistant", false, answer.options || []);
                             }
                         });
                     } else {
-                        addMessage(data.content, "character");
+                        addMessage(data.content, "assistant");
                     }
                     break;
 
@@ -338,54 +323,43 @@ function App() {
             setIsThinking(false);
         }
     };
-    // Helper function to handle map creation messages
-    const handleMapCreated = (data: any) => {
-        console.log("Map created in App:", data);
-
-        if (data.map_data) {
-            if (data.map_data.error) {
-                console.error("Map data contains error:", data.map_data.error);
-                // Simply retry the map generation with the correct text format
-                if (!isMapCreated) {
-                    console.log("Retrying map generation with theme message");
-                    setIsMapCreated(true); // Set this first to prevent multiple retries
-
-                    // Short delay before retry
-                    setTimeout(() => {
-                        requestMapGeneration("abandoned prisioner");
-                    }, 500);
-                }
-            } else {
-                console.log("Valid map data received, updating state");
-                setMapData(data.map_data);
-                setIsMapReady(true);
-                setIsMapCreated(true);
-                addMessage(
-                    "Map created successfully! Wanna know more about this world?",
-                    "character"
-                );
-            }
-        } else {
-            console.error(
-                "Received map_created event but data is missing map_data property"
-            );
-            if (!isMapCreated) {
-                setIsMapCreated(true);
-                setTimeout(() => {
-                    requestMapGeneration("abandoned prisioner");
-                }, 500);
-            }
-        }
-    };
-
+    
     // Helper function to handle JSON messages
     const handleJsonMessage = (data: any) => {
         try {
             const jsonContent = typeof data.content === 'string' ? JSON.parse(data.content) : data.content;
-            addMessage(JSON.stringify(jsonContent), "agent");
+
+            // Check if this contains thinking messages
+            const hasThinkingMessages = jsonContent.answers?.some(
+                (answer: any) => answer.isThinking === true
+            );
+
+            // If this has thinking messages, handle specially
+            if (hasThinkingMessages) {
+                // Direct add for thinking messages
+                setMessages((prevMessages) => [...prevMessages, { content: JSON.stringify(jsonContent), sender: "assistant" }]);
+            } else {
+                // If not thinking messages, filter out any previous thinking messages
+                setMessages((prevMessages) =>
+                    prevMessages
+                        .filter(msg => {
+                            // Keep messages that aren't thinking messages
+                            const msgJson = tryParseJsonInString(msg.content);
+                            return !(msgJson?.answers?.some((a: any) => a.isThinking === true));
+                        })
+                        .concat([{ content: typeof data.content === 'string' ? data.content : JSON.stringify(jsonContent), sender: "assistant" }])
+                );
+            }
+
+            // Update thinking state
+            const isStillThinking = hasThinkingMessages;
+            if (!isStillThinking) {
+                setIsThinking(false);
+            }
         } catch (err) {
             console.error("Error parsing JSON message:", err);
-            addMessage(data.content, "agent");
+            addMessage(data.content, "assistant");
+            setIsThinking(false); // Make sure to clear thinking state on error
         }
     };
 
@@ -406,6 +380,9 @@ function App() {
             return;
         }
 
+        // Add the user's message to the messages array first
+        addMessage(message, "user");
+        
         setIsThinking(true);
 
         // Use the format the backend expects
