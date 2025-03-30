@@ -2,7 +2,8 @@ import React, {useCallback, useEffect, useRef, useState, useLayoutEffect} from "
 import "./App.css";
 import Chat from "./components/Chat";
 import GameContainer from "./components/GameContainer";
-import { GameData } from "./types/game";
+import HomeScreen from "./ui/HomeScreen";
+import {GameData} from "./types/game";
 
 // Fix the WebSocket URL declaration - Add type assertion
 const WS_URL = (import.meta as any).env.VITE_WS_URL ||
@@ -46,10 +47,11 @@ function App() {
         }>
     >([]);
     const [isMapCreated, setIsMapCreated] = useState(false);
-    const [mapData, setMapData] = useState<GameData | null>(null);
+    const [mapData, setMapData] = useState(null);
     const [isMapReady, setIsMapReady] = useState(false);
     const [gameStarted, setGameStarted] = useState(false);
     const [loadingMap, setLoadingMap] = useState(false);
+    const [socketMessage, setSocketMessage] = useState<string | null>(null);
 
     // Create a ref to store the real executeCommand implementation from Game
     const gameCommandHandlerRef = useRef<
@@ -69,41 +71,30 @@ function App() {
     // Connect to backend WebSocket
     useEffect(() => {
         const connectWebSocket = () => {
-            // If we already have a global socket, use it
-            if (globalSocket && globalSocket.readyState === WebSocket.OPEN) {
-                console.log("Using existing WebSocket connection");
-                setSocket(globalSocket);
-                setIsConnected(true);
-                return;
-            }
+            const wsUrl = `${
+                window.location.protocol === "https:" ? "wss:" : "ws:"
+            }//${window.location.host}/ws`;
+            console.log("WEBSOCKET: Connecting at:", wsUrl);
 
-            // Use port 8080 for WebSocket in development - Add type assertion
-            const wsUrl = (import.meta as any).env.DEV
-                ? `ws://localhost:8080/ws`
-                : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`;
-
-            console.log("Connecting to WebSocket at:", wsUrl);
-
-            const newSocket = new WebSocket(wsUrl);
+            const newSocket = new WebSocket(WS_URL);
 
             newSocket.onopen = () => {
-                console.log("WebSocket connection established");
+                console.log("WEBSOCKET: Connection established");
                 setIsConnected(true);
-                // Store the socket globally
-                globalSocket = newSocket;
+                setSocketMessage(null);
             };
 
             newSocket.onclose = () => {
-                console.log("WebSocket connection closed");
+                console.log("WEBSOCKET: Connection closed");
                 setIsConnected(false);
-                globalSocket = null;
+                setSocketMessage("Connection closed");
                 // Try to reconnect after a delay
                 setTimeout(connectWebSocket, 3000);
             };
 
             newSocket.onerror = (error) => {
-                console.error("WebSocket error:", error);
-                globalSocket = null;
+                console.error("WEBSOCKET: Error:", error);
+                setSocketMessage("Error: " + error);
             };
 
             // Process incoming messages directly inline for simplicity
@@ -116,7 +107,7 @@ function App() {
                 try {
                     // Parse JSON message
                     const data = JSON.parse(event.data);
-                    console.log("Received message:", data);
+                    console.log("WEBSOCKET: Received message:", data);
 
                     // Handle different message types
                     if (data.type === "text") {
@@ -176,7 +167,7 @@ function App() {
                             // Check if map_data exists in the message
                             if (data.map_data && data.map_data.grid) {
                                 console.log("Processing create_map command with map_data:", data.map_data);
-                                
+
                                 // Construct the internal GameData structure from map_data
                                 const newMapData: GameData = {
                                     map: {
@@ -185,7 +176,7 @@ function App() {
                                         grid: data.map_data.grid
                                     },
                                     // Use top-level entities if they exist, otherwise default to empty array
-                                    entities: data.entities || [] 
+                                    entities: data.entities || []
                                 };
 
                                 setMapData(newMapData);
@@ -193,7 +184,37 @@ function App() {
                                 setIsMapCreated(true); // Also set this flag
                                 setGameStarted(true);
                                 setLoadingMap(false);
+                                if (data.map_data && data.map_data.grid) {
+                                    console.log("Processing create_map command with map_data:", data.map_data);
 
+                                    // Construct the internal GameData structure from map_data
+                                    const newMapData: GameData = {
+                                        map: {
+                                            width: data.map_data.width,
+                                            height: data.map_data.height,
+                                            grid: data.map_data.grid
+                                        },
+                                        // Use top-level entities if they exist, otherwise default to empty array
+                                        entities: data.entities || []
+                                    };
+
+                                    setMapData(newMapData);
+                                    setIsMapReady(true); // Mark map as ready
+                                    setIsMapCreated(true); // Also set this flag
+                                    setGameStarted(true);
+                                    setLoadingMap(false);
+
+                                    // Add the result message to the chat if it exists
+                                    if (data.result) {
+                                        addMessage(data.result, "assistant"); // Use addMessage helper
+                                    }
+
+                                } else {
+                                    console.error("Received create_map command but map_data is missing or invalid:", data);
+                                    setLoadingMap(false);
+                                    // Optionally, add an error message to the chat
+                                    addMessage("Error: Failed to process map data from server.", "system", true);
+                                }
                                 // Add the result message to the chat if it exists
                                 if (data.result) {
                                     addMessage(data.result, "assistant"); // Use addMessage helper
@@ -315,6 +336,45 @@ function App() {
             console.error("Error processing server message:", err);
         } finally {
             setIsThinking(false);
+        }
+    };
+    // Helper function to handle map creation messages
+    const handleMapCreated = (data: any) => {
+        console.log("Map created in App:", data);
+
+        if (data.map_data) {
+            if (data.map_data.error) {
+                console.error("Map data contains error:", data.map_data.error);
+                // Simply retry the map generation with the correct text format
+                if (!isMapCreated) {
+                    console.log("Retrying map generation with theme message");
+                    setIsMapCreated(true); // Set this first to prevent multiple retries
+
+                    // Short delay before retry
+                    setTimeout(() => {
+                        requestMapGeneration("abandoned prisioner");
+                    }, 500);
+                }
+            } else {
+                console.log("Valid map data received, updating state");
+                setMapData(data.map_data);
+                setIsMapReady(true);
+                setIsMapCreated(true);
+                addMessage(
+                    "Map created successfully! Wanna know more about this world?",
+                    "character"
+                );
+            }
+        } else {
+            console.error(
+                "Received map_created event but data is missing map_data property"
+            );
+            if (!isMapCreated) {
+                setIsMapCreated(true);
+                setTimeout(() => {
+                    requestMapGeneration("abandoned prisioner");
+                }, 500);
+            }
         }
     };
 
@@ -474,136 +534,40 @@ function App() {
     const themeSelect = (theme: string) => {
         // Prevent selecting another theme if one is already loading/selected
         if (themeIsSelected || loadingMap) {
-             console.warn("Theme already selected or loading.");
-             return;
+            console.warn("Theme already selected or loading.");
+            return;
         }
         handleThemeSelection(theme);
     };
 
+    if (!themeIsSelected) {
+        return (
+            <HomeScreen
+                themeIsSelected={themeIsSelected}
+                isConnected={isConnected}
+                themeSelect={themeSelect}
+                socketMessage={socketMessage}
+            />
+        );
+    }
+
     return (
         <div className="flex flex-col h-screen">
-            {!themeIsSelected ? (
-                // Theme selection screen
-                <div
-                    style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        height: "100vh",
-                        width: "100vw",
-                    }}
-                >
-                    <div style={{flex: 1, position: "relative"}}>
-                        <div
-                            style={{
-                                position: "absolute",
-                                top: 0,
-                                left: 0,
-                                width: "100%",
-                                height: "100%",
-                                opacity: 0.5,
-                                zIndex: 10,
-                            }}
-                        ></div>
-                        <div
-                            style={{
-                                position: "absolute",
-                                top: 0,
-                                left: 0,
-                                width: "100%",
-                                height: "100%",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                flexDirection: "column",
-                                zIndex: 20,
-                            }}
-                        >
-                            <div>
-                                <h2>Select a Game Theme</h2>
-                                <div style={{
-                                    textAlign: "center",
-                                    margin: "10px 0",
-                                    color: isConnected ? "green" : "red",
-                                    fontSize: "14px"
-                                }}>
-                                    {isConnected ? "✓ Connected to server" : "⚠ Connecting to server..."}
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => themeSelect("Abandoned_Prisioner")}
-                                style={{
-                                    backgroundColor: "#3B82F6",
-                                    color: "white",
-                                    padding: "0.5rem 1rem",
-                                    borderRadius: "0.375rem",
-                                    border: "none",
-                                    cursor: "pointer",
-                                    marginBottom: "1rem",
-                                    fontSize: "1.2rem",
-                                    opacity: isConnected ? 1 : 0.6
-                                }}
-                                disabled={!isConnected}
-                            >
-                                Abandoned Prisioner
-                            </button>
-                            <button
-                                onClick={() => themeSelect("Crash_in_the_Sea")}
-                                style={{
-                                    backgroundColor: "#3B82F6",
-                                    color: "white",
-                                    padding: "0.5rem 1rem",
-                                    borderRadius: "0.375rem",
-                                    border: "none",
-                                    cursor: "pointer",
-                                    marginBottom: "1rem",
-                                    fontSize: "1.2rem",
-                                    opacity: isConnected ? 1 : 0.6
-                                }}
-                                disabled={!isConnected}
-                            >
-                                Crash in the Sea
-                            </button>
-                            <button
-                                onClick={() => themeSelect("Lost_Memory")}
-                                style={{
-                                    backgroundColor: "#3B82F6",
-                                    color: "white",
-                                    padding: "0.5rem 1rem",
-                                    borderRadius: "0.375rem",
-                                    border: "none",
-                                    cursor: "pointer",
-                                    marginBottom: "1rem",
-                                    fontSize: "1.2rem",
-                                    opacity: isConnected ? 1 : 0.6
-                                }}
-                                disabled={!isConnected}
-                            >
-                                Lost Memory
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            ) : (
-                // Game screen with map data
-                <div className="flex-1 relative">
-                    <GameContainer
-                        executeCommand={executeCommand}
-                        registerCommandHandler={registerGameCommandHandler}
-                        mapData={mapData}
-                        isMapReady={isMapReady}
-                        characterRef={characterRef}
-                        websocket={socket}
-                    />
-
-                    <Chat
-                        messages={messages}
-                        sendTextMessage={sendTextMessage}
-                        isThinking={isThinking}
-                        isConnected={isConnected}
-                        websocket={socket}
-                    />
-                </div>
-            )}
+            <GameContainer
+                executeCommand={executeCommand}
+                registerCommandHandler={registerGameCommandHandler}
+                mapData={mapData}
+                isMapReady={isMapReady}
+                characterRef={characterRef}
+                websocket={socket}
+            />
+            <Chat
+                messages={messages}
+                sendTextMessage={sendTextMessage}
+                isThinking={isThinking}
+                isConnected={isConnected}
+                websocket={socket}
+            />
         </div>
     );
 }
