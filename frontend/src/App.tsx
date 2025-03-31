@@ -71,11 +71,7 @@ function App() {
     // Connect to backend WebSocket
     useEffect(() => {
         const connectWebSocket = () => {
-            const wsUrl = `${
-                window.location.protocol === "https:" ? "wss:" : "ws:"
-            }//${window.location.host}/ws`;
-            console.log("WEBSOCKET: Connecting at:", wsUrl);
-
+            console.log("WEBSOCKET: Connecting at:", WS_URL);
             const newSocket = new WebSocket(WS_URL);
 
             newSocket.onopen = () => {

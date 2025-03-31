@@ -2,6 +2,9 @@ import json
 import logging
 import os
 import traceback
+from prompt.storyteller_prompts import get_storyteller_system_prompt, get_game_mechanics_reference
+from agent_copywriter_direct import Environment, Entity, Position
+
 from typing import Dict, Any, Tuple, Awaitable, Callable, List, Optional
 
 # Added for schema debugging
@@ -92,6 +95,41 @@ class AnswerSet(BaseModel):
     }
 
 
+def setup_agent(self, story_context: CompleteStoryResult) -> Dict[str, Agent]:
+    logger.debug("Setting up Storyteller agent persona and tools.")
+    theme = getattr(story_context, 'theme', 'Unknown Theme')
+    quest_title = "the main quest"
+    if isinstance(story_context.narrative_components, dict):
+        quest_data = story_context.narrative_components.get('quest', {})
+        if isinstance(quest_data, dict):
+            quest_title = quest_data.get('title', quest_title)
+
+    system_prompt = get_storyteller_system_prompt(
+        theme=theme,
+        quest_title=quest_title,
+        game_mechanics_reference=get_game_mechanics_reference()
+    )
+
+    try:
+        storyteller_agent = Agent(
+            name="Jan_The_Man_Storyteller",
+            instructions=system_prompt,
+            tools=[
+                self.puppet_master_agent.as_tool(
+                    tool_name="interact_char",
+                    tool_description="Performs player actions in the game world (e.g., move, jump, push, pull, get_from_container, put_in_container, use_object_with, look, say, check_inventory, examine_object, execute_movement_sequence)."
+                )
+            ],
+            output_type=AnswerSet,
+            model="gpt-4o"
+        )
+        logger.debug("Storyteller agent instance created.")
+        return {"agent": storyteller_agent}
+    except Exception as e:
+        logger.critical(f"Failed to create Storyteller agent instance: {e}", exc_info=True)
+        raise
+
+
 # --- Storyteller Agent Class ---
 
 class StorytellerAgent:
@@ -100,9 +138,9 @@ class StorytellerAgent:
             self,
             puppet_master_agent: Agent,
             complete_story_result: CompleteStoryResult,
-            openai_api_key: Optional[str] = None,
-            deepgram_api_key: Optional[str] = None,
-            voice: Optional[str] = None
+            openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY"),
+            deepgram_api_key: Optional[str] = os.getenv("DEEPGRAM_API_KEY"),
+            voice: str = "nova"
     ):
         logger.debug("Initializing StorytellerAgent.")
         self.openai_key = openai_api_key or os.getenv("OPENAI_API_KEY")
@@ -131,7 +169,7 @@ class StorytellerAgent:
         if not isinstance(complete_story_result, CompleteStoryResult):
             logger.error(
                 f"Invalid complete_story_result type: {type(complete_story_result)}. Expected CompleteStoryResult.")
-            env_error_state = {"width": 0, "height": 0, "grid": []}
+            env_error_state = Environment(width=0, height=0, grid=[])
             self.game_context = CompleteStoryResult(
                 theme="Error", environment=env_error_state,
                 terrain_description="Error loading story", entity_descriptions={},
@@ -147,86 +185,37 @@ class StorytellerAgent:
         self.puppet_master_agent = puppet_master_agent
         logger.debug("Puppet master agent stored.")
 
-        self.agent_data = self.setup_agent(self.game_context)
+        self.agent_data = setup_agent(self, self.game_context)
         logger.debug("Storyteller agent setup completed.")
 
-    def setup_agent(self, story_context: CompleteStoryResult) -> Dict[str, Agent]:
-        logger.debug("Setting up Storyteller agent persona and tools.")
-        theme = getattr(story_context, 'theme', 'Unknown Theme')
-        quest_title = "the main quest"
-        if isinstance(story_context.narrative_components, dict):
-            quest_data = story_context.narrative_components.get('quest', {})
-            if isinstance(quest_data, dict):
-                quest_title = quest_data.get('title', quest_title)
-
-        system_prompt = f"""
-# MISSION
-You are Jan "The Man", a funny, ironic, non-binary video game character with a witty personality and deep storytelling skills. Guide the user through the game using the pre-generated story information provided in the context (a CompleteStoryResult object).
-
-# CONTEXT
-The game world is pre-defined in the `CompleteStoryResult` context object, containing:
-- `theme`: "{theme}"
-- `environment`: Map grid and dimensions.
-- `entities`: List of all objects and their properties/positions.
-- `entity_descriptions`: Descriptions for various entity types/states.
-- `narrative_components`: Includes 'intro', 'quest' details (Title: '{quest_title}'), and 'interactions'.
-- `complete_narrative`: An overall summary text (use for flavor, not primary state).
-
-# INSTRUCTIONS
-- **Game Interaction:** Use the provided `CompleteStoryResult` context to understand the world state and guide the player. Use the `interact_char` tool to perform player actions (move, examine, use items, etc.).
-- **Dialogue:** Respond ONLY in brief, entertaining text messages (max 20 words per message). Be witty and slightly sarcastic like Jan.
-- **Format:** EVERY response MUST be a JSON object conforming to the `AnswerSet` schema:
-  ```json
-  {{
-    "answers": [
-      {{ "type": "text", "description": "<TEXT MESSAGE MAX 20 WORDS>", "options": [] }},
-      {{ "type": "text", "description": "<TEXT MESSAGE MAX 20 WORDS>", "options": ["<OPTION MAX 5 WORDS>"] }}
-    ]
-  }}
-  ```
-  - Ensure the 'type' field in each answer is ALWAYS the string 'text'. Do NOT omit it or use other values.
-  - Provide 1-3 answers per response.
-  - Include relevant action options (max 5 words each) where appropriate.
-- **Gameplay Loop:**
-  1. Start by using the `narrative_components.intro` from the context.
-  2. Ask the user what they want to do, providing options based on the current situation and available `interact_char` actions.
-  3. Use the `interact_char` tool to execute the user's chosen action. The tool will update the game state (you'll see results in subsequent turns).
-  4. Describe the outcome based on the tool's result and the context.
-  5. Check quest progress (using `narrative_components.quest` objectives and entity states) implicitly. Guide the player towards the quest '{quest_title}'.
-  6. **Ending:** When the quest objectives seem fulfilled (based on context and interaction results), announce it was all a test! Say something darkly funny related to the theme "{theme}" will happen now. Output only `{{ "answers": [{{"type": "text", "description": "...", "options":[]}}] }}` and STOP.
-- **Style:** Keep it engaging, enthusiastic but cynical, and strictly game-related. Stick to the Jan persona.
-- **Restart:** If the user asks to restart, instruct them to refresh the page/app. Output: `{{ "answers": [{{"type": "text", "description": "Wanna start over? Just refresh!", "options":[]}}] }}`
-
-# GAME MECHANICS REFERENCE (From `factory_game` - Use for understanding possibilities)
-{self._get_game_mechanics_reference()}
-"""
+    # ***** Debugging: Method to log Pydantic schema locally *****
+    def _log_pydantic_schema(self):
+        """Logs the schema generated by Pydantic for AnswerSet."""
         try:
-            storyteller_agent = Agent(
-                name="Jan_The_Man_Storyteller",
-                instructions=system_prompt,
-                tools=[
-                    self.puppet_master_agent.as_tool(
-                        tool_name="interact_char",
-                        tool_description="Performs player actions in the game world (e.g., move N, examine chest, use firewood with campfire, jump log)."
-                    )
-                ],
-                output_type=AnswerSet,
-                model="gpt-4o"
-            )
-            logger.debug("Storyteller agent instance created.")
-            return {"agent": storyteller_agent}
-        except Exception as e:
-            logger.critical(f"Failed to create Storyteller agent instance: {e}", exc_info=True)
-            raise
+            # Pydantic V2 preferred way for a single model, includes referenced definitions
+            generated_schema = AnswerSet.model_json_schema(ref_template="{model}")
+            generated_schema_json = json.dumps(generated_schema, indent=2)
+            logger.debug(f"--- Pydantic Generated Schema for Storyteller Output ---\n{generated_schema_json}")
 
-    def _get_game_mechanics_reference(self) -> str:
-        # (Content unchanged)
-        return """
----
-## 1. Interactive Items and Their Factories
-... (rest of mechanics) ...
----
-"""
+            # Check the 'type' property within 'Answer' definition in '$defs'
+            # Definitions are usually under '$defs' in Pydantic v2 JSON Schema output
+            answer_def = generated_schema.get('$defs', {}).get('Answer', {})
+            answer_type_def = answer_def.get('properties', {}).get('type', {})
+
+            logger.debug(f"Generated 'Answer.type' definition: {answer_type_def}")
+            if 'default' in answer_type_def:
+                logger.error(
+                    "###### SCHEMA ISSUE: Local Pydantic schema STILL includes 'default' for Answer.type! ######")
+            else:
+                # This part was accidentally removed in the diff, let's make sure it's here
+                logger.info("Schema Check: Local Pydantic schema correctly excludes 'default' for Answer.type.")
+            # This part was also accidentally removed
+            logger.debug("--- End Pydantic Schema Log ---")
+
+        except Exception as schema_err:
+            logger.error(f"Error generating local schema for debugging: {schema_err}", exc_info=True)
+
+    # ***** End Debugging Method *****
 
     async def transcribe_audio(self, audio_data: bytes) -> str:
         # (Content unchanged from previous version)
@@ -309,6 +298,9 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
     ) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]]]:
         # (Content mostly unchanged from previous version, including error handling and TTS)
         logger.debug("Processing audio input.")
+        logger.info("🎙️ AUDIO PROCESSING START 🎙️")
+        logger.info(f"🎙️ Received audio data: {len(audio_data)} bytes")
+
         if conversation_history is None:
             conversation_history = []
         command_info = {"name": "", "params": {}}
@@ -316,17 +308,22 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
 
         try:
             # 1. Transcribe Audio
+            logger.info("🎙️ Starting transcription...")
             transcription = await self.transcribe_audio(audio_data)
 
             if transcription:
+                logger.info(f"🎙️ Transcription success: '{transcription}'")
                 await on_transcription(transcription)
+                logger.info("🎙️ on_transcription callback completed")
             else:
-                logger.warning("Transcription failed or produced empty result.")
+                logger.warning("🎙️ Transcription failed or produced empty result.")
                 error_response, conversation_history = self._create_error_response(
                     "I couldn't understand that. Could you repeat?", conversation_history
                 )
+                logger.info("🎙️ Sending error response to client")
                 await on_response(error_response["content"])
                 await on_audio(b"__AUDIO_END__")
+                logger.info("🎙️ AUDIO PROCESSING COMPLETE (transcription failed) 🎙️")
                 return "Transcription failed.", command_info, conversation_history
 
             # 2. Process Transcription with Agent
@@ -345,6 +342,8 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
                     response_text_for_tts = " ".join([a.get("description", "") for a in answers if isinstance(a, dict)])
                     response_text_for_tts = response_text_for_tts.strip()
                     logger.debug(f"Text extracted for TTS: '{response_text_for_tts}'")
+                    if not response_text_for_tts:
+                        logger.warning("No text extracted for TTS - check JSON structure: " + json_string[:200])
                     command_info = {"name": "json_response", "params": {}}
                 except json.JSONDecodeError:
                     # ... (error handling as before) ...
@@ -417,17 +416,52 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
 
             # 4. Generate Speech (TTS)
             if response_text_for_tts:
-                # ... (TTS generation as before) ...
                 logger.debug(f"Generating speech for: '{response_text_for_tts}' using voice '{self.voice}'")
                 try:
-                    speech_response = await self.openai_client.audio.speech.create(  # Use await
+                    # Log TTS request details
+                    logger.info("🔊 TTS GENERATION LOG 🔊")
+                    logger.info(f"🗣️ VOICE: {self.voice}")
+                    logger.info(f"📝 TEXT LENGTH: {len(response_text_for_tts)} characters")
+                    logger.info(f"📝 TEXT SAMPLE: {response_text_for_tts[:50]}...")
+
+                    speech_response = await self.openai_client.audio.speech.create(
                         model="tts-1", voice=self.voice, input=response_text_for_tts, response_format="mp3"
                     )
+
+                    # Stream the audio in chunks directly to the client
                     logger.debug("Streaming TTS audio chunks...")
-                    async for chunk in speech_response.aiter_bytes(chunk_size=4096):
-                        if chunk:
-                            await on_audio(chunk)
-                    logger.debug("Finished streaming TTS audio.")
+                    collected_audio = bytearray()
+
+                    # Check if openai response changed behavior between versions
+                    if hasattr(speech_response, 'iter_bytes'):
+                        logger.info("🔊 Using iter_bytes() method for audio streaming")
+                        chunk_count = 0
+                        total_bytes = 0
+
+                        for chunk in speech_response.iter_bytes(chunk_size=4096):
+                            if chunk:
+                                chunk_count += 1
+                                total_bytes += len(chunk)
+                                collected_audio.extend(chunk)
+                                await on_audio(chunk)
+                                if chunk_count <= 2 or chunk_count % 10 == 0:  # Log first few chunks and every 10th
+                                    logger.debug(f"Sent audio chunk #{chunk_count} ({len(chunk)} bytes)")
+
+                        logger.info(f"🔊 AUDIO STREAMING COMPLETE: {chunk_count} chunks, {total_bytes} bytes total")
+                    elif hasattr(speech_response, 'content'):
+                        # Handle single content response
+                        logger.info(f"🔊 Using content attribute for audio: {len(speech_response.content)} bytes")
+                        await on_audio(speech_response.content)
+                        logger.info("Sent entire audio content in one chunk.")
+                    else:
+                        # Try to read as a file-like object
+                        logger.info("🔊 Attempting to read audio as file-like object")
+                        audio_bytes = speech_response.read()
+                        if audio_bytes:
+                            logger.info(f"🔊 Read {len(audio_bytes)} bytes from file-like object")
+                            await on_audio(audio_bytes)
+
+                    logger.info("🔊 END TTS LOG 🔊")
                 except OpenAIError as tts_err:
                     logger.error(f"OpenAI TTS Error: {tts_err}", exc_info=True)
                 except Exception as e:
@@ -435,9 +469,14 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
             else:
                 logger.warning("No text extracted for TTS generation.")
 
+            # Always send the audio end marker
+            logger.debug("Sending __AUDIO_END__ marker")
             await on_audio(b"__AUDIO_END__")  # Ensure marker is sent
+            logger.info("🎙️ Sent __AUDIO_END__ marker to client")
 
             display_text = response_text_for_tts or "No text content in response."
+            logger.info(
+                f"🎙️ AUDIO PROCESSING COMPLETE: {len(display_text)} chars in response, command: {command_info['name']} 🎙️")
             return display_text, command_info, conversation_history
 
         except Exception as e:
@@ -448,8 +487,10 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
                     f"Sorry, a critical error occurred.",
                     conversation_history
                 )
+                logger.error("🎙️ Sending critical error response to client")
                 await on_response(error_response["content"])
                 await on_audio(b"__AUDIO_END__")
+                logger.info("🎙️ AUDIO PROCESSING COMPLETE (with critical error) 🎙️")
             except Exception as cb_err:
                 logger.error(f"Failed to send error response via callback: {cb_err}", exc_info=True)
             return f"Error: {e}", command_info, conversation_history
@@ -471,17 +512,47 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
 
         current_context = self.game_context
 
+        # Log comprehensive agent context for debugging
+        logger.info("🔍 AGENT CONTEXT LOG 🔍")
+        logger.info(f"🗣️ INPUT: '{user_input}'")
+        logger.info(f"🎮 THEME: '{getattr(current_context, 'theme', 'Unknown')}'")
+
+        # Log quest info if available
+        quest_info = {}
+        if hasattr(current_context, 'narrative_components') and current_context.narrative_components:
+            if isinstance(current_context.narrative_components,
+                          dict) and 'quest' in current_context.narrative_components:
+                quest_info = current_context.narrative_components['quest']
+                logger.info(f"📜 QUEST: {quest_info.get('title', 'Unknown Quest')}")
+                logger.info(f"🎯 OBJECTIVES: {quest_info.get('objectives', [])}")
+
+        # Log environment details
+        env_info = getattr(current_context, 'environment', None)
+        if env_info:
+            logger.info(f"🗺️ MAP: {getattr(env_info, 'width', '?')}x{getattr(env_info, 'height', '?')}")
+
+        # Log conversation history length
+        if conversation_history:
+            logger.info(f"💬 HISTORY: {len(conversation_history)} previous messages")
+
+        # Log entity count in the world
+        entity_count = len(getattr(current_context, 'entities', []))
+        logger.info(f"🧩 ENTITIES: {entity_count} in game world")
+
+        # End context log
+        logger.info("🔍 END CONTEXT LOG 🔍")
+
         # ***** Debugging: Log the schema Pydantic generates locally *****
         try:
-            # Assuming AnswerSet is the top-level model passed as output_type
-            # The models_json_schema function expects a list of model types
-            schema_tuple = models_json_schema([Answer, AnswerSet], ref_template="{model}")
-            generated_schema_defs = schema_tuple[1]  # The second element contains the definitions dictionary
-            generated_schema_json = json.dumps(generated_schema_defs, indent=2)
+            # Pydantic V2 preferred way for a single model, includes referenced definitions
+            generated_schema = AnswerSet.model_json_schema(ref_template="{model}")
+            generated_schema_json = json.dumps(generated_schema, indent=2)
             logger.debug(f"Locally generated schema definitions by Pydantic:\n{generated_schema_json}")
 
-            # Specifically check the 'type' property within 'Answer' definition
-            answer_type_def = generated_schema_defs.get('Answer', {}).get('properties', {}).get('type', {})
+            # Check the 'type' property within 'Answer' definition in '$defs'
+            answer_def = generated_schema.get('$defs', {}).get('Answer', {})
+            answer_type_def = answer_def.get('properties', {}).get('type', {})
+
             logger.debug(f"Locally generated 'Answer.type' definition: {answer_type_def}")
             if 'default' in answer_type_def:
                 logger.error("!!!!!! Local schema generation STILL includes 'default' for Answer.type !!!!!!")
@@ -531,6 +602,27 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
                         "type": "command", "name": command_executed.split()[0] if command_executed else tool_name,
                         "result": tool_output_str, "content": response_content, "params": tool_input
                     }
+
+                    # Log command execution for debugging
+                    logger.info("🔍 COMMAND EXECUTION LOG 🔍")
+                    logger.info(f"⚙️ COMMAND: {command_executed}")
+                    logger.info(f"📊 PARAMS: {json.dumps(tool_input, indent=2)[:100]}...")
+                    logger.info(f"📋 RESULT: {tool_output_str[:100]}...")
+
+                    # Log command response content
+                    try:
+                        cmd_response_obj = json.loads(response_content)
+                        answers = cmd_response_obj.get("answers", [])
+                        if answers:
+                            logger.info(f"💬 RESPONSE ANSWERS: {len(answers)} messages")
+                            # Show first answer text
+                            if answers:
+                                logger.info(f"💬 FIRST ANSWER: {answers[0].get('description', '')[:50]}...")
+                    except Exception as e:
+                        logger.error(f"Error parsing command response: {e}")
+
+                    logger.info("🔍 END COMMAND LOG 🔍")
+
                     return response_data, conversation_history
                 else:
                     logger.warning(f"Unhandled tool call: {tool_name}.")
@@ -560,6 +652,31 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
                 response_type = "json"
 
             response_data = {"type": response_type, "content": response_content}
+
+            # Log agent response summary for debugging
+            logger.info("🔍 AGENT RESPONSE LOG 🔍")
+            logger.info(f"📤 TYPE: {response_type}")
+
+            # Attempt to extract and log the first few answers for context
+            try:
+                if response_type == "json":
+                    response_obj = json.loads(response_content)
+                    answers = response_obj.get("answers", [])
+                    if answers:
+                        for i, answer in enumerate(answers[:2]):  # Log up to first 2 answers
+                            logger.info(f"📝 ANSWER {i + 1}: {answer.get('description', '')[:50]}...")
+                        if len(answers) > 2:
+                            logger.info(f"... and {len(answers) - 2} more answers")
+
+                        # Log options from the last answer if any
+                        last_answer = answers[-1]
+                        if last_answer.get("options"):
+                            logger.info(f"🔘 OPTIONS: {last_answer.get('options')}")
+            except Exception as e:
+                logger.error(f"Error logging response content: {e}")
+
+            logger.info("🔍 END RESPONSE LOG 🔍")
+
             return response_data, conversation_history
 
         except BadRequestError as api_err:  # Catch specific error
@@ -631,87 +748,230 @@ The game world is pre-defined in the `CompleteStoryResult` context object, conta
 
 # --- Example Usage (Conceptual) ---
 async def example_run():
-    # (Content mostly unchanged from previous version, includes Mock Agent)
-    print("--- Storyteller Agent Example ---")
+    logger.info("🎮 Starting example run")
+
+    # Log environment setup
+    logger.info("🔑 Checking API keys...")
     openai_key = os.getenv("OPENAI_API_KEY")
     deepgram_key = os.getenv("DEEPGRAM_API_KEY")
-    if not openai_key or not deepgram_key:
-        print("❌ Error: OPENAI_API_KEY and DEEPGRAM_API_KEY environment variables must be set.")
+
+    if not all([openai_key, deepgram_key]):
+        logger.error("❌ Missing required API keys")
+        missing = []
+        if not openai_key: missing.append("OPENAI_API_KEY")
+        if not deepgram_key: missing.append("DEEPGRAM_API_KEY")
+        logger.error(f"Missing keys: {', '.join(missing)}")
         return
 
-    mock_env_dict = {"width": 10, "height": 10, "grid": [[0, 1, 0], [1, 1, 1], [0, 1, 0]]}
-    mock_env_to_use = mock_env_dict
-    mock_story_result = CompleteStoryResult(
-        theme="Mysterious Island Survival", environment=mock_env_to_use,
-        terrain_description="A small, dense island.",
-        entity_descriptions={"chest_wooden_default": "A simple wooden chest."},
-        narrative_components={
-            "intro": {"theme": "...", "location": "...", "mood": "...", "intro_text": "You wake up on a beach..."},
-            "quest": {"title": "Find Shelter", "description": "...", "objectives": ["Find wood", "Build fire"],
-                      "reward": "Safety"}
-        },
-        entities=[{"id": "ent_1", "type": "chest", "name": "Wooden Chest", "position": {"x": 1, "y": 1}}],
-        complete_narrative="You are stranded..."
-    )
-    print(f"Loaded mock story with theme: {mock_story_result.theme}")
+    # Log mock world creation
+    logger.info("🌍 Creating mock world...")
+    try:
+        # Environment Grid (0=Water, 1=Land) - Player starts implicitly at (2,2) facing right?
+        mock_grid = [
+            # 0  1  2  3  4  5  6  7  8  9  X
+            [0, 1, 1, 0, 0, 0, 0, 0, 0, 0],  # 0 Y
+            [0, 1, 1, 1, 1, 1, 1, 0, 0, 0],  # 1
+            [0, 1, 1, 1, 1, 1, 1, 1, 0, 0],  # 2 Player @ 2,2 | Box @ 3,2
+            [0, 1, 1, 1, 1, 1, 1, 1, 1, 0],  # 3 Chest @ 4,3 | Log @ 2,3
+            [0, 0, 1, 1, 1, 1, 1, 1, 1, 0],  # 4 Campfire @ 5,4
+            [0, 0, 0, 1, 1, 1, 1, 0, 0, 0],  # 5 Firewood @ 6,5 | Door @ 4,5
+            [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],  # 6
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # 7
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # 8
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # 9
+        ]
+        mock_env_obj = Environment(width=10, height=10, grid=mock_grid)
 
-    mock_puppet = Agent[CompleteStoryResult](name="Jan 'The Man'")
-    print("Initialized mock puppet master agent.")
+        # Entities
+        mock_entities = [
+            Entity(id="box_1", type="box", name="Wooden Box", position=Position(x=3, y=2), description="A crate.",
+                   weight=15, is_movable=True),
+            Entity(id="chest_1", type="chest", name="Old Chest", position=Position(x=4, y=3),
+                   description="Maybe treasure?", weight=20, is_container=True,
+                   contents=[{"id": "key_1", "type": "key", "name": "Rusty Key", "weight": 1}]),
+            # Container needs proper model if using puppet master directly
+            Entity(id="log_1", type="log", name="Fallen Log", position=Position(x=2, y=3), description="An obstacle.",
+                   weight=30, is_jumpable=True),
+            Entity(id="door_1", type="door", name="Locked Door", position=Position(x=4, y=5),
+                   description="Seems locked.", weight=100, state="locked", possible_actions=["unlock", "examine"]),
+            Entity(id="firewood_1", type="firewood", name="Dry Firewood", position=Position(x=6, y=5),
+                   description="Good for burning.", weight=5, is_collectable=True),
+            Entity(id="campfire_1", type="campfire", name="Stone Campfire", position=Position(x=5, y=4),
+                   description="Needs fuel.", weight=50, state="unlit", possible_actions=["light", "add_fuel"]),
+            # Player inventory items are conceptual here, managed by puppet master state
+            # Entity(id="torch_1", type="torch", name="Torch", description="Provides light.", weight=2), # Example if needed for use_with tests
+            Entity(id="key_1", type="key", name="Rusty Key", description="An old key.", weight=1, is_collectable=True)
+            # Also exists in chest initially for get/put test
+        ]
 
+        # Player conceptual inventory for context
+        player_inventory_ids = ["torch_1"]  # Let's assume player starts with a torch
+
+        mock_story_result = CompleteStoryResult(
+            theme="Cave Exploration", environment=mock_env_obj,
+            terrain_description="A damp, echoing cave passage.",
+            entity_descriptions={
+                "box_wooden_default": "A simple wooden box.",
+                "chest_old_default": "An old, weathered chest.",
+                "log_fallen_default": "A rough fallen log.",
+                "door_locked_default": "A heavy, locked door.",
+                "firewood_dry_default": "A bundle of dry firewood.",
+                "campfire_stone_unlit": "A cold stone campfire pit.",
+                "key_rusty_default": "A small, rusty key.",
+                "torch_default_default": "A simple wooden torch."
+            },
+            narrative_components={
+                "intro": {"intro_text": "You stand in a dark cave. A faint dripping sound echoes."},
+                "quest": {"title": "Find the Exit", "objectives": ["Navigate the cave", "Find a way past the door"],
+                          "reward": "Freedom!"}
+            },
+            entities=mock_entities,  # Use the detailed list
+            complete_narrative="A cave...",
+            # We might need a way to represent player's starting inventory if storyteller needs it
+            # custom_context={"player_inventory": player_inventory_ids} # Example, not standard field
+        )
+        logger.info(f"Created mock world with {len(mock_entities)} entities")
+        logger.debug(f"Entity IDs: {[e.id for e in mock_entities]}")
+    except Exception as e:
+        logger.error(f"❌ Error creating mock world: {str(e)}", exc_info=True)
+        return
+
+    # Initialize agents
+    logger.info("🤖 Initializing agents...")
     try:
         storyteller = StorytellerAgent(
-            puppet_master_agent=mock_puppet, complete_story_result=mock_story_result,
-            openai_api_key=openai_key, deepgram_api_key=deepgram_key, voice="nova"
+            puppet_master_agent=mock_puppet,
+            complete_story_result=mock_story_result,
+            voice="nova"  # Example voice
         )
-        print("Storyteller agent initialized successfully.")
+        logger.info("✅ Agents initialized successfully")
     except ValueError as e:
-        print(f"❌ Error initializing Storyteller: {e}")
+        logger.error(f"❌ Error initializing Storyteller: {e}")
         return
     except Exception as e:
-        print(f"❌ Unexpected error during Storyteller initialization: {e}")
+        logger.error(f"❌ Unexpected error during Storyteller initialization: {e}")
         traceback.print_exc()
         return
 
-    print("\n--- Simulating Text Interaction ---")
-    history = []
+    # Test interactions
+    logger.info("🎯 Starting interaction tests...")
+    history = []  # Conversation history for the storyteller
+    # Display initial message from the mock story
     intro_text = mock_story_result.narrative_components.get('intro', {}).get('intro_text', 'The game begins!')
-    initial_response_content = storyteller._create_basic_answer_json(intro_text, options=["Look around", "Check map"])
+    initial_response_content = storyteller._create_basic_answer_json(intro_text,
+                                                                     options=["Look around", "Check inventory"])
     initial_response = {"type": "json", "content": initial_response_content}
-    print(f"Initial Response (JSON): {initial_response['content']}")
+    logger.info("Initial Response (JSON):")
+    try:
+        logger.info(json.dumps(json.loads(initial_response['content']), indent=2))
+    except:
+        logger.info(initial_response['content'])
 
-    user_inputs = ["Look around", "move North", "examine chest", "try to fail", "restart"]
+    # User inputs designed to trigger puppet master tools via storyteller
+    user_inputs = [
+        "Look around",  # --> look
+        "Check my inventory",  # --> check_inventory
+        "examine the box",  # --> examine_object (box_1)
+        "move right",  # --> move (walk)
+        "push the box right",  # --> push (box_1)
+        "move right",  # --> move (to align for pull)
+        "pull the box left",  # --> pull (box_1)
+        "run down",  # --> move (run)
+        "jump over the log",  # --> jump (log_1) -> map coords (2,4)
+        "move right",  # --> move
+        "move right",  # --> move (reach chest @ 4,3)
+        "examine chest_1",  # --> examine_object (chest_1)
+        "get key_1 from chest_1",  # --> get_from_container
+        "check inventory",  # --> check_inventory (should include key_1 now)
+        "put key_1 in chest_1",  # --> put_in_container
+        "check inventory",  # --> check_inventory (key_1 should be gone)
+        "get the key from the chest",  # --> get_from_container (get key_1 again)
+        "move down",  # --> move
+        "move down",  # --> move (reach door @ 4,5)
+        "examine door_1",  # --> examine_object (door_1)
+        "use the key on the door",  # --> use_object_with (key_1, door_1)
+        "examine door_1",  # --> examine_object (should be unlocked now conceptually)
+        "move right",  # --> move
+        "move right",  # --> move (reach firewood @ 6,5)
+        "examine firewood_1",  # --> examine_object (firewood_1)
+        "pick up the firewood",
+        # --> (Implicitly handled by Storyteller/PuppetMaster? Needs get/collect logic) -> Let's assume 'get firewood_1' works conceptually like get_from_container for loose items
+        "get firewood_1",  # --> Simulate pickup (maybe maps to get_item)
+        "check inventory",  # --> check_inventory (should have firewood)
+        "move left",  # --> move
+        "move up",  # --> move (reach campfire @ 5,4)
+        "examine campfire_1",  # --> examine_object (campfire_1)
+        "use firewood_1 with campfire_1",  # --> use_object_with
+        "examine campfire_1",  # --> examine_object (should be lit/fueled now conceptually)
+        "say This cave is tricky!",  # --> say
+        "move left continuous"  # --> move (continuous) - New test case
+    ]
+
     for user_input in user_inputs:
-        print(f"\n>>> User: {user_input}")
-        response_data, history = await storyteller.process_text_input(user_input, history)
-        print(f"<<< Jan (JSON): {response_data.get('content', 'Error: No content')}")
+        logger.info(f"\n👤 User input: '{user_input}'")
+        try:
+            response_data, history = await storyteller.process_text_input(user_input, history)
+            logger.info(f"🤖 Response type: {response_data.get('type')}")
+            logger.debug(f"Response content: {response_data.get('content')[:200]}...")
+        except Exception as e:
+            logger.error(f"❌ Error processing input: {str(e)}", exc_info=True)
+
+        # Pretty print the JSON response
+        response_content = response_data.get('content', 'Error: No content')
+        logger.info("<<< Jan (JSON):")
+        try:
+            parsed_json = json.loads(response_content)
+            logger.info(json.dumps(parsed_json, indent=2))
+        except json.JSONDecodeError:
+            logger.info(response_content)  # Print as is if not valid JSON
+
+        # Print command details if a tool was called
         if response_data.get("type") == "command":
-            print(f"    (Command Executed: {response_data.get('name')} - Result: {response_data.get('result')})")
+            # The 'result' here comes from the MOCK puppet master, which is likely None or a default string.
+            # A real puppet master would return actual success/failure messages.
+            tool_name = response_data.get('name')
+            tool_params = response_data.get('params')
+            mock_result = response_data.get('result')
+
+            # Pretty-print parameters for readability
+            params_str = json.dumps(tool_params, indent=4) if tool_params else "{}"
+
+            logger.info(f"    🛠️ Tool Call Detected:")
+            logger.info(f"       - Tool Name: {tool_name}")
+            logger.info(f"       - Parameters:\n{params_str}")
+            logger.info(f"       - Mock Result: {mock_result}")
         elif response_data.get('content'):
-            if "Wanna start over? Just refresh!" in response_data['content']:
-                print("    (Restart instruction received)")
+            # Check for specific narrative cues if needed
+            if "Wanna start over? Just refresh!" in response_content:  # Example check
+                logger.info("    (Restart instruction received)")
 
-    print("\n--- Simulating Audio Interaction (Conceptual) ---")
+        # Add a visual separator for clarity
+        logger.info("\n" + "=" * 50 + "\n")
 
+    logger.info("\n--- Simulating Audio Interaction (Conceptual) ---")
+
+    # (Audio part remains unchanged conceptually)
     async def mock_on_transcription(text):
-        print(f"   [Callback] Transcription: {text}")
+        logger.info(f"   [Callback] Transcription: {text}")
 
     async def mock_on_response(json_str):
-        print(f"   [Callback] Response JSON: {json_str}")
+        logger.info(f"   [Callback] Response JSON: {json_str}")
 
     async def mock_on_audio(chunk):
         if chunk != b"__AUDIO_END__":
-            print(f"   [Callback] Audio Chunk Received ({len(chunk)} bytes)")
+            logger.info(f"   [Callback] Audio Chunk Received ({len(chunk)} bytes)")
         else:
-            print(f"   [Callback] __AUDIO_END__ Received")
+            logger.info(f"   [Callback] __AUDIO_END__ Received")
 
-    dummy_audio_data = b'\x00' * 16000
-    print("\nProcessing dummy audio for 'move South'...")
+    dummy_audio_data = b'\x00' * 16000  # Example dummy data
+    logger.info("\nProcessing dummy audio for 'look around'...")
+    # NOTE: Skipping actual audio processing call as it relies on external services and previous setup.
     # text_result, cmd_info, history = await storyteller.process_audio(
     #     dummy_audio_data, mock_on_transcription, mock_on_response, mock_on_audio, history
     # )
     # print(f"   Audio Processing Result Text: {text_result}")
     # print(f"   Audio Processing Command Info: {cmd_info}")
-    print("   (Skipping actual audio processing in example for brevity)")
+    logger.info("   (Skipping actual audio processing in example run)")
 
 
 if __name__ == "__main__":
@@ -723,7 +983,7 @@ if __name__ == "__main__":
         #      asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         asyncio.run(example_run())
     except KeyboardInterrupt:
-        print("\n🛑 Execution cancelled by user.")
+        logger.info("\n🛑 Execution cancelled by user.")
     except Exception as startup_err:
-        print(f"\n❌ FATAL STARTUP ERROR: {startup_err}")
+        logger.error(f"\n❌ FATAL STARTUP ERROR: {startup_err}")
         traceback.print_exc()

@@ -15,9 +15,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from agent_copywriter_direct import GameCopywriterAgent
+from agent_copywriter_direct import GameCopywriterAgent, CompleteStoryResult, Environment, Entity, Position
 from agent_puppet_master import create_puppet_master
-from agent_storyteller import StorytellerAgent
+from agent_storyteller_direct import StorytellerAgent
 
 # Load environment variables
 load_dotenv()
@@ -60,24 +60,23 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
 
     # Initialize agents:
-    copywriter_agent = GameCopywriterAgent(OPENAI_API_KEY)
+    # Copywriter is only used initially if we implement the map generation phase
+    # copywriter_agent = GameCopywriterAgent(OPENAI_API_KEY)
 
-    # Create a character controller agent (for example purposes)
+    # Create a character controller agent
     char_controller_agent = create_puppet_master("Jan Character")
 
-    storyteller_agent = StorytellerAgent(char_controller_agent, OPENAI_API_KEY, DEEPGRAM_API_KEY, CHARACTER_VOICE)
-
     session_data = {
-        "copywriter_agent": copywriter_agent,
-        "storyteller_agent": storyteller_agent,
+        # "copywriter_agent": copywriter_agent, # Keep commented if not used initially
+        "storyteller_agent": None,
         "char_controller_agent": char_controller_agent,
         "audio_buffer": bytearray(),
         "is_receiving_audio": False,
         "audio_sent_metadata": False,
         "conversation_history": [],
-        # Flag indicating whether the copywriter stage is complete.
+        # Flag indicating whether the copywriter stage is complete (now means theme loaded).
         "copywriter_done": False,
-        "game_context": None  # <-- Add placeholder for loaded game data
+        "game_context": None  # Holds the CompleteStoryResult object after loading
     }
 
     active_connections[websocket] = session_data
@@ -183,7 +182,7 @@ async def websocket_endpoint(websocket: WebSocket):
             elif "text" in message:
                 try:
                     data = json.loads(message["text"])
-                    print(f"Received message: {data} | Copywriter Done? {session_data['copywriter_done']}")
+                    print(f"Received message: {data} | Theme Loaded? {session_data['copywriter_done']}")
 
                     # Handle theme selection before copywriter is done
                     if data.get("type") == "set_theme" and not session_data["copywriter_done"]:
@@ -236,18 +235,54 @@ async def websocket_endpoint(websocket: WebSocket):
                             }))
                             continue  # Wait for a valid theme
 
-                        # Store game context and mark copywriter as done
-                        session_data["game_context"] = game_data
-                        session_data["copywriter_done"] = True
-                        copywriter_agent.game_context = game_data  # Update agent context if needed
+                        # Store raw game data temporarily
+                        # session_data["raw_game_data"] = game_data # No longer needed
+
+                        # --- Instantiate CompleteStoryResult ---
+                        try:
+                            # Use Pydantic's model_validate for robust parsing
+                            complete_story_result = CompleteStoryResult.model_validate(game_data)
+                            session_data["game_context"] = complete_story_result # Store the validated object
+                            print(f"Successfully validated and created CompleteStoryResult for theme: {complete_story_result.theme}")
+                        except Exception as validation_error:
+                            print(f"Error: Failed to validate game data against CompleteStoryResult: {validation_error}")
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "content": f"Error validating data structure in theme file '{safe_theme_name}.json'.",
+                                "sender": "system"
+                            }))
+                            continue # Wait for a valid theme
+
+                        # --- Initialize StorytellerAgent with the context ---
+                        try:
+                            storyteller_agent = StorytellerAgent(
+                                puppet_master_agent=session_data["char_controller_agent"],
+                                complete_story_result=session_data["game_context"] # Pass the validated object
+                            )
+                            session_data["storyteller_agent"] = storyteller_agent
+                            session_data["copywriter_done"] = True # Mark theme loading as complete
+                            print("StorytellerAgent initialized successfully with loaded game context.")
+                        except Exception as agent_init_error:
+                            print(f"Error initializing StorytellerAgent: {agent_init_error}")
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "content": "Failed to initialize the character agent after loading theme.",
+                                "sender": "system"
+                            }))
+                            # Reset state if agent init fails
+                            session_data["game_context"] = None
+                            session_data["copywriter_done"] = False
+                            continue
+
+                        # --- REMOVED storyteller_agent.set_result(...) ---
 
                         # Send map creation command to frontend
                         map_create_command = {
                             "type": "command",
                             "name": "create_map",
-                            "map_data": game_data.get("environment", {}),
-                            "entities": game_data.get("entities", []),  # Send entities too
-                            "narrative": game_data.get("complete_narrative", ""),  # Send narrative
+                            "map_data": game_data.get("environment", {}), # Send raw dict for compatibility if needed
+                            "entities": game_data.get("entities", []),  # Send raw dict for compatibility if needed
+                            "narrative": game_data.get("complete_narrative", ""),
                             "result": f"`{safe_theme_name.replace('_', ' ')}` loaded.",
                             "params": {
                                 "map_name": game_data.get("theme", safe_theme_name),
@@ -256,6 +291,12 @@ async def websocket_endpoint(websocket: WebSocket):
                             "sender": "system"
                         }
                         await websocket.send_text(json.dumps(map_create_command))
+
+                        await websocket.send_text(json.dumps({
+                            "type": "info",
+                            "content": "wait...",
+                            "sender": "system"
+                        }))
 
                     elif data.get("type") == "text":
                         text_message = data["content"]
@@ -266,68 +307,93 @@ async def websocket_endpoint(websocket: WebSocket):
                             "sender": "user"
                         }))
 
-                        if not session_data["copywriter_done"]:
-                            # If copywriter isn't done, prompt user to select a theme
+                        if not session_data["copywriter_done"] or not session_data["storyteller_agent"]:
+                            # Prompt user to select a theme if not done
                             await websocket.send_text(json.dumps({
                                 "type": "info",
                                 "content": "Please select a theme first to start the game.",
                                 "sender": "system"
                             }))
                         else:
-                            # Process subsequent text with StorytellerAgent using loaded context
+                            # Process subsequent text with StorytellerAgent
+                            storyteller_agent = session_data["storyteller_agent"]
                             response_data, session_data[
                                 "conversation_history"] = await storyteller_agent.process_text_input(
                                 text_message,
-                                game_context={
-                                    "map_data": game_data.get("environment", {}),
-                                    "entities": game_data.get("entities", []),  # Send entities too
-                                    "narrative": game_data.get("complete_narrative", ""),  # Send narrative
-                                }
+                                conversation_history=session_data["conversation_history"]
+                                # Context is now internal to the storyteller_agent instance
                             )
 
-                            # #StorytellerAgent_Direct
-                            # response_data, session_data[
-                            #     "conversation_history"] = await storyteller_agent.process_text_input(
-                            #     text_message,
-                            #     conversation_history=session_data["conversation_history"]
-                            # )
-                            if response_data["type"] == "text":
-                                await on_response(response_data["content"])
-                                # Generate TTS audio for the response
-                                speech_response = storyteller_agent.openai_client.audio.speech.create(
-                                    model="tts-1",
-                                    voice=storyteller_agent.voice,
-                                    input=response_data["content"]
-                                )
-                                session_data["audio_sent_metadata"] = False
-                                for chunk in speech_response.iter_bytes():
-                                    await on_audio(chunk)
-                                await on_audio(b"__AUDIO_END__")
-                            elif response_data["type"] == "json":
-                                # Send the JSON content directly to the client
-                                await on_response(response_data["content"])
-
+                            # --- Handle response types (JSON, Command, Text with TTS) ---
+                            if response_data["type"] == "json":
                                 # Extract text from answers for TTS
                                 try:
                                     json_content = json.loads(response_data["content"])
+                                    # Ensure we handle potential list/dict structure correctly
+                                    answers_list = json_content.get("answers", [])
                                     tts_text = " ".join([answer.get("description", "")
-                                                         for answer in json_content.get("answers", [])])
+                                                        for answer in answers_list if isinstance(answer, dict)])
 
                                     # Generate TTS audio for the response
-                                    if tts_text.strip():
-                                        speech_response = storyteller_agent.openai_client.audio.speech.create(
-                                            model="tts-1",
-                                            voice=storyteller_agent.voice,
-                                            input=tts_text
-                                        )
-                                        session_data["audio_sent_metadata"] = False
-                                        for chunk in speech_response.iter_bytes():
-                                            await on_audio(chunk)
-                                        await on_audio(b"__AUDIO_END__")
+                                    if tts_text.strip() and storyteller_agent.openai_client: # Check if client exists
+                                        print(f"Generating TTS for: '{tts_text[:50]}...'")  # Log TTS text
+                                        try:
+                                            speech_response = storyteller_agent.openai_client.audio.speech.create(
+                                                model="tts-1",
+                                                voice=storyteller_agent.voice,
+                                                input=tts_text
+                                            )
+                                            session_data["audio_sent_metadata"] = False
+
+                                            # Send the JSON content directly to the client
+                                            await on_response(response_data["content"])
+
+                                            for chunk in speech_response.iter_bytes():
+                                                await on_audio(chunk)
+
+                                            await on_audio(b"__AUDIO_END__")
+                                        except Exception as tts_error:
+                                             print(f"Error during TTS generation/streaming: {tts_error}")
                                 except json.JSONDecodeError as e:
                                     print(f"Error decoding JSON for TTS: {e}")
+                                except Exception as tts_prep_error:
+                                     print(f"Error preparing text for TTS: {tts_prep_error}")
+
                             elif response_data["type"] == "command":
+                                # Send the command details first
                                 await send_command(response_data["name"], response_data.get("params", {}))
+                                # Then send the narrative/text part of the command response
+                                if "content" in response_data and response_data["content"]:
+                                    await on_response(response_data["content"])
+                                    # Optionally generate TTS for the command response text
+                                    try:
+                                        json_content = json.loads(response_data["content"])
+                                        answers_list = json_content.get("answers", [])
+                                        tts_text = " ".join([answer.get("description", "")
+                                                             for answer in answers_list if isinstance(answer, dict)])
+                                        if tts_text.strip() and storyteller_agent.openai_client:
+                                             print(f"Generating TTS for command response: '{tts_text[:50]}...'")
+                                             try:
+                                                 speech_response = await storyteller_agent.openai_client.audio.speech.create(
+                                                     model="tts-1", voice=storyteller_agent.voice, input=tts_text.strip(), response_format="mp3"
+                                                 )
+                                                 session_data["audio_sent_metadata"] = False
+                                                 if hasattr(speech_response, 'iter_bytes'):
+                                                     async for chunk in speech_response.aiter_bytes(chunk_size=4096):
+                                                         if chunk: await on_audio(chunk)
+                                                 elif hasattr(speech_response, 'content'):
+                                                     await on_audio(speech_response.content)
+                                                 else:
+                                                     audio_bytes = speech_response.read()
+                                                     if audio_bytes: await on_audio(audio_bytes)
+                                                 await on_audio(b"__AUDIO_END__")
+                                             except Exception as tts_error:
+                                                 print(f"Error during TTS generation/streaming for command: {tts_error}")
+                                    except Exception as cmd_tts_err:
+                                         print(f"Error preparing command response for TTS: {cmd_tts_err}")
+
+
+                            # Removed the old separate "text" handling as JSON is now the standard.
 
                     elif data.get("type") == "audio_end":
                         # Process the complete audio buffer when audio_end is received
@@ -335,21 +401,24 @@ async def websocket_endpoint(websocket: WebSocket):
                             audio_data = bytes(session_data["audio_buffer"])
                             try:
                                 print(f"Processing audio buffer ({len(audio_data)} bytes)")
-                                print(f"First 20 bytes of audio: {audio_data[:20]}")
-                                # Ensure copywriter is done before processing audio
-                                if not session_data["copywriter_done"]:
+                                # Ensure theme is loaded and agent exists
+                                if not session_data["copywriter_done"] or not session_data["storyteller_agent"]:
                                     await websocket.send_text(json.dumps({
                                         "type": "info",
                                         "content": "Please select a theme first to start the game.",
                                         "sender": "system"
                                     }))
                                 else:
-                                    response_text, command_info = await storyteller_agent.process_audio(
+                                    storyteller_agent = session_data["storyteller_agent"]
+                                    # Process audio using the agent instance
+                                    response_text, command_info, session_data[
+                                        "conversation_history"] = await storyteller_agent.process_audio(
                                         audio_data, on_transcription, on_response, on_audio,
-                                        session_data["conversation_history"],
-                                        game_context=session_data.get("game_context")
+                                        session_data["conversation_history"]
+                                        # Context is internal to the agent instance now
                                     )
-                                    if command_info.get("name"):
+                                    # Send command if returned by audio processing
+                                    if command_info and command_info.get("name") and command_info["name"] != "json_response":
                                         await send_command(command_info["name"], command_info.get("params", {}))
                             except Exception as e:
                                 print(f"Error processing audio: {e}")

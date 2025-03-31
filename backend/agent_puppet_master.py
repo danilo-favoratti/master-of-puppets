@@ -1,5 +1,7 @@
 import asyncio
 from typing import Optional, Tuple, Dict, Any
+import logging
+import json
 
 from agents import (
     Agent,
@@ -12,12 +14,30 @@ from agents import (
 from person import Person
 from game_object import Container
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 class DirectionHelper:
-    """Helper class for handling relative directions."""
+    """Helper class for handling relative directions and movement in the game world.
+    
+    This class provides static methods to handle direction-related calculations,
+    coordinate transformations, and continuous movement functionality.
+    """
+
     @staticmethod
     def get_relative_position(current_pos: Tuple[int, int], direction: str) -> Tuple[int, int]:
-        """Convert a relative direction to target coordinates."""
+        """Convert a relative direction to target coordinates.
+        
+        Args:
+            current_pos (Tuple[int, int]): The current (x, y) position
+            direction (str): Direction to move ('left', 'right', 'up', 'down')
+            
+        Returns:
+            Tuple[int, int]: The new (x, y) coordinates after moving in the specified direction
+        """
         x, y = current_pos
         direction = direction.lower()
         if direction == "left":
@@ -32,14 +52,29 @@ class DirectionHelper:
 
     @staticmethod
     def get_direction_vector(from_pos: Tuple[int, int], to_pos: Tuple[int, int]) -> Tuple[int, int]:
-        """Get the direction vector between two positions."""
+        """Get the direction vector between two positions.
+        
+        Args:
+            from_pos (Tuple[int, int]): Starting (x, y) position
+            to_pos (Tuple[int, int]): Target (x, y) position
+            
+        Returns:
+            Tuple[int, int]: Direction vector (dx, dy) representing the movement
+        """
         fx, fy = from_pos
         tx, ty = to_pos
         return (tx - fx, ty - fy)
 
     @staticmethod
     def get_direction_name(direction: Tuple[int, int]) -> str:
-        """Convert a direction vector to a name."""
+        """Convert a direction vector to a cardinal direction name.
+        
+        Args:
+            direction (Tuple[int, int]): Direction vector (dx, dy)
+            
+        Returns:
+            str: Cardinal direction name ('left', 'right', 'up', 'down', or 'unknown')
+        """
         dx, dy = direction
         if dx == -1 and dy == 0:
             return "left"
@@ -53,62 +88,124 @@ class DirectionHelper:
 
     @staticmethod
     async def move_continuously(game_state: 'GameState', direction: str) -> str:
-        """Move continuously in a direction until blocked or at board edge."""
+        """Move continuously in a direction until blocked or at board edge.
+        
+        Args:
+            game_state (GameState): Current game state containing board and person
+            direction (str): Direction to move ('left', 'right', 'up', 'down')
+            
+        Returns:
+            str: Message describing the movement result and reason for stopping
+            
+        Notes:
+            - Maximum 50 moves to prevent infinite loops
+            - Stops on obstacles, board edges, or movement failures
+        """
+        logger.info(f"🔄 Starting continuous movement in direction: {direction}")
+        logger.info(f"🎯 Starting position: {game_state.person.position}")
+        
         moves = 0
         last_message = ""
-        max_moves = 50  # Maximum number of moves to prevent infinite loops
+        max_moves = 50
         
         while moves < max_moves:
             current_pos = game_state.person.position
             target_pos = DirectionHelper.get_relative_position(current_pos, direction)
+            logger.debug(f"Move attempt #{moves + 1}: {current_pos} → {target_pos}")
             
-            # Try to move
             result = game_state.person.move(game_state.game_board, target_pos, False)
             
-            # If move failed, we're done
             if not result["success"]:
+                logger.info(f"🛑 Movement stopped: {result['message']}")
                 if moves == 0:
                     return result["message"]
                 else:
                     return f"Moved {moves} steps {direction} and stopped: {result['message']}"
             
-            # Update state and continue
             game_state.sync_game_state()
             moves += 1
             last_message = result["message"]
             
-            # Check if we've reached a boundary or obstacle
             next_pos = DirectionHelper.get_relative_position(target_pos, direction)
-            if not game_state.game_board.is_valid_position(next_pos) or not game_state.game_board.can_move_to(next_pos):
-                return f"Moved {moves} steps {direction} and reached {'the board edge' if not game_state.game_board.is_valid_position(next_pos) else 'an obstacle'}"
+            if not game_state.game_board.is_valid_position(next_pos):
+                logger.info(f"🌍 Reached board edge at {target_pos}")
+                return f"Moved {moves} steps {direction} and reached the board edge"
+            elif not game_state.game_board.can_move_to(next_pos):
+                logger.info(f"🚧 Reached obstacle at {next_pos}")
+                return f"Moved {moves} steps {direction} and reached an obstacle"
         
-        # If we hit the move limit, return how far we got
+        logger.warning(f"⚠️ Hit move limit ({max_moves}) while moving {direction}")
         return f"Moved {moves} steps {direction} and stopped at the maximum move limit."
 
 # Type for game state context
 class GameState:
+    """Represents the current state of the game world.
+    
+    This class maintains the game board, player character, and accessible objects
+    in the game world. It provides synchronization methods to keep the state updated
+    after actions.
+    
+    Attributes:
+        game_board (Any): The game board instance
+        person (Person): The player character being controlled
+        nearby_objects (Dict[str, Any]): Objects the person can interact with
+        containers (Dict[str, Container]): Accessible containers in range
+    """
     game_board: Any  # The game board
     person: Person  # Current person being controlled
     nearby_objects: Dict[str, Any] = {}  # Objects the person can interact with
     containers: Dict[str, Container] = {}  # Accessible containers
     
     def sync_game_state(self):
-        """Synchronize the game state after any action."""
+        """Synchronize the game state after any action.
+        
+        Updates the nearby objects and containers based on the person's current
+        position and visibility range. Logs state changes for debugging.
+        
+        Returns:
+            str: Status message about the sync operation
+            
+        Notes:
+            - Updates nearby_objects and containers
+            - Logs visibility changes of objects
+            - Tracks container accessibility
+        """
+        logger.info("🔄 Syncing game state...")
         if not self.person or not self.game_board:
+            logger.warning("❌ Cannot sync: Missing person or game board")
             return
             
+        # Log current state before sync
+        logger.info(f"👤 Person position: {self.person.position}")
+        logger.info(f"🎒 Inventory items: {len(self.person.inventory.contents) if self.person.inventory else 0}")
+        
         # Get all objects in visible range
         result = self.person.look(self.game_board)
         if result["success"]:
             # Update nearby objects
+            prev_objects = set(self.nearby_objects.keys())
             self.nearby_objects = {obj.id: obj for obj in result.get("objects", [])}
+            new_objects = set(self.nearby_objects.keys())
+            
+            # Log changes in visible objects
+            disappeared = prev_objects - new_objects
+            appeared = new_objects - prev_objects
+            if disappeared:
+                logger.info(f"👻 Objects no longer visible: {disappeared}")
+            if appeared:
+                logger.info(f"✨ New objects in view: {appeared}")
             
             # Update containers
+            prev_containers = set(self.containers.keys())
             self.containers = {
                 obj_id: obj 
                 for obj_id, obj in self.nearby_objects.items() 
                 if isinstance(obj, Container)
             }
+            logger.info(f"📦 Accessible containers: {list(self.containers.keys())}")
+            
+        else:
+            logger.warning(f"⚠️ Failed to sync game state: {result.get('message', 'Unknown error')}")
             
         return result.get("message", "")
 
@@ -123,28 +220,36 @@ async def move(
     """Move the person in a specified direction.
     
     Args:
-        direction: The direction to move ("left", "right", "up", "down")
-        is_running: Whether to run (move up to 2 tiles) or walk (move 1 tile)
-        continuous: Whether to keep moving until blocked or at board edge
+        ctx (RunContextWrapper[GameState]): Context containing game state
+        direction (str): Direction to move ('left', 'right', 'up', 'down')
+        is_running (bool): If True, moves up to 2 tiles; if False, moves 1 tile
+        continuous (bool): If True, keeps moving until blocked or at board edge
+        
+    Returns:
+        str: Message describing the movement result
+        
+    Notes:
+        - Syncs game state after successful movement
+        - Supports both single-step and continuous movement
+        - Validates movement before execution
     """
+    logger.info(f"🎮 MOVE called with params: direction='{direction}', running={is_running}, continuous={continuous}")
     game_state = ctx.context
+    logger.info(f"📍 Current position: {game_state.person.position}")
     
-    # Handle continuous movement
     if continuous:
-        return await DirectionHelper.move_continuously(game_state, direction)
-    
-    # Regular single-step movement
-    current_pos = game_state.person.position
-    target_pos = DirectionHelper.get_relative_position(current_pos, direction)
-    
-    result = game_state.person.move(
-        game_state.game_board, 
-        target_pos, 
-        is_running
-    )
-    
-    if result["success"]:
-        game_state.sync_game_state()
+        result = await DirectionHelper.move_continuously(game_state, direction)
+    else:
+        current_pos = game_state.person.position
+        target_pos = DirectionHelper.get_relative_position(current_pos, direction)
+        logger.info(f"🎯 Target position: {target_pos}")
+        
+        result = game_state.person.move(game_state.game_board, target_pos, is_running)
+        logger.info(f"{'✅' if result['success'] else '❌'} Move result: {result['message']}")
+        
+        if result["success"]:
+            game_state.sync_game_state()
+            logger.info(f"📍 New position: {game_state.person.position}")
     
     return result["message"]
 
@@ -157,9 +262,18 @@ async def jump(
     """Jump over one square to land two squares away.
     
     Args:
-        target_x: The x-coordinate to jump to
-        target_y: The y-coordinate to jump to
+        ctx (RunContextWrapper[GameState]): Context containing game state
+        target_x (int): X-coordinate of the landing position
+        target_y (int): Y-coordinate of the landing position
+        
+    Returns:
+        str: Message describing the jump result
+        
+    Notes:
+        - Must be a valid jumpable distance (2 squares away)
+        - Path must be clear for jumping
     """
+    logger.info(f"🦘 JUMP called with params: target_x={target_x}, target_y={target_y}")
     game_state = ctx.context
     result = game_state.person.jump(
         game_state.game_board, 
@@ -175,12 +289,21 @@ async def push(
     direction: str
 ) -> str:
     """Push an object in a specified direction.
-    The person will move into the object's original position.
     
     Args:
-        object_id: The ID of the object to push
-        direction: The direction to push ("left", "right", "up", "down")
+        ctx (RunContextWrapper[GameState]): Context containing game state
+        object_id (str): ID of the object to push
+        direction (str): Direction to push ('left', 'right', 'up', 'down')
+        
+    Returns:
+        str: Message describing the push result
+        
+    Notes:
+        - Person moves into object's original position
+        - Object must be movable and within reach
+        - Target position must be clear
     """
+    logger.info(f"👉 PUSH called with params: object_id='{object_id}', direction='{direction}'")
     game_state = ctx.context
     
     # Find the object
@@ -218,6 +341,7 @@ async def pull(
         object_x: The x-coordinate of the object to pull
         object_y: The y-coordinate of the object to pull
     """
+    logger.info(f"👈 PULL called with params: object_x={object_x}, object_y={object_y}")
     game_state = ctx.context
     result = game_state.person.pull(
         game_state.game_board, 
@@ -235,16 +359,37 @@ async def get_from_container(
     """Get an item from a container and put it in the person's inventory.
     
     Args:
-        container_id: The ID of the container
-        item_id: The ID of the item to get
+        ctx (RunContextWrapper[GameState]): Context containing game state
+        container_id (str): ID of the container to get item from
+        item_id (str): ID of the item to retrieve
+        
+    Returns:
+        str: Message describing the retrieval result
+        
+    Notes:
+        - Container must be accessible and open
+        - Item must exist in container
+        - Person's inventory must have space
     """
+    logger.info(f"📥 GET_FROM_CONTAINER called with params: container_id='{container_id}', item_id='{item_id}'")
     game_state = ctx.context
     
+    # Log available containers
+    logger.info(f"📦 Available containers: {list(game_state.containers.keys())}")
+    
     if container_id not in game_state.containers:
+        logger.warning(f"❌ Container {container_id} not found nearby")
         return f"Container {container_id} not found nearby"
     
     container = game_state.containers[container_id]
+    logger.info(f"📦 Container contents before: {[item.id for item in container.contents]}")
+    logger.info(f"🎒 Inventory before: {[item.id for item in game_state.person.inventory.contents]}")
+    
     result = game_state.person.get_from_container(container, item_id)
+    
+    if result["success"]:
+        logger.info(f"📦 Container contents after: {[item.id for item in container.contents]}")
+        logger.info(f"🎒 Inventory after: {[item.id for item in game_state.person.inventory.contents]}")
     
     return result["message"]
 
@@ -260,6 +405,7 @@ async def put_in_container(
         container_id: The ID of the container
         item_id: The ID of the item to put in the container
     """
+    logger.info(f"📤 PUT_IN_CONTAINER called with params: container_id='{container_id}', item_id='{item_id}'")
     game_state = ctx.context
     
     if container_id not in game_state.containers:
@@ -282,6 +428,7 @@ async def use_object_with(
         item1_id: The ID of the first item (must be in inventory)
         item2_id: The ID of the second item
     """
+    logger.info(f"🔧 USE_OBJECT_WITH called with params: item1_id='{item1_id}', item2_id='{item2_id}'")
     game_state = ctx.context
     result = game_state.person.use_object_with(item1_id, item2_id)
     
@@ -290,10 +437,19 @@ async def use_object_with(
 @function_tool
 async def look(ctx: RunContextWrapper[GameState]) -> str:
     """Look around to find objects up to 5 positions away.
-
-    This function scans for nearby objects whose positions are within a
-    Manhattan distance of 5 from the player's current location.
+    
+    Args:
+        ctx (RunContextWrapper[GameState]): Context containing game state
+        
+    Returns:
+        str: Description of visible objects and their locations
+        
+    Notes:
+        - Uses Manhattan distance for visibility calculation
+        - Includes object descriptions and distances
+        - Updates game state with visible objects
     """
+    logger.info(f"👀 LOOK called")
     game_state = ctx.context
 
     # Sync state and update game state information
@@ -337,6 +493,7 @@ async def say(
     Args:
         message: The message to say
     """
+    logger.info(f"💬 SAY called with message: '{message}'")
     game_state = ctx.context
     result = game_state.person.say(message)
     
@@ -347,6 +504,7 @@ async def check_inventory(
     ctx: RunContextWrapper[GameState]
 ) -> str:
     """Check what items are in the person's inventory."""
+    logger.info(f"🎒 CHECK_INVENTORY called")
     game_state = ctx.context
     
     if not game_state.person.inventory or not game_state.person.inventory.contents:
@@ -365,72 +523,55 @@ async def examine_object(
     """Examine an object to get more information about it.
     
     Args:
-        object_id: The ID of the object to examine
+        ctx (RunContextWrapper[GameState]): Context containing game state
+        object_id (str): ID of the object to examine
+        
+    Returns:
+        str: Detailed description of the object
+        
+    Notes:
+        - Works for both nearby objects and inventory items
+        - Shows all relevant object attributes
+        - Includes special properties for containers
     """
+    logger.info(f"🔍 EXAMINE_OBJECT called with object_id: '{object_id}'")
     game_state = ctx.context
+    
+    # Log available objects
+    logger.info(f"🌍 Nearby objects: {list(game_state.nearby_objects.keys())}")
+    logger.info(f"🎒 Inventory items: {[item.id for item in game_state.person.inventory.contents]}")
     
     # Check in nearby objects
     if object_id in game_state.nearby_objects:
         obj = game_state.nearby_objects[object_id]
-        info = [
-            f"Name: {obj.name}",
-            f"Position: {obj.position}",
-            f"Description: {obj.description}"
-        ]
+        logger.info(f"📍 Found object nearby: {obj.name} at position {obj.position}")
         
-        # Add object-specific properties
-        if hasattr(obj, "is_movable"):
-            info.append(f"Movable: {'Yes' if obj.is_movable else 'No'}")
-        if hasattr(obj, "is_jumpable"):
-            info.append(f"Jumpable: {'Yes' if obj.is_jumpable else 'No'}")
-        if hasattr(obj, "weight"):
-            info.append(f"Weight: {obj.weight}")
-        if hasattr(obj, "usable_with") and obj.usable_with:
-            info.append(f"Can be used with: {', '.join(obj.usable_with)}")
-        
-        # If container, show contents
-        if isinstance(obj, Container):
-            if obj.contents:
-                contents = [f"- {item.name}" for item in obj.contents]
-                info.append(f"Contains:\n" + "\n".join(contents))
-            else:
-                info.append("This container is empty")
-            
-            info.append(f"Capacity: {obj.capacity}")
-            info.append(f"Status: {'Open' if obj.is_open else 'Closed'}")
-        
-        return "\n".join(info)
+        # Log all object attributes
+        logger.info("📝 Object attributes:")
+        for attr in dir(obj):
+            if not attr.startswith('_'):  # Skip private attributes
+                try:
+                    value = getattr(obj, attr)
+                    if not callable(value):  # Skip methods
+                        logger.info(f"  - {attr}: {value}")
+                except Exception as e:
+                    logger.warning(f"  - {attr}: <error reading value: {e}>")
     
-    # Check in inventory
-    for item in game_state.person.inventory.contents:
-        if item.id == object_id:
-            info = [
-                f"Name: {item.name}",
-                f"Description: {item.description}"
-            ]
-            
-            # Add object-specific properties
-            if hasattr(item, "is_movable"):
-                info.append(f"Movable: {'Yes' if item.is_movable else 'No'}")
-            if hasattr(item, "weight"):
-                info.append(f"Weight: {item.weight}")
-            if hasattr(item, "usable_with") and item.usable_with:
-                info.append(f"Can be used with: {', '.join(item.usable_with)}")
-            
-            return "\n".join(info)
-    
-    return f"Object with ID {object_id} not found nearby or in inventory"
+    result = await super_examine_object(ctx, object_id)  # Call the original function
+    logger.info(f"📝 Examination result: {result}")
+    return result
 
 @function_tool
 async def execute_movement_sequence(
     ctx: RunContextWrapper[GameState], 
-    commands: list
+    commands: list[str]
 ) -> str:
     """Execute a sequence of movement instructions provided as a list of commands.
 
     Each command is expected to be a dict with the keys 'tool' and 'parameters'.
     Supported tools: 'move' and 'jump'.
     """
+    logger.info(f"📋 EXECUTE_MOVEMENT_SEQUENCE called with commands:\n{json.dumps(commands, indent=2)}")
     results = []
     for cmd in commands:
         tool_name = cmd.get('tool')
@@ -451,7 +592,20 @@ async def execute_movement_sequence(
     return "\n".join(results)
 
 # Create the agent with all tools
-def create_puppet_master(person_name="Game Character"):
+def create_puppet_master(person_name: str = "Game Character") -> Agent[GameState]:
+    """Create a new puppet master agent to control game character actions.
+    
+    Args:
+        person_name (str): Name of the character being controlled
+        
+    Returns:
+        Agent[GameState]: Configured agent with all available tools
+        
+    Notes:
+        - Initializes with full set of game action tools
+        - Uses context for game state tracking
+        - Handles movement and interaction commands
+    """
     return Agent[GameState](
         name=person_name,
         instructions=f"""You control {person_name}, a character in a game world.\n\nYou have full access to your game state through the context, including:\n- Your current position on the board\n- Your inventory contents\n- Nearby objects and their positions\n- The game board layout\n\nWhen provided with a JSON input containing a 'commands' key, execute the movement commands sequentially using tools:\n- 'move': parameters include 'direction', 'is_running', and 'continuous'\n- 'jump': parameters include 'target_x' and 'target_y'\n\nAlways print the list of tools you are using in your response.""",
@@ -528,6 +682,8 @@ async def run_continuous_conversation(game_state: GameState, person_name="Game C
 
 # Example of using the agent
 async def example_usage():
+    logger.info("🎮 Starting game simulation")
+    
     from person import Person
     from game_object import Container, GameObject
     
@@ -553,11 +709,15 @@ async def example_usage():
             return True
         
         def move_entity(self, entity, position):
+            logger.info(f"🔄 Moving entity {entity.id} to position {position}")
             if entity.id in self.entities:
+                old_pos = entity.position
                 entity.set_position(position)
+                logger.info(f"📍 Entity {entity.id} moved: {old_pos} → {position}")
             else:
                 self.add_entity(entity)
                 entity.set_position(position)
+                logger.info(f"✨ New entity {entity.id} placed at {position}")
         
         def add_entity(self, entity):
             self.entities[entity.id] = entity
