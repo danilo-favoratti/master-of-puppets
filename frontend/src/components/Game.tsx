@@ -476,6 +476,7 @@ const Game = ({
             mapGridData={gameDataState.map.grid}
             width={gameDataState.map.width}
             height={gameDataState.map.height}
+            entities={entities}
           />
         )}
     </>

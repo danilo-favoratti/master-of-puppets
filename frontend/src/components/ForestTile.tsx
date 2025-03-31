@@ -11,6 +11,7 @@ interface ForestTileProps {
   tileY: number;
   gridX?: number;
   gridY?: number;
+  isEmpty?: boolean;
 }
 
 const ForestTile = ({
@@ -21,6 +22,7 @@ const ForestTile = ({
   tileY = 0,
   gridX = 0,
   gridY = 0,
+  isEmpty = true,
 }: ForestTileProps) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -98,6 +100,7 @@ const ForestTile = ({
       </mesh>
     );
   }
+
   return (
     <mesh ref={meshRef} position={adjustedPosition} scale={finalScale}>
       <planeGeometry args={[1, 1]} />

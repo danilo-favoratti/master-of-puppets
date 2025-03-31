@@ -106,7 +106,10 @@ const GameContainer = ({
             }
           }
         } catch (error) {
-          console.error('Error parsing WebSocket message (it is ok if audio was sent):', error);
+          console.error(
+            "Error parsing WebSocket message (it is ok if audio was sent):",
+            error
+          );
         }
       };
 
@@ -190,6 +193,7 @@ const GameContainer = ({
     }
   }, [websocket, hasTriedGenerateWorld, mapInitialized]);
 
+  console.log("gameData", gameData);
   return (
     <div className="relative w-full h-full">
       {isLoading ? (
