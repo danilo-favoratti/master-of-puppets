@@ -1,7 +1,7 @@
-import React, {useEffect, useState} from "react";
-import {Entity} from "../../types/entity";
-import {Position} from "../../types/game";
-import {AnimatedSprite} from "../AnimatedSprite";
+import React, { useEffect, useState } from "react";
+import { Entity } from "../../types/entity";
+import { Position } from "../../types/game";
+import { AnimatedSprite } from "../AnimatedSprite";
 
 interface ChestSpriteProps {
   position: Position;
@@ -33,6 +33,11 @@ export const ChestSprite: React.FC<ChestSpriteProps> = ({
 }) => {
   const [currentState, setCurrentState] = useState(state);
   const [randomRow] = useState(() => Math.floor(Math.random() * 3) * 2);
+  const [column, setColumn] = useState(0);
+  useEffect(() => {
+    const column = Math.floor(Math.random() * 4);
+    setColumn(column);
+  }, []);
 
   useEffect(() => {
     setCurrentState(state);
@@ -73,8 +78,6 @@ export const ChestSprite: React.FC<ChestSpriteProps> = ({
         return 0;
     }
   };
-
-  const column = getVariantColumn(variant);
 
   return (
     <AnimatedSprite
