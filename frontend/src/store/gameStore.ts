@@ -1,6 +1,6 @@
-import {create} from 'zustand';
-import {CharacterAnimationType} from "../types/animations";
-import {GameData} from '../types/game';
+import { create } from 'zustand';
+import { CharacterAnimationType } from "../types/animations";
+import { GameData } from '../types/game';
 
 export enum GameState {
   MENU,
@@ -173,7 +173,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setGameData: (gameData: GameData) => set({ gameData }),
   
-  // New properties
+  // Start player position
   position: [20, 20, 0],
   setPosition: (position: [number, number, number]) => set({ position })
 })); 

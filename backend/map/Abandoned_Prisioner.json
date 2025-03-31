@@ -1,49 +1,169 @@
 {
-  "theme": "Isolated Island Prisoner Abandonment",
+  "theme": "Abandoned Prisoner",
   "environment": {
     "width": 40,
     "height": 40,
     "grid": [
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,0,0,0,1,1,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,1,1,1,1,1,1,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 1, 1,
+        1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ]
     ]
   },
   "terrain_description": "Ocean, small islands (~24% land)",
@@ -77,29 +197,35 @@
       "title": "The Light of Freedom",
       "description": "Awaken on a deserted island with no memory of arrival. Unravel the mystery of your imprisonment and escape the island's grasp.",
       "objectives": [
-        "Discover the source of a mysterious light in the center of the island.","Find and assemble pieces of a forgotten map.","Unlock the secrets hidden in an ancient chest."
+        "Discover the source of a mysterious light in the center of the island.",
+        "Find and assemble pieces of a forgotten map.",
+        "Unlock the secrets hidden in an ancient chest."
       ],
-      "required_entities": [
-        "chest","campfire","backpack"
-      ],
+      "required_entities": ["chest", "campfire", "backpack"],
       "reward": "A passageway off the island to freedom and the truth of your past.",
       "error": null
     },
     "interactions": [
       {
-        "entity_type": "chest","action": "open","narration": "As you pry open the chest, a creak of age fills the air. Dust rises, revealing the glint of metal and a fragment of an old map.","consequences": [
-          "Gain map fragment",  "Triggered memory of a distant land"
+        "entity_type": "chest",
+        "action": "open",
+        "narration": "As you pry open the chest, a creak of age fills the air. Dust rises, revealing the glint of metal and a fragment of an old map.",
+        "consequences": [
+          "Gain map fragment",
+          "Triggered memory of a distant land"
         ]
       },
       {
-        "entity_type": "campfire","action": "ignite","narration": "The flames struggled against the wind but soon roared to life, casting flickering shadows that danced among the trees.","consequences": [
-          "Warmth granted",  "Area illuminated"
-        ]
+        "entity_type": "campfire",
+        "action": "ignite",
+        "narration": "The flames struggle against the wind but soon roar to life, casting flickering shadows that dance among the trees.",
+        "consequences": ["Warmth granted", "Area illuminated"]
       },
       {
-        "entity_type": "backpack","action": "search","narration": "Rummaging through the backpack, your fingers found rough fabric and hard metal. There's more here than dust and decay.","consequences": [
-          "Acquired survival tools",  "Found a strange key"
-        ]
+        "entity_type": "backpack",
+        "action": "search",
+        "narration": "Rummaging through the backpack, your fingers find rough fabric and hard metal. There's more here than dust and decay.",
+        "consequences": ["Acquired survival tools", "Found a strange key"]
       }
     ]
   },
@@ -109,7 +235,8 @@
       "type": "chest",
       "name": "Bronze Banded Chest",
       "position": {
-        "x": 17,"y": 9
+        "x": 17,
+        "y": 9
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -126,7 +253,8 @@
       "type": "chest",
       "name": "Basic Wooden Chest",
       "position": {
-        "x": 26,"y": 16
+        "x": 29,
+        "y": 23
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -143,7 +271,8 @@
       "type": "chest",
       "name": "Forestwood Chest",
       "position": {
-        "x": 17,"y": 20
+        "x": 15,
+        "y": 29
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -160,7 +289,8 @@
       "type": "tree",
       "name": "Chestnut Tree",
       "position": {
-        "x": 25,"y": 26
+        "x": 25,
+        "y": 26
       },
       "is_movable": false,
       "is_jumpable": false,
@@ -176,7 +306,8 @@
       "type": "log",
       "name": "Medium Fallen Log",
       "position": {
-        "x": 29,"y": 16
+        "x": 30,
+        "y": 4
       },
       "is_movable": true,
       "is_jumpable": true,
@@ -192,7 +323,8 @@
       "type": "log",
       "name": "Medium Fallen Log",
       "position": {
-        "x": 12,"y": 12
+        "x": 8,
+        "y": 3
       },
       "is_movable": true,
       "is_jumpable": true,
@@ -208,7 +340,8 @@
       "type": "tree",
       "name": "Chestnut Tree",
       "position": {
-        "x": 24,"y": 14
+        "x": 24,
+        "y": 5
       },
       "is_movable": false,
       "is_jumpable": false,
@@ -224,7 +357,8 @@
       "type": "plant",
       "name": "Grass",
       "position": {
-        "x": 13,"y": 17
+        "x": 13,
+        "y": 17
       },
       "is_movable": true,
       "is_jumpable": true,
@@ -240,7 +374,8 @@
       "type": "campfire",
       "name": "Unlit Campfire",
       "position": {
-        "x": 10,"y": 16
+        "x": 16,
+        "y": 10
       },
       "state": "unlit",
       "is_movable": false,
@@ -248,16 +383,15 @@
       "is_usable_alone": true,
       "weight": 5,
       "description": "A pile of dry wood ready to be lit.",
-      "possible_actions": [
-        "light"
-      ]
+      "possible_actions": ["light"]
     },
     {
       "id": "campfire_unlit_6778",
       "type": "campfire",
       "name": "Unlit Campfire",
       "position": {
-        "x": 21,"y": 16
+        "x": 22,
+        "y": 20
       },
       "state": "unlit",
       "is_movable": false,
@@ -265,16 +399,15 @@
       "is_usable_alone": true,
       "weight": 5,
       "description": "A pile of dry wood ready to be lit.",
-      "possible_actions": [
-        "light"
-      ]
+      "possible_actions": ["light"]
     },
     {
       "id": "backpack_small_1239",
       "type": "backpack",
       "name": "Small Backpack",
       "position": {
-        "x": 21,"y": 12
+        "x": 21,
+        "y": 12
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -289,7 +422,8 @@
       "type": "backpack",
       "name": "Small Backpack",
       "position": {
-        "x": 17,"y": 26
+        "x": 15,
+        "y": 31
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -304,7 +438,8 @@
       "type": "firewood",
       "name": "Fallen Branch",
       "position": {
-        "x": 20,"y": 13
+        "x": 20,
+        "y": 13
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -312,16 +447,15 @@
       "is_collectable": true,
       "weight": 1,
       "description": "A dry branch that can be collected for firewood.",
-      "possible_actions": [
-        "collect"
-      ]
+      "possible_actions": ["collect"]
     },
     {
       "id": "firewood_branch_3800",
       "type": "firewood",
       "name": "Fallen Branch",
       "position": {
-        "x": 17,"y": 13
+        "x": 17,
+        "y": 13
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -329,16 +463,15 @@
       "is_collectable": true,
       "weight": 1,
       "description": "A dry branch that can be collected for firewood.",
-      "possible_actions": [
-        "collect"
-      ]
+      "possible_actions": ["collect"]
     },
     {
       "id": "firewood_branch_5539",
       "type": "firewood",
       "name": "Fallen Branch",
       "position": {
-        "x": 27,"y": 11
+        "x": 27,
+        "y": 11
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -346,16 +479,15 @@
       "is_collectable": true,
       "weight": 1,
       "description": "A dry branch that can be collected for firewood.",
-      "possible_actions": [
-        "collect"
-      ]
+      "possible_actions": ["collect"]
     },
     {
       "id": "firewood_branch_2981",
       "type": "firewood",
       "name": "Fallen Branch",
       "position": {
-        "x": 22,"y": 27
+        "x": 22,
+        "y": 30
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -363,112 +495,105 @@
       "is_collectable": true,
       "weight": 1,
       "description": "A dry branch that can be collected for firewood.",
-      "possible_actions": [
-        "collect"
-      ]
+      "possible_actions": ["collect"]
     },
     {
       "id": "tent_small_2143",
       "type": "tent",
       "name": "Tent",
       "position": {
-        "x": 12,"y": 9
+        "x": 20,
+        "y": 20
       },
       "is_movable": true,
       "is_jumpable": false,
       "is_usable_alone": true,
       "weight": 5,
       "description": "A small tent that can shelter one person.",
-      "possible_actions": [
-        "exit","enter"
-      ]
+      "possible_actions": ["exit", "enter"]
     },
     {
       "id": "bedroll_standard_7163",
       "type": "bedroll",
       "name": "Bedroll",
       "position": {
-        "x": 19,"y": 17
+        "x": 15,
+        "y": 27
       },
       "is_movable": true,
       "is_jumpable": false,
       "is_usable_alone": true,
       "weight": 2,
       "description": "A comfortable bedroll for sleeping.",
-      "possible_actions": [
-        "sleep"
-      ]
+      "possible_actions": ["sleep"]
     },
     {
       "id": "bedroll_standard_6403",
       "type": "bedroll",
       "name": "Bedroll",
       "position": {
-        "x": 27,"y": 20
+        "x": 29,
+        "y": 24
       },
       "is_movable": true,
       "is_jumpable": false,
       "is_usable_alone": true,
       "weight": 2,
       "description": "A comfortable bedroll for sleeping.",
-      "possible_actions": [
-        "sleep"
-      ]
+      "possible_actions": ["sleep"]
     },
     {
       "id": "bedroll_standard_1173",
       "type": "bedroll",
       "name": "Bedroll",
       "position": {
-        "x": 22,"y": 8
+        "x": 16,
+        "y": 8
       },
       "is_movable": true,
       "is_jumpable": false,
       "is_usable_alone": true,
       "weight": 2,
       "description": "A comfortable bedroll for sleeping.",
-      "possible_actions": [
-        "sleep"
-      ]
+      "possible_actions": ["sleep"]
     },
     {
       "id": "stool_squat_3263",
       "type": "log_stool",
       "name": "Squat Log",
       "position": {
-        "x": 17,"y": 20
+        "x": 17,
+        "y": 20
       },
       "is_movable": true,
       "is_jumpable": false,
       "is_usable_alone": true,
       "weight": 3,
       "description": "A short, sturdy log that can be used as a stool.",
-      "possible_actions": [
-        "sit"
-      ]
+      "possible_actions": ["sit"]
     },
     {
       "id": "stool_squat_8015",
       "type": "log_stool",
       "name": "Squat Log",
       "position": {
-        "x": 27,"y": 23
+        "x": 27,
+        "y": 23
       },
       "is_movable": true,
       "is_jumpable": false,
       "is_usable_alone": true,
       "weight": 3,
       "description": "A short, sturdy log that can be used as a stool.",
-      "possible_actions": [
-        "sit"
-      ]
+      "possible_actions": ["sit"]
     },
     {
       "id": "campfire_spit_basic_3472",
       "type": "campfire_spit",
       "name": "Basic Campfire Spit",
       "position": {
-        "x": 16,"y": 27
+        "x": 16,
+        "y": 27
       },
       "is_movable": true,
       "is_jumpable": false,
@@ -482,7 +607,8 @@
       "type": "campfire_pot",
       "name": "Cooking Tripod",
       "position": {
-        "x": 14,"y": 20
+        "x": 15,
+        "y": 9
       },
       "state": "empty",
       "is_movable": true,
@@ -490,16 +616,15 @@
       "is_usable_alone": true,
       "weight": 3,
       "description": "A sturdy metal tripod designed to hold cooking pots over a fire.",
-      "possible_actions": [
-        "place"
-      ]
+      "possible_actions": ["place"]
     },
     {
       "id": "pot_small_9746",
       "type": "pot",
       "name": "Small Vase",
       "position": {
-        "x": 15,"y": 20
+        "x": 14,
+        "y": 26
       },
       "state": "default",
       "is_movable": true,
@@ -516,7 +641,8 @@
       "type": "pot",
       "name": "Small Vase",
       "position": {
-        "x": 18,"y": 14
+        "x": 19,
+        "y": 11
       },
       "state": "default",
       "is_movable": true,
@@ -529,5 +655,5 @@
       "contents": []
     }
   ],
-  "complete_narrative": "You find yourself in 'A desolate island, scarred by a forgotten past, where silence reigns and echoes of despair linger.'. The air holds a sense of Somber and Mystical. Theme: 'Abandoned Prisoner'...\n\n**World:**\nOcean, small islands (~24% land)\n\n**Quest: The Light of Freedom**\nAwaken on a deserted island with no memory of arrival. Unravel the mystery of your imprisonment and escape the island's grasp.\n- Discover the source of a mysterious light in the center of the island.\n- Find and assemble pieces of a forgotten map.\n- Unlock the secrets hidden in an ancient chest.\n\n**Notable Features:**\n- Chest: An old wooden chest, worn by time, with its lock long rusted and broken. It sits half-buried in the dirt, perhaps holding forgotten treasures of past inmates.\n- Tree: A Chestnut Tree.\n- Log: A Medium Fallen Log.\n- Plant: A Grass.\n- Campfire [unlit]: A Unlit Campfire (unlit).\n- ...and 11 more descriptions.\n\n**Possible Interactions:**\n- Open with chest: As you pry open the chest, a creak of age fills the air. Dust rises, revealing the glint of metal and a fragment of an old map.\n- Ignite with campfire: The flames struggled against the wind but soon roared to life, casting flickering shadows that danced among the trees.\n- Search with backpack: Rummaging through the backpack, your fingers found rough fabric and hard metal. There's more here than dust and decay."
+  "complete_narrative": "You find yourself in 'A desolate island, scarred by a forgotten past, where silence reigns and echoes of despair linger.'. The air holds a sense of Somber and Mystical. Theme: 'Abandoned Prisoner'...\n\n**World:**\nOcean, small islands (~24% land)\n\n**Quest: The Light of Freedom**\nAwaken on a deserted island with no memory of arrival. Unravel the mystery of your imprisonment and escape the island's grasp.\n- Discover the source of a mysterious light in the center of the island.\n- Find and assemble pieces of a forgotten map.\n- Unlock the secrets hidden in an ancient chest.\n\n**Notable Features:**\n- Chest: An old wooden chest, worn by time, with its lock long rusted and broken. It sits half-buried in the dirt, perhaps holding forgotten treasures of past inmates.\n- Tree: A Chestnut Tree.\n- Log: A Medium Fallen Log.\n- Plant: A Grass.\n- Campfire [unlit]: A Unlit Campfire (unlit).\n- ...and 11 more descriptions.\n\n**Possible Interactions:**\n- Open with chest: As you pry open the chest, a creak of age fills the air. Dust rises, revealing the glint of metal and a fragment of an old map.\n- Ignite with campfire: The flames struggle against the wind but soon roar to life, casting flickering shadows that dance among the trees.\n- Search with backpack: Rummaging through the backpack, your fingers find rough fabric and hard metal. There's more here than dust and decay."
 }

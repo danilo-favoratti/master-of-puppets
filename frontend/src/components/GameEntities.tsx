@@ -1,16 +1,19 @@
-import {ThreeEvent} from "@react-three/fiber";
+import { ThreeEvent } from "@react-three/fiber";
 import React from "react";
-import {GameEntity} from "../types/entities";
+import { GameEntity } from "../types/entities";
+import BackpackSprite from "./entities/BackpackSprite";
 import BedrollSprite from "./entities/BedrollSprite";
-import {CampfirePotSprite} from "./entities/CampfirePotSprite";
+import { CampfirePotSprite } from "./entities/CampfirePotSprite";
 import CampfireSpitSprite from "./entities/CampfireSpitSprite";
-import {CampFireSprite} from "./entities/CampFireSprite";
-import {ChestSprite} from "./entities/ChestSprite";
-import {NpcEntity} from "./entities/NpcEntity";
-import {PigSprite} from "./entities/PigSprite";
-import {PotSprite} from "./entities/PotSprite";
-import {StatueSprite} from "./entities/StatueSprite";
+import { CampFireSprite } from "./entities/CampFireSprite";
+import { ChestSprite } from "./entities/ChestSprite";
+import LogStoolSprite from "./entities/LogStoolSprite";
+import { NpcEntity } from "./entities/NpcEntity";
+import { PigSprite } from "./entities/PigSprite";
+import { PotSprite } from "./entities/PotSprite";
+import { StatueSprite } from "./entities/StatueSprite";
 import TravelersCampSprite from "./entities/TravelersCampSprite";
+import TreeSprite from "./entities/TreeSprite";
 
 interface GameEntitiesProps {
   entities: GameEntity[];
@@ -325,7 +328,63 @@ export const GameEntities: React.FC<GameEntitiesProps> = ({
             }}
           />
         );
-
+      case "backpack":
+        return (
+          <BackpackSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            variant={entity.variant}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "log_stool":
+        return (
+          <LogStoolSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            variant={entity.variant}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
+      case "tree":
+        return (
+          <TreeSprite
+            key={entity.id}
+            {...commonProps}
+            state={entity.state}
+            variant={entity.variant}
+            entity={{
+              is_movable: false,
+              is_jumpable: false,
+              is_usable_alone: false,
+              is_collectable: false,
+              is_wearable: false,
+              weight: 1,
+              usable_with: [],
+              possible_alone_actions: [],
+            }}
+          />
+        );
       default:
         return null;
     }

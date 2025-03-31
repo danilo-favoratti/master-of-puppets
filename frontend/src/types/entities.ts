@@ -1,4 +1,4 @@
-import {Position} from "./game";
+import { Position } from "./game";
 
 // Base interface for all entities
 export interface BaseEntity {
@@ -102,8 +102,26 @@ export interface NpcEntity extends BaseEntity {
   state: "idle" | "walkLeft" | "walkRight" | "walkUp" | "walkDown";
 }
 
+// Backpack entity interface
+export interface BackpackEntity extends BaseEntity {
+  type: "backpack";
+  state: "idle";
+}
+
+// Log stool entity interface
+export interface LogStoolEntity extends BaseEntity {
+  type: "log_stool";
+  state: "idle";
+}
+
+// Tree entity interface
+export interface TreeEntity extends BaseEntity {
+  type: "tree";
+  state: "idle";
+}
+
 // Union type for all entities
-export type GameEntity = PotEntity | CampFireEntity | PigEntity | ChestEntity | TentEntity | BedrollEntity | CampfireSpitEntity | CampfirePotEntity | ThiefEntity | GuardEntity | MerchantEntity | HeroEntity | WizardEntity | StatueEntity | NpcEntity;
+export type GameEntity = PotEntity | CampFireEntity | PigEntity | ChestEntity | TentEntity | BedrollEntity | CampfireSpitEntity | CampfirePotEntity | ThiefEntity | GuardEntity | MerchantEntity | HeroEntity | WizardEntity | StatueEntity | NpcEntity | BackpackEntity | LogStoolEntity | TreeEntity;
 
 // Array type for all entities
 export type GameEntities = GameEntity[]; 

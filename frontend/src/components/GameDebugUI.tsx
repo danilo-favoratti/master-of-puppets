@@ -1,9 +1,9 @@
-import React, {useState} from "react";
-import {useGameStore} from "../store/gameStore";
-import {Position} from "../types/game";
+import React, { useState } from "react";
+import { useGameStore } from "../store/gameStore";
+import { Position } from "../types/game";
 import LightControls from "./LightControls";
 
-interface GameUIProps {
+interface GameDebugUIProps {
   characterRef: React.RefObject<{ moveAlongPath: (path: Position[]) => void }>;
   lightIntensity: number;
   lightDistance: number;
@@ -15,7 +15,7 @@ interface GameUIProps {
   onAmbientLightIntensityChange: (value: number) => void;
 }
 
-const GameUI = ({
+const GameDebugUI = ({
   characterRef,
   lightIntensity,
   lightDistance,
@@ -25,7 +25,7 @@ const GameUI = ({
   onLightDistanceChange,
   onLightDecayChange,
   onAmbientLightIntensityChange,
-}: GameUIProps) => {
+}: GameDebugUIProps) => {
   const position = useGameStore((state) => state.position);
   const [isMoving, setIsMoving] = useState(false);
   const [targetPosition, setTargetPosition] = useState<Position>({
@@ -82,7 +82,7 @@ const GameUI = ({
       }}
       className="flex flex-col gap-4 bg-black/70 p-4 rounded-lg z-50"
     >
-      <div className="text-white text-sm">
+      {/* <div className="text-white text-sm">
         Posição Atual: ({position[0]}, {position[1]})
       </div>
 
@@ -128,9 +128,9 @@ const GameUI = ({
         >
           {isMoving ? "Movendo..." : "Mover"}
         </button>
-      </div>
+      </div> */}
 
-      <div className="mt-4">
+      {/* <div className="mt-4">
         <div className="flex justify-center mb-2">
           <button
             onClick={() => moveDirection(0, 1)}
@@ -181,7 +181,7 @@ const GameUI = ({
             ↓
           </button>
         </div>
-      </div>
+      </div> */}
 
       <LightControls
         intensity={lightIntensity}
@@ -197,4 +197,4 @@ const GameUI = ({
   );
 };
 
-export default GameUI;
+export default GameDebugUI;

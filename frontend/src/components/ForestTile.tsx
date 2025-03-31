@@ -1,4 +1,5 @@
-import React, {useEffect, useRef, useState} from "react";
+import { Text } from "@react-three/drei";
+import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import forestSpritesheet from "../assets/spritesheets/forest/gentle forest (48x48 resize) v08.png";
 
@@ -25,6 +26,7 @@ const ForestTile = ({
   const [texture, setTexture] = useState<THREE.Texture | null>(null);
   const rows = 16;
   const cols = 16;
+  const [showDebugUi, setShowDebugUi] = useState(false);
 
   // Escala para o tamanho do tile
   const finalScale = [size, size, scale[2]];
@@ -36,6 +38,19 @@ const ForestTile = ({
     position[1] + gridY * size, // A multiplicação por size é essencial
     position[2],
   ];
+
+  // change debug ui to true when key is pressed
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "l") {
+        setShowDebugUi((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   // Load texture
   useEffect(() => {
@@ -93,7 +108,12 @@ const ForestTile = ({
         receiveShadow={true}
         roughness={0.8}
         metalness={0.2}
-      />
+      />{" "}
+      {showDebugUi && (
+        <Text position={[0, 0, 0.3]} fontSize={0.2} color="white">
+          {gridX}, {gridY}
+        </Text>
+      )}
     </mesh>
   );
 };

@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import React, { useEffect, useRef, useState } from "react";
 import gameDataJSON from "../config/gameData.json";
 import { useGameStore } from "../store/gameStore";
-import {CharacterAnimationType} from "../types/animations";
+import { CharacterAnimationType } from "../types/animations";
 import {
   CampFireEntity,
   GameEntity,
@@ -51,14 +51,14 @@ const Game = ({
 
   // Use provided gameData if available, otherwise use the default from JSON
   const [gameDataState, setGameDataState] = useState<GameData>(
-    gameData || gameDataJSON as GameData
+    gameData || (gameDataJSON as GameData)
   );
-  
+
   // Initialize entities from gameDataState with fallback to empty array
   const [entities, setEntities] = useState<GameEntity[]>(
     gameDataState?.entities || []
   );
-  
+
   // Update gameData when it changes
   useEffect(() => {
     if (gameData) {
@@ -69,7 +69,7 @@ const Game = ({
       }
     }
   }, [gameData]);
-  
+
   // Speed constants
   const walkSpeed = 0.05; // unused now
   const runSpeed = 0.1; // unused now
@@ -305,21 +305,21 @@ const Game = ({
 
     const handleCommand = (cmd: string, result: string, params: any) => {
       console.log(`Handling command: ${cmd}`, params);
-      
+
       switch (cmd) {
         case "update_map":
           // Update the map data with the new data from the server
-          if (params && typeof params === 'object') {
+          if (params && typeof params === "object") {
             setGameDataState(params);
           }
           break;
-        
+
         case "generate_world":
           console.log("Handling generate_world command");
           // This command is sent to request map generation
           // We'll just acknowledge it here since actual generation happens on the server
           break;
-        
+
         case "move":
           // Handle character movement
           if (params.direction && characterRef.current) {
@@ -327,7 +327,7 @@ const Game = ({
             characterRef.current.move(direction);
           }
           break;
-        
+
         default:
           console.log(`Unknown command received: ${cmd}`);
       }
@@ -414,7 +414,6 @@ const Game = ({
         setAnimation={setAnimation}
         setPosition={setPosition}
         onMoveComplete={() => {
-          console.log("Movimento completo");
           // Converter a animação de movimento para a respectiva animação idle
           switch (currentAnimation) {
             case CharacterAnimationType.WALK_UP:
@@ -430,17 +429,19 @@ const Game = ({
               setAnimation(CharacterAnimationType.IDLE_DOWN);
           }
         }}
-        zOffset={0.01}
+        zOffset={0.03}
       />
 
       {/* Only render map if grid, width, and height exist */}
-      {gameDataState?.map?.grid && gameDataState.map.width && gameDataState.map.height && (
-        <MapDisplay 
-          mapGridData={gameDataState.map.grid} 
-          width={gameDataState.map.width} 
-          height={gameDataState.map.height} 
-        />
-      )}
+      {gameDataState?.map?.grid &&
+        gameDataState.map.width &&
+        gameDataState.map.height && (
+          <MapDisplay
+            mapGridData={gameDataState.map.grid}
+            width={gameDataState.map.width}
+            height={gameDataState.map.height}
+          />
+        )}
     </>
   );
 };
