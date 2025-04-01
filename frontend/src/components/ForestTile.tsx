@@ -44,7 +44,7 @@ const ForestTile = ({
   // change debug ui to true when key is pressed
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "l") {
+      if (event.key === ".") {
         setShowDebugUi((prev) => !prev);
       }
     };

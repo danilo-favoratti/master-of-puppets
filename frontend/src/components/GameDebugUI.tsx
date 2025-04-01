@@ -1,8 +1,8 @@
 import React, { useState } from "react";
+import { ToolCall } from "../App";
 import { useGameStore } from "../store/gameStore";
 import { Position } from "../types/game";
 import LightControls from "./LightControls";
-import { ToolCall } from "../App";
 
 interface GameDebugUIProps {
   characterRef: React.RefObject<{ moveAlongPath: (path: Position[]) => void }>;
@@ -90,7 +90,7 @@ const GameDebugUI = ({
         opacity: 0.7,
         padding: "8px",
         borderRadius: "4px",
-        zIndex: 50,
+        zIndex: 550,
         maxWidth: "400px",
         maxHeight: "80vh",
         overflowY: "auto",

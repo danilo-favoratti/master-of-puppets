@@ -1,16 +1,26 @@
 import { Canvas } from "@react-three/fiber";
 import React, { useEffect, useState } from "react";
+import { ToolCall } from "../App";
 import "../LoadingSpinner.css";
-import { GameData, Position } from "../types/game";
+import { GameData } from "../types/game";
 import Game from "./Game";
 import GameDebugUI from "./GameDebugUI";
 import { CharacterRefMethods } from "./character/CharacterBody";
-import { ToolCall } from "../App";
 
 interface GameContainerProps {
-  executeCommand: (commandName: string, result: string, params: any, onComplete: () => void) => void;
+  executeCommand: (
+    commandName: string,
+    result: string,
+    params: any,
+    onComplete: () => void
+  ) => void;
   registerCommandHandler: (
-    handler: (cmd: string, result: string, params: any, onComplete: () => void) => void
+    handler: (
+      cmd: string,
+      result: string,
+      params: any,
+      onComplete: () => void
+    ) => void
   ) => void;
   mapData: GameData | null;
   isMapReady: boolean;
@@ -24,9 +34,9 @@ const VERBOSE_LOGGING = false;
 
 // Helper function for conditional logging
 const log = (message: string, ...args: any[]) => {
-    if (VERBOSE_LOGGING) {
-        console.log(message, ...args);
-    }
+  if (VERBOSE_LOGGING) {
+    console.log(message, ...args);
+  }
 };
 
 const GameContainer = ({
@@ -52,7 +62,7 @@ const GameContainer = ({
   // change debug ui to true when key is pressed
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "l") {
+      if (event.key === "/") {
         setShowDebugUi((prev) => !prev);
       }
     };
@@ -72,10 +82,7 @@ const GameContainer = ({
         setMapInitialized(true);
         log("Game initialized with valid map data from props");
       } else {
-        log(
-          "Received mapData prop is missing map or entities:",
-          mapData
-        );
+        log("Received mapData prop is missing map or entities:", mapData);
       }
     }
   }, [mapData, isMapReady]);
@@ -174,9 +181,7 @@ const GameContainer = ({
           // Since we're waiting for the server, show loading indicator
           setIsLoading(true);
         } else if (hasTriedGenerateWorld) {
-          log(
-            "Already attempted to generate world, showing fallback data"
-          );
+          log("Already attempted to generate world, showing fallback data");
           // After one attempt, use fallback data to avoid blocking UI
           setGameData({
             map: { width: 0, height: 0, grid: [] },
