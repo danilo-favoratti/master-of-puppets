@@ -1,5 +1,61 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import './Chat.css';  // Import the CSS file
+
+// Global music player singleton - outside component to prevent re-renders from affecting it
+class BackgroundMusicPlayer {
+  private static instance: BackgroundMusicPlayer;
+  private _audio: HTMLAudioElement | null = null;
+  private isPlaying: boolean = false;
+
+  private constructor() {
+    // Private constructor to enforce singleton
+  }
+
+  public static getInstance(): BackgroundMusicPlayer {
+    if (!BackgroundMusicPlayer.instance) {
+      BackgroundMusicPlayer.instance = new BackgroundMusicPlayer();
+    }
+    return BackgroundMusicPlayer.instance;
+  }
+
+  public initialize(): void {
+    // Empty function - implementation moved outside React lifecycle
+  }
+
+  public getAudioElement(): HTMLAudioElement | null {
+    return this._audio;
+  }
+
+  public setAudioElement(audio: HTMLAudioElement): void {
+    this._audio = audio;
+  }
+
+  public play(): void {
+    // Empty function - implementation moved outside React lifecycle
+  }
+
+  public pause(): void {
+    // Empty function - implementation moved outside React lifecycle
+  }
+
+  public getIsPlaying(): boolean {
+    return this.isPlaying;
+  }
+}
+
+// Get the singleton instance
+const globalMusicPlayer = BackgroundMusicPlayer.getInstance();
+
+// Add near the top, after imports
+// Enable or disable verbose logging
+const VERBOSE_LOGGING = false;
+
+// Helper function for conditional logging
+const log = (message: string, ...args: any[]) => {
+  if (VERBOSE_LOGGING) {
+    console.log(message, ...args);
+  }
+};
 
 interface ChatProps {
   messages: Array<{ content: string; sender: string; isError?: boolean; options?: string[]; messageId?: string}>;
@@ -7,6 +63,7 @@ interface ChatProps {
   isThinking: boolean;
   isConnected: boolean;
   websocket: WebSocket | null; // Add WebSocket prop for direct access
+  isMapReady?: boolean; // Optional prop to know when map is ready
 }
 
 const Chat = ({
@@ -15,12 +72,17 @@ const Chat = ({
   isThinking,
   isConnected,
   websocket,
+  isMapReady = false,
 }: ChatProps) => {
   const [message, setMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceLevel, setVoiceLevel] = useState(0);
-
+  
+  // State for audio controls but using global player under the hood
+  const [isMusicPlaying, setIsMusicPlaying] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  
   // Audio recording refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -30,7 +92,7 @@ const Chat = ({
 
   // Audio playback
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
-  const hasPlayedAudioRef = useRef(false); // Added hasPlayedAudio ref at top-level
+  const hasPlayedAudioRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Add a debug flag near the top
@@ -54,170 +116,9 @@ const Chat = ({
   // Add a ref to track if we've explicitly started processing
   const hasStartedProcessingRef = useRef<boolean>(false);
 
-  // Initialize muted state to false so audio plays by default
-  const [isMuted, setIsMuted] = useState(false);
-
-  // Initialize audio player
-  useEffect(() => {
-    console.log("Initializing audio player, starting muted:", isMuted);
-
-    // Create audio element if not exists
-    if (!audioPlayerRef.current) {
-      const audio = new Audio();
-
-      // Prevent automatic loading/playing which can cause errors
-      audio.autoplay = false;
-      audio.preload = "auto"; // Change to auto for better initialization
-
-      // Use a valid silent audio source
-      // This is important as some browsers reject data URLs with certain formats
-      audio.src = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
-
-      // Initialize volume
-      audio.volume = 1.0;
-
-      // IMPORTANT: Start with the correct mute state
-      audio.muted = isMuted;
-      console.log(
-        `Created new Audio element with muted=${isMuted} (actual: ${audio.muted})`
-      );
-
-      audioPlayerRef.current = audio;
-
-      // Try to unlock audio on first user interaction - with better error handling
-      const unlockAudio = () => {
-        if (audioPlayerRef.current) {
-          // Play a silent sound
-          audioPlayerRef.current
-            .play()
-            .then(() => {
-              console.log("Audio unlocked successfully");
-              // Stop playing the silent audio immediately
-              audioPlayerRef.current?.pause();
-              audioPlayerRef.current!.currentTime = 0;
-
-              // Make sure mute state is applied after unlocking
-              audioPlayerRef.current!.muted = isMuted;
-              console.log(`Re-applied mute state after unlock: ${isMuted}`);
-            })
-            .catch((err) => {
-              console.log("Could not unlock audio:", err);
-              
-              // Create a new audio element with a different format if there was an error
-              if (audioPlayerRef.current) {
-                console.log("Trying alternative audio format...");
-                audioPlayerRef.current.src = "data:audio/mpeg;base64,SUQzBAAAAAABEVRYWFgAAAAtAAADY29tbWVudABCaWdTb3VuZEJhbmsuY29tIC8gTGFTb25vdGhlcXVlLm9yZwBURU5DAAAAHQAAA1N3aXRjaCBQbHVzIMKpIE5DSCBTb2Z0d2FyZQBUSVQyAAAABgAAAzIyMzUAVFNTRQAAAA8AAANMYXZmNTcuODMuMTAwAAAAAAAAAAAAAAD/80DEAAAAA0gAAAAATEFNRTMuMTAwVVVVVVVVVVVVVUxBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQsRbAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/zQMSkAAADSAAAAABVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
-                
-                // Try again
-                audioPlayerRef.current
-                  .play()
-                  .then(() => {
-                    console.log("Audio unlocked successfully with alternative format");
-                    audioPlayerRef.current?.pause();
-                    audioPlayerRef.current!.currentTime = 0;
-                    audioPlayerRef.current!.muted = isMuted;
-                  })
-                  .catch(altErr => {
-                    console.log("Still could not unlock audio with alternative format:", altErr);
-                  });
-              }
-            });
-        }
-
-        // Remove the listener once we've tried to unlock
-        document.removeEventListener("click", unlockAudio);
-        document.removeEventListener("touchstart", unlockAudio);
-      };
-
-      // Add listeners to unlock audio on first interaction
-      document.addEventListener("click", unlockAudio, { once: true });
-      document.addEventListener("touchstart", unlockAudio, { once: true });
-    }
-
-    // Set up event listeners
-    const onPlay = () => {
-      console.log("Audio playback started");
-      setIsPlaying(true);
-
-      // Ensure audio respects mute state when it starts playing
-      if (audioPlayerRef.current) {
-        if (audioPlayerRef.current.muted !== isMuted) {
-          console.log(
-            `Correcting audio mute state on play: setting to ${isMuted}`
-          );
-          audioPlayerRef.current.muted = isMuted;
-        } else {
-          console.log(`Audio mute state on play is correct: ${isMuted}`);
-        }
-      }
-    };
-
-    const onEnded = () => {
-      console.log("Audio playback ended");
-      setIsPlaying(false);
-    };
-
-    const onPause = () => {
-      console.log("Audio playback paused");
-      setIsPlaying(false);
-    };
-
-    const onError = (e: Event) => {
-      // Only log real errors, not initialization ones
-      const element = e.target as HTMLAudioElement;
-      if (
-        element &&
-        element.error &&
-        element.error.code !== MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
-      ) {
-        console.error("Audio playback error:", e);
-        // Try to get more information about the error
-        if (audioPlayerRef.current && audioPlayerRef.current.error) {
-          console.error("Error code:", audioPlayerRef.current.error.code);
-          console.error("Error message:", audioPlayerRef.current.error.message);
-        }
-        setIsPlaying(false);
-
-        // Show a message to the user about enabling sound
-        if (
-          element.error.code === MediaError.MEDIA_ERR_ABORTED ||
-          element.error.code === MediaError.MEDIA_ERR_NETWORK
-        ) {
-          alert(
-            "Please ensure your browser allows audio playback for this site."
-          );
-        }
-      }
-    };
-
-    // Attach listeners
-    if (audioPlayerRef.current) {
-      audioPlayerRef.current.addEventListener("play", onPlay);
-      audioPlayerRef.current.addEventListener("ended", onEnded);
-      audioPlayerRef.current.addEventListener("pause", onPause);
-      audioPlayerRef.current.addEventListener("error", onError);
-
-      // Apply the current mute setting to ensure consistency
-      audioPlayerRef.current.muted = isMuted;
-    }
-
-    // Clean up
-    return () => {
-      console.log("Cleaning up audio player");
-      if (audioPlayerRef.current) {
-        audioPlayerRef.current.removeEventListener("play", onPlay);
-        audioPlayerRef.current.removeEventListener("ended", onEnded);
-        audioPlayerRef.current.removeEventListener("pause", onPause);
-        audioPlayerRef.current.removeEventListener("error", onError);
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current.src = "";
-      }
-    };
-  }, [isMuted]); // Add isMuted as a dependency to re-run when it changes
-
   // Reset all UI state indicators on component mount
   useEffect(() => {
-    console.log("Resetting all UI state indicators on component mount");
+    log("Resetting all UI state indicators on component mount");
     // Reset recording state
     setIsRecording(false);
     // Reset audio processing state
@@ -274,7 +175,7 @@ const Chat = ({
       }
     } catch (e) {
       // If parsing fails, it's not valid JSON
-      console.log("Not valid JSON in message:", e);
+      log("Not valid JSON in message:", e);
     }
     return null;
   };
@@ -288,7 +189,7 @@ const Chat = ({
     let isReceivingAudio = false;
     let audioStartReceived = false;
 
-    console.log("Setting up WebSocket listeners for audio");
+    log("Setting up WebSocket listeners for audio");
 
     // Reset UI states when WebSocket changes
     setIsProcessingAudio(false);
@@ -300,11 +201,11 @@ const Chat = ({
         if (typeof event.data === "string") {
           try {
             const data = JSON.parse(event.data);
-            console.log("WebSocket received JSON message:", data.type);
+            log("WebSocket received JSON message:", data.type);
 
             switch (data.type) {
               case "audio_start":
-                console.log("WebSocket: Received audio_start signal");
+                log("WebSocket: Received audio_start signal");
                 isReceivingAudio = true;
                 audioStartReceived = true;
                 hasPlayedAudioRef.current = false;
@@ -316,7 +217,7 @@ const Chat = ({
                 break;
 
               case "error":
-                console.error("Received error from server:", data.content);
+                log("Received error from server:", data.content);
                 setIsProcessingAudio(false);
                 setIsWaitingForResponse(false);
                 break;
@@ -326,7 +227,7 @@ const Chat = ({
                 break;
             }
           } catch (jsonError) {
-            console.error("Error parsing JSON from WebSocket:", jsonError);
+            log("Error parsing JSON from WebSocket:", jsonError);
           }
         }
         // Handle binary data (audio chunks)
@@ -334,18 +235,18 @@ const Chat = ({
           handleBinaryData(event.data);
         }
       } catch (err) {
-        console.error("Error in WebSocket message handler:", err);
+        log("Error in WebSocket message handler:", err);
       }
     };
 
     // Helper function to handle audio end
     const handleAudioEnd = () => {
-      console.log(
+      log(
         `WebSocket: Received audio_end signal, chunks: ${audioChunks.length}, audioStartReceived: ${audioStartReceived}`
       );
 
       if (audioStartReceived && audioChunks.length > 0 && !hasPlayedAudioRef.current) {
-        console.log(
+        log(
           `Playing audio: ${audioChunks.length} chunks totaling ${audioChunks.reduce(
             (acc, chunk) => acc + chunk.length,
             0
@@ -355,10 +256,10 @@ const Chat = ({
         hasPlayedAudioRef.current = true;
       } else {
         if (!audioStartReceived) {
-          console.warn("Received audio_end but no audio_start was received");
+          log("Received audio_end but no audio_start was received");
         }
         if (audioChunks.length === 0) {
-          console.warn("No audio chunks to play after audio_end");
+          log("No audio chunks to play after audio_end");
         }
       }
 
@@ -370,7 +271,7 @@ const Chat = ({
 
     // Helper function to handle binary data
     const handleBinaryData = (data: ArrayBuffer) => {
-      console.log(
+      log(
         `WebSocket: Received binary data, size: ${data.byteLength} bytes, isReceiving: ${isReceivingAudio}, audioStartReceived: ${audioStartReceived}`
       );
 
@@ -397,7 +298,7 @@ const Chat = ({
             logChunkProgress();
           }
         } catch (binaryError) {
-          console.error("Error processing binary data:", binaryError);
+          log("Error processing binary data:", binaryError);
         }
       } else {
         logAudioStateWarnings();
@@ -406,7 +307,7 @@ const Chat = ({
 
     // Helper function to log first chunk details
     const logFirstChunk = (arrayBuf: Uint8Array) => {
-      console.log(
+      log(
         `Added FIRST audio chunk: ${arrayBuf.length} bytes, first 30 bytes:`,
         Array.from(arrayBuf.slice(0, 30))
           .map((b) => b.toString(16).padStart(2, "0"))
@@ -415,9 +316,9 @@ const Chat = ({
       const potentialHeader = Array.from(arrayBuf.slice(0, 3))
         .map((b) => b.toString(16).padStart(2, "0"))
         .join(" ");
-      console.log(`MP3 header check: ${potentialHeader}`);
+      log(`MP3 header check: ${potentialHeader}`);
       if (arrayBuf.length < 100) {
-        console.warn(`Suspiciously small first audio chunk: ${arrayBuf.length} bytes`);
+        log(`Suspiciously small first audio chunk: ${arrayBuf.length} bytes`);
       }
     };
 
@@ -425,7 +326,7 @@ const Chat = ({
     const logChunkProgress = () => {
       if (audioChunks.length % 5 === 0) {
         const totalSize = audioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
-        console.log(
+        log(
           `Accumulated ${audioChunks.length} chunks, total size: ${totalSize} bytes`
         );
       }
@@ -434,17 +335,17 @@ const Chat = ({
     // Helper function to log audio state warnings
     const logAudioStateWarnings = () => {
       if (!isReceivingAudio) {
-        console.warn("Received binary data but isReceivingAudio is false");
+        log("Received binary data but isReceivingAudio is false");
       }
       if (!audioStartReceived) {
-        console.warn("Received binary data but no audio_start was received");
+        log("Received binary data but no audio_start was received");
       }
     };
 
     websocket.addEventListener("message", handleMessage);
 
     return () => {
-      console.log("Cleaning up WebSocket audio listeners");
+      log("Cleaning up WebSocket audio listeners");
       websocket.removeEventListener("message", handleMessage);
     };
   }, [websocket]);
@@ -499,7 +400,7 @@ const Chat = ({
     try {
       // Clear any previous state to ensure clean recording
       if (isProcessingAudio || isWaitingForResponse) {
-        console.log("Clearing previous states before starting new recording");
+        log("Clearing previous states before starting new recording");
         setIsProcessingAudio(false);
         setIsWaitingForResponse(false);
 
@@ -540,17 +441,17 @@ const Chat = ({
 
       mediaRecorder.addEventListener("dataavailable", (event) => {
         if (event.data.size > 0) {
-          console.log(`Recording data available: ${event.data.size} bytes`);
+          log(`Recording data available: ${event.data.size} bytes`);
           localChunks.push(event.data);
         }
       });
 
       mediaRecorder.addEventListener("stop", () => {
-        console.log("MediaRecorder stopped, sending accumulated data");
+        log("MediaRecorder stopped, sending accumulated data");
 
         // Combine all chunks into a single blob
         const completeBlob = new Blob(localChunks, { type: "audio/webm" });
-        console.log(`Complete recording size: ${completeBlob.size} bytes`);
+        log(`Complete recording size: ${completeBlob.size} bytes`);
 
         if (websocket && websocket.readyState === WebSocket.OPEN) {
           // Convert Blob to ArrayBuffer and send to server
@@ -561,7 +462,7 @@ const Chat = ({
               websocket.readyState === WebSocket.OPEN
             ) {
               const buffer = reader.result;
-              console.log(
+              log(
                 `Sending complete audio data to server: ${buffer.byteLength} bytes`
               );
 
@@ -569,7 +470,7 @@ const Chat = ({
               if (buffer.byteLength > 0) {
                 // Log first 10 bytes for debugging
                 const view = new Uint8Array(buffer);
-                console.log(
+                log(
                   `First 10 bytes of audio data: [${Array.from(
                     view.slice(0, 10)
                   ).join(", ")}]`
@@ -581,7 +482,7 @@ const Chat = ({
                 // Then signal the end of audio after a small delay to ensure the binary data is processed
                 setTimeout(() => {
                   if (websocket.readyState === WebSocket.OPEN) {
-                    console.log("Sending audio_end signal");
+                    log("Sending audio_end signal");
                     websocket.send(
                       JSON.stringify({
                         type: "audio_end",
@@ -593,7 +494,7 @@ const Chat = ({
                   }
                 }, 200);
               } else {
-                console.warn("Empty audio buffer, not sending");
+                log("Empty audio buffer, not sending");
                 // Notify user of empty recording
                 alert(
                   "No audio was recorded. Please try again and speak into your microphone."
@@ -612,7 +513,7 @@ const Chat = ({
       // Start visualizing audio
       visualizeAudio();
     } catch (err) {
-      console.error("Error accessing microphone:", err);
+      log("Error accessing microphone:", err);
       alert(
         "Could not access microphone. Please check your browser permissions."
       );
@@ -626,7 +527,7 @@ const Chat = ({
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== "inactive"
     ) {
-      console.log(
+      log(
         "Stopping MediaRecorder - chunks will be processed in the stop event handler"
       );
       mediaRecorderRef.current.stop();
@@ -677,7 +578,7 @@ const Chat = ({
     } else {
       // Stop any currently playing audio before starting recording
       if (audioPlayerRef.current) {
-        console.log("Stopping audio playback before recording");
+        log("Stopping audio playback before recording");
         audioPlayerRef.current.pause();
         audioPlayerRef.current.currentTime = 0;
         setIsPlaying(false);
@@ -689,7 +590,7 @@ const Chat = ({
   // Helper function to detect audio format from header bytes
   const detectAudioFormat = (firstChunk: Uint8Array): string => {
     if (!firstChunk || firstChunk.length < 4) {
-      console.log(
+      log(
         "Not enough data to detect audio format, defaulting to audio/mpeg"
       );
       return "audio/mpeg";
@@ -702,7 +603,7 @@ const Chat = ({
         firstChunk[2] === 0x33) || // ID3
       (firstChunk[0] === 0xff && (firstChunk[1] & 0xe0) === 0xe0) // MPEG sync word
     ) {
-      console.log("Detected MP3 format");
+      log("Detected MP3 format");
       return "audio/mpeg";
     }
 
@@ -713,7 +614,7 @@ const Chat = ({
       firstChunk[2] === 0x46 &&
       firstChunk[3] === 0x46
     ) {
-      console.log("Detected WAV format");
+      log("Detected WAV format");
       return "audio/wav";
     }
 
@@ -724,21 +625,21 @@ const Chat = ({
       firstChunk[2] === 0x67 &&
       firstChunk[3] === 0x53
     ) {
-      console.log("Detected Ogg format");
+      log("Detected Ogg format");
       return "audio/ogg";
     }
 
     // Default to MP3 if format is unknown
-    console.log("Unknown audio format, defaulting to audio/mpeg");
+    log("Unknown audio format, defaulting to audio/mpeg");
     return "audio/mpeg";
   };
 
   // New playBufferedAudio function:
   const playBufferedAudio = (chunks: Uint8Array[]) => {
-    if (DEBUG) console.log("Playing buffered audio, chunks:", chunks.length);
+    if (DEBUG) log("Playing buffered audio, chunks:", chunks.length);
 
     if (chunks.length === 0) {
-      console.error("No audio chunks to play");
+      log("No audio chunks to play");
       return;
     }
 
@@ -750,35 +651,35 @@ const Chat = ({
 
       const blob = new Blob(chunks, { type: mimeType });
       if (DEBUG)
-        console.log(
+        log(
           `Created audio blob with type ${mimeType}, size: ${blob.size}`
         );
 
       const url = URL.createObjectURL(blob);
-      if (DEBUG) console.log("Created URL for audio blob:", url);
+      if (DEBUG) log("Created URL for audio blob:", url);
 
       // Use only the main audio player for playback
       tryPlayWithMainAudio(url);
     } catch (error) {
-      console.error("Error in playBufferedAudio:", error);
+      log("Error in playBufferedAudio:", error);
     }
   };
 
   // Helper function to try playing with the main audio player
   const tryPlayWithMainAudio = (url: string) => {
     try {
-      console.log(
+      log(
         `Trying with main audio player (current mute state: ${isMuted})`
       );
       if (!audioPlayerRef.current) {
-        console.error("Audio player not initialized yet");
+        log("Audio player not initialized yet");
         const audio = new Audio();
         audio.autoplay = false;
         audio.preload = "auto";
 
         // Important: Apply the mute setting immediately to the new audio element
         audio.muted = isMuted;
-        console.log(`Created new Audio element with muted=${isMuted}`);
+        log(`Created new Audio element with muted=${isMuted}`);
 
         audioPlayerRef.current = audio;
       }
@@ -788,7 +689,7 @@ const Chat = ({
         audioPlayerRef.current.pause();
         audioPlayerRef.current.currentTime = 0;
       } catch (e) {
-        console.warn("Error resetting audio element:", e);
+        log("Error resetting audio element:", e);
       }
 
       // Set up audio for playback
@@ -797,16 +698,16 @@ const Chat = ({
 
       // Forcefully apply the mute state before trying to play
       audioPlayerRef.current.muted = isMuted;
-      audioPlayerRef.current.volume = 1.0;
+      audioPlayerRef.current.volume = 0.5;
 
-      console.log(
+      log(
         `Audio player setup complete: src=${url}, muted=${audioPlayerRef.current.muted}, volume=${audioPlayerRef.current.volume}`
       );
 
       // Let the browser know we want to play audio
       audioPlayerRef.current.load();
 
-      console.log(
+      log(
         `Attempting to play with main audio player... (muted: ${isMuted}, audioPlayer.muted: ${audioPlayerRef.current.muted})`
       );
 
@@ -820,7 +721,7 @@ const Chat = ({
           audioPlayerRef.current &&
           audioPlayerRef.current.muted !== isMuted
         ) {
-          console.log(
+          log(
             `Fixing mute state discrepancy right before playing: ${isMuted} vs ${audioPlayerRef.current.muted}`
           );
           audioPlayerRef.current.muted = isMuted;
@@ -829,7 +730,7 @@ const Chat = ({
         audioPlayerRef
           .current!.play()
           .then(() => {
-            console.log("Main audio player playback started successfully");
+            log("Main audio player playback started successfully");
 
             // One last check after play starts
             setTimeout(() => {
@@ -837,7 +738,7 @@ const Chat = ({
                 audioPlayerRef.current &&
                 audioPlayerRef.current.muted !== isMuted
               ) {
-                console.log(
+                log(
                   `Post-playback mute correction: setting to ${isMuted}`
                 );
                 audioPlayerRef.current.muted = isMuted;
@@ -845,7 +746,7 @@ const Chat = ({
             }, 100);
           })
           .catch((err) => {
-            console.error(
+            log(
               `Error playing with main audio player (attempt ${
                 retryCount + 1
               }/${maxRetries}):`,
@@ -854,12 +755,12 @@ const Chat = ({
 
             if (retryCount < maxRetries) {
               retryCount++;
-              console.log(`Retrying playback in ${retryCount * 500}ms...`);
+              log(`Retrying playback in ${retryCount * 500}ms...`);
 
               // Try again with a delay
               setTimeout(attemptPlay, retryCount * 500);
             } else {
-              console.error("Failed to play audio after multiple attempts");
+              log("Failed to play audio after multiple attempts");
 
               // Show alert to user only on the final failure
               if (err.name === "NotAllowedError") {
@@ -880,7 +781,7 @@ const Chat = ({
 
       attemptPlay();
     } catch (error) {
-      console.error("Error in tryPlayWithMainAudio:", error);
+      log("Error in tryPlayWithMainAudio:", error);
     }
   };
 
@@ -900,7 +801,7 @@ const Chat = ({
   const startProcessingWithTimeout = () => {
     setIsProcessingAudio(true);
     hasStartedProcessingRef.current = true;
-    console.log("Audio processing started");
+    log("Audio processing started");
 
     // Clear any existing timer
     if (processingTimerRef.current) {
@@ -910,7 +811,7 @@ const Chat = ({
     // Set a timeout to clear the processing state after 20 seconds
     processingTimerRef.current = window.setTimeout(() => {
       if (isProcessingAudio) {
-        console.log("Audio processing timed out after 20 seconds");
+        log("Audio processing timed out after 20 seconds");
         setIsProcessingAudio(false);
       }
     }, 20000);
@@ -919,7 +820,7 @@ const Chat = ({
   // Set waiting state with timeout
   const startWaitingWithTimeout = () => {
     setIsWaitingForResponse(true);
-    console.log("Waiting for agent response");
+    log("Waiting for agent response");
 
     // Clear any existing waiting timer
     if (waitingTimerRef.current) {
@@ -929,7 +830,7 @@ const Chat = ({
     // Set a timeout to clear the waiting state after 30 seconds
     waitingTimerRef.current = window.setTimeout(() => {
       if (isWaitingForResponse) {
-        console.log("Waiting for response timed out after 30 seconds");
+        log("Waiting for response timed out after 30 seconds");
         setIsWaitingForResponse(false);
       }
     }, 30000);
@@ -937,7 +838,7 @@ const Chat = ({
 
   // Add a useEffect to log state changes
   useEffect(() => {
-    console.log(
+    log(
       `State change - isRecording: ${isRecording}, isProcessingAudio: ${isProcessingAudio}, isWaitingForResponse: ${isWaitingForResponse}, isThinking: ${isThinking}, isPlaying: ${isPlaying}`
     );
   }, [
@@ -951,7 +852,7 @@ const Chat = ({
   // Force reset all states on initial render with a delay - this should fix any "stuck" states
   useEffect(() => {
     const forceResetTimer = setTimeout(() => {
-      console.log(
+      log(
         "FORCE RESET: Resetting all UI state indicators after timeout"
       );
       setIsRecording(false);
@@ -969,12 +870,12 @@ const Chat = ({
     if (audioPlayerRef.current) {
       // Check if the current mute state matches what we expect
       if (audioPlayerRef.current.muted !== isMuted) {
-        console.log(
+        log(
           `Audio player mute state (${audioPlayerRef.current.muted}) doesn't match expected state (${isMuted}), correcting...`
         );
         audioPlayerRef.current.muted = isMuted;
       } else {
-        console.log(
+        log(
           `Audio player mute state already matches expected state (${isMuted})`
         );
       }
@@ -983,7 +884,7 @@ const Chat = ({
 
   // Update audio player mute state when isMuted changes
   useEffect(() => {
-    console.log(
+    log(
       `isMuted state changed to: ${isMuted} - updating audio player state`
     );
     applyMuteStateToAudio();
@@ -993,7 +894,7 @@ const Chat = ({
   useEffect(() => {
     // If there's any message not from the user, clear the waiting state.
     if (messages.some((msg) => msg.sender !== "user")) {
-      console.log("Received response. Clearing waiting state.");
+      log("Received response. Clearing waiting state.");
       setIsWaitingForResponse(false);
     }
   }, [messages]);
@@ -1001,16 +902,103 @@ const Chat = ({
   // Determine container class based on sender
   const getContainerClass = (sender: string) => {
     if (sender === 'user') return 'user-container';
-    if (sender === 'character') return 'character-container'; // Assuming 'character' is your assistant ID
-    return 'system-container'; // Default to system for others
+    if (sender === 'character') return 'character-container'; 
+    return 'system-container';
   };
 
   // Determine message class based on sender
   const getMessageClass = (sender: string) => {
     if (sender === 'user') return 'user-message';
     if (sender === 'character') return 'character-message';
-    return 'system-message'; // Default to system for others
+    return 'system-message';
   };
+
+  // Initialize the music player when map is ready (once)
+  useEffect(() => {
+    if (isMapReady) {
+      // Create audio element once - not tied to React state
+      try {
+        // Check if we should initialize
+        const musicElement = document.getElementById('background-music-element') as HTMLAudioElement;
+        if (musicElement) {
+          // Element already exists, just update volume
+          musicElement.volume = 0.03; // Lowered volume
+          log("Found existing music element, set volume to 0.03");
+          return;
+        }
+        
+        // Limit console logging
+        log("🎵 Initializing background music (once-only)");
+        
+        // Create a stable element outside React
+        const audio = new Audio();
+        audio.id = 'background-music-element';
+        audio.loop = true;
+        audio.volume = 0.03;
+        audio.src = "/audio/music.ogg";
+        
+        // Force volume setting
+        console.log("🎵 Setting music volume to 0.03 (3%)"); // Updated log message
+        
+        // Set a play handler that won't trigger re-renders
+        audio.oncanplaythrough = () => {
+          // Try to play without updating state
+          try {
+            // Force volume setting again just before playing
+            audio.volume = 0.03; // Lowered volume
+            const playPromise = audio.play();
+            if (playPromise) {
+              playPromise.catch((e) => {
+                log("Music autoplay error:", e);
+                // Don't update state here
+              });
+            }
+          } catch (err) {
+            log("Music setup error:", err);
+          }
+        };
+        
+        // Store in document to keep it outside React lifecycle
+        document.body.appendChild(audio);
+        
+        // Store reference in global player using the proper accessor
+        globalMusicPlayer.setAudioElement(audio);
+      } catch (err) {
+        log("Fatal music init error:", err);
+      }
+    }
+  }, [isMapReady]); 
+
+  // Music toggle function using the global player - completely decoupled
+  const toggleMusic = useCallback(() => {
+    try {
+      // Get actual audio element from document
+      const audioEl = document.getElementById('background-music-element') as HTMLAudioElement;
+      if (!audioEl) return;
+      
+      // Ensure volume is correct every time we interact with the element
+      audioEl.volume = 0.03; // Lowered volume
+      
+      if (!audioEl.paused) {
+        audioEl.pause();
+        setIsMusicPlaying(false);
+      } else {
+        // Force volume before playing
+        audioEl.volume = 0.03; // Lowered volume
+        audioEl.play().then(() => {
+          setIsMusicPlaying(true);
+          // Double-check volume after successful play
+          setTimeout(() => {
+            if (audioEl) audioEl.volume = 0.03; // Lowered volume
+          }, 100);
+        }).catch(err => {
+          log("Music toggle error:", err);
+        });
+      }
+    } catch (err) {
+      log("Music toggle error:", err);
+    }
+  }, []);
 
   return (
     <div className="chat-container">
@@ -1058,7 +1046,7 @@ const Chat = ({
           })
           .map((msg, index) => {
           // Enhanced logging to debug message rendering
-          console.log(`Rendering message ${index}:`, { 
+          log(`Rendering message ${index}:`, { 
             sender: msg.sender, 
             content: msg.content.substring(0, 30),
             containerClass: getContainerClass(msg.sender),
@@ -1078,7 +1066,7 @@ const Chat = ({
             return (
               <React.Fragment key={index}>
                 {validAnswers.map((answer: any, answerIndex: number) => (
-                  <div key={`${index}-${answerIndex}`} className={`message-container ${getContainerClass(msg.sender)}`}>
+                  <div key={`${index}-${answerIndex}-${answer.description?.substring(0, 10)}`} className={`message-container ${getContainerClass(msg.sender)}`}>
                     <div className={`message ${getMessageClass(msg.sender)} ${answer.isError ? 'error' : ''}`} data-sender={msg.sender}>
                       {answer.description}
                     </div>
@@ -1108,7 +1096,7 @@ const Chat = ({
           
           // Regular message rendering with explicit classes
           return (
-            <div key={index} className={`message-container ${getContainerClass(msg.sender)}`}>
+            <div key={`${index}-${msg.sender}-${msg.content.substring(0, 10)}`} className={`message-container ${getContainerClass(msg.sender)}`}>
               <div className={`message ${getMessageClass(msg.sender)} ${msg.isError ? 'error' : ''}`} data-sender={msg.sender}>
                 {msg.content}
               </div>
@@ -1194,7 +1182,7 @@ const Chat = ({
             className={`mute-button ${isMuted ? "muted" : "unmuted"}`}
             onClick={() => {
               const newMutedState = !isMuted;
-              console.log(
+              log(
                 `Mute button clicked: changing from ${
                   isMuted ? "muted" : "unmuted"
                 } to ${newMutedState ? "muted" : "unmuted"}`
@@ -1207,7 +1195,7 @@ const Chat = ({
               if (audioPlayerRef.current) {
                 // Force mute state change
                 audioPlayerRef.current.muted = newMutedState;
-                console.log(
+                log(
                   `Applied mute setting to audio player: ${newMutedState} (actual: ${audioPlayerRef.current.muted})`
                 );
 
@@ -1223,7 +1211,7 @@ const Chat = ({
                 setTimeout(() => {
                   if (audioPlayerRef.current) {
                     if (audioPlayerRef.current.muted !== newMutedState) {
-                      console.error(
+                      log(
                         `Mute state mismatch after click: expected ${newMutedState}, got ${audioPlayerRef.current.muted}`
                       );
                       // Force it again with a different approach
@@ -1239,7 +1227,7 @@ const Chat = ({
                               .current
                               .play()
                               .catch((e) =>
-                                console.error(
+                                log(
                                   "Error resuming after mute toggle:",
                                   e
                                 )
@@ -1248,20 +1236,96 @@ const Chat = ({
                         }, 50);
                       }
                     } else {
-                      console.log(
+                      log(
                         `Mute state confirmed after click: ${audioPlayerRef.current.muted}`
                       );
                     }
                   }
                 }, 50);
               } else {
-                console.warn("No audio player available to mute/unmute");
+                log("No audio player available to mute/unmute");
               }
             }}
             disabled={!isConnected}
+            style={{
+              position: 'relative',
+              ...(isMuted ? {
+                border: '2px solid #ff0000',
+                overflow: 'visible'
+              } : {})
+            }}
           >
-            <span>{isMuted ? "🔇" : "🔊"}</span>
+            <span>🔊</span>
+            {isMuted && (
+              <div style={{
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                overflow: 'hidden',
+                borderRadius: '50%' // Match the button's circular shape
+              }}>
+                <div style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  width: '100%', // Exactly match the button's width
+                  height: '2px',
+                  backgroundColor: '#ff0000',
+                  transform: 'translateX(-50%) rotate(-45deg)',
+                  transformOrigin: 'center', // Rotate around center
+                }}></div>
+              </div>
+            )}
           </button>
+          
+          {/* Music toggle button - updated styling */}
+          {isMapReady && (
+            <button
+              type="button"
+              className={`mute-button ${isMusicPlaying ? "unmuted" : "muted"}`}
+              onClick={toggleMusic}
+              title={isMusicPlaying ? "Turn off music" : "Turn on music"}
+              disabled={!isConnected}
+              style={{
+                position: 'relative',
+                backgroundColor: isMusicPlaying ? '#4CAF50' : '',
+                color: isMusicPlaying ? 'white' : '',
+                ...(!isMusicPlaying ? {
+                  border: '2px solid #ff0000',
+                  overflow: 'visible'
+                } : {})
+              }}
+            >
+              <span>🎵</span>
+              {!isMusicPlaying && (
+                <div style={{
+                  position: 'absolute',
+                  top: '0',
+                  left: '0',
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  overflow: 'hidden',
+                  borderRadius: '50%' // Match the button's circular shape
+                }}>
+                  <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    width: '100%', // Exactly match the button's width
+                    height: '2px',
+                    backgroundColor: '#ff0000',
+                    transform: 'translateX(-50%) rotate(-45deg)',
+                    transformOrigin: 'center', // Rotate around center
+                  }}></div>
+                </div>
+              )}
+            </button>
+          )}
+          
           <input
             type="text"
             value={message}

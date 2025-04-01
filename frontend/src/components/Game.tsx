@@ -287,33 +287,6 @@ const Game = ({
         animation={currentAnimation}
         setAnimation={setAnimation}
         setPosition={setPosition}
-        // The onMoveComplete prop in CharacterBody might be where the final onComplete should be called
-        // This depends on CharacterBody's implementation
-        onMoveComplete={() => {
-          console.log("CharacterBody onMoveComplete called (Default handler)")
-          // Default idle animation logic
-          switch (currentAnimation) {
-            case CharacterAnimationType.WALK_UP:
-            case CharacterAnimationType.RUN_UP:
-            case CharacterAnimationType.JUMP_UP:
-              setAnimation(CharacterAnimationType.IDLE_UP);
-              break;
-            case CharacterAnimationType.WALK_LEFT:
-            case CharacterAnimationType.RUN_LEFT:
-            case CharacterAnimationType.JUMP_LEFT:
-              setAnimation(CharacterAnimationType.IDLE_LEFT);
-              break;
-            case CharacterAnimationType.WALK_RIGHT:
-            case CharacterAnimationType.RUN_RIGHT:
-            case CharacterAnimationType.JUMP_RIGHT:
-              setAnimation(CharacterAnimationType.IDLE_RIGHT);
-              break;
-            default:
-              setAnimation(CharacterAnimationType.IDLE_DOWN);
-          }
-          // IMPORTANT: The actual onComplete passed from App.tsx needs to be called here
-          // Currently, this component doesn't receive it. We need to modify CharacterBody.
-        }}
         zOffset={0.03}
       />
 

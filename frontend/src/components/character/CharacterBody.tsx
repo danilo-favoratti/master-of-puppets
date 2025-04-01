@@ -15,16 +15,30 @@ import CharacterHair from "./CharacterHair";
 import CharacterHat from "./CharacterHat";
 import CharacterOutfit from "./CharacterOutfit";
 
+// Disable verbose movement logging
+const VERBOSE_MOVEMENT_LOGGING = false;
+
+// Helper function for conditional movement logging
+const movementLog = (message: string, ...args: any[]) => {
+  if (VERBOSE_MOVEMENT_LOGGING) {
+    console.log(message, ...args);
+  }
+};
+
 // Define the type for the ref methods including steps
 export interface CharacterRefMethods {
   moveAlongPath: (path: Position[]) => void;
   move: (direction: string, steps?: number, onComplete?: () => void) => void;
 }
 
+// Remove onMoveComplete from props definition
+interface UpdatedCharacterBodyProps extends Omit<CharacterBodyProps, 'onMoveComplete'> {}
+
 const CharacterBody = forwardRef<
   // Use the defined type here
   CharacterRefMethods,
-  CharacterBodyProps
+  // Use the updated props type
+  UpdatedCharacterBodyProps 
 >(
   (
     {
@@ -37,7 +51,6 @@ const CharacterBody = forwardRef<
       characterType = undefined, // If not specified, will pick randomly
       onAnimationComplete,
       speed = 1, // Units per second
-      onMoveComplete,
       setPosition,
       setAnimation,
       zOffset = 0.1,
@@ -130,7 +143,7 @@ const CharacterBody = forwardRef<
       },
       // Update move method signature here
       move: (direction: string, steps: number = 1, onComplete?: () => void) => {
-        console.log(`📍 CharacterBody.move called with direction: ${direction}, steps: ${steps}`);
+        movementLog(`📍 CharacterBody.move called with direction: ${direction}, steps: ${steps}`);
         setCurrentOnComplete(() => onComplete || null);
 
         // --- Use logical position prop for calculation --- 
@@ -139,7 +152,7 @@ const CharacterBody = forwardRef<
         const currentLogicalY = position[1];
         const currentZ = position[2] || 0.03; // Use prop Z or default
         
-        console.log("📍 Current logical position:", [currentLogicalX, currentLogicalY, currentZ]);
+        movementLog("📍 Current logical position:", [currentLogicalX, currentLogicalY, currentZ]);
 
         let targetX = currentLogicalX;
         let targetY = currentLogicalY;
@@ -148,19 +161,19 @@ const CharacterBody = forwardRef<
         // Calculate target offset based on direction and steps
         switch (direction.toLowerCase()) {
           case 'up':
-            console.log("📍 MOVE HITTING 'UP'");
+            movementLog("📍 MOVE HITTING 'UP'");
             targetY += steps;
             break;
           case 'down':
-            console.log("📍 MOVE HITTING 'DOWN'");
+            movementLog("📍 MOVE HITTING 'DOWN'");
             targetY -= steps;
             break;
           case 'left':
-            console.log("📍 MOVE HITTING 'LEFT'");
+            movementLog("📍 MOVE HITTING 'LEFT'");
             targetX -= steps;
             break;
           case 'right':
-            console.log("📍 MOVE HITTING 'RIGHT'");
+            movementLog("📍 MOVE HITTING 'RIGHT'");
             targetX += steps;
             break;
           default:
@@ -172,7 +185,7 @@ const CharacterBody = forwardRef<
         
         const targetPosition = { x: targetX, y: targetY };
         // Use currentZ for the target log
-        console.log("📍 Final target position calculated:", [targetPosition.x, targetPosition.y, currentZ]);
+        movementLog("📍 Final target position calculated:", [targetPosition.x, targetPosition.y, currentZ]);
 
         const path: Position[] = [targetPosition];
 
@@ -188,14 +201,14 @@ const CharacterBody = forwardRef<
         
         // --- Store the intended animation for the whole move --- 
         animationRef.current = newAnimation; // Update the ref directly
-        console.log("📍 Setting animation ref to:", newAnimation);
+        movementLog("📍 Setting animation ref to:", newAnimation);
         if (setAnimation) {
           // Also update the state to trigger immediate visual change if needed
           setAnimation(newAnimation);
         }
         // --- End animation change ---
 
-        console.log("📍 Setting movement state with final path:", path);
+        movementLog("📍 Setting movement state with final path:", path);
         setMovementState({
           path,
           currentPathIndex: 0,
@@ -213,12 +226,12 @@ const CharacterBody = forwardRef<
 
       if (!movementState.path || currentPathIndex >= movementState.path.length) {
         // This case should ideally be hit when path is completed
-        console.log("📍 Movement complete - path index out of bounds or path empty");
+        movementLog("📍 Movement complete - path index out of bounds or path empty");
         setMovementState((prev) => ({ ...prev, isMoving: false }));
 
         // --- Call the stored onComplete callback --- 
         if (currentOnComplete) {
-            console.log("✅ Calling stored onComplete callback");
+            movementLog("✅ Calling stored onComplete callback");
             currentOnComplete();
             setCurrentOnComplete(null); // Clear after calling
         }
@@ -235,7 +248,7 @@ const CharacterBody = forwardRef<
           idleAnimation = CharacterAnimationType.IDLE_RIGHT;
         } // Defaults to IDLE_DOWN otherwise
         
-        console.log("📍 Setting idle animation:", idleAnimation);
+        movementLog("📍 Setting idle animation:", idleAnimation);
         // --- End Idle Animation Fix ---
         setAnimation?.(idleAnimation);
         
@@ -244,7 +257,6 @@ const CharacterBody = forwardRef<
         if (setPosition) {
           setPosition([currentPos.x, currentPos.y, currentPos.z]);
         }
-        if (onMoveComplete) onMoveComplete();
         return;
       }
 
@@ -255,7 +267,7 @@ const CharacterBody = forwardRef<
 
       // Check if target is reached
       if (distance < 0.01) {
-        console.log("📍 Reached target", currentPathIndex, ". Final position:", [target.x, target.y, currentPos.z]);
+        movementLog("📍 Reached target", currentPathIndex, ". Final position:", [target.x, target.y, currentPos.z]);
         // Snap to target position
         currentPos.x = target.x;
         currentPos.y = target.y;
@@ -266,7 +278,7 @@ const CharacterBody = forwardRef<
         setMovementState((prev) => ({ ...prev, isMoving: false }));
 
         if (currentOnComplete) {
-          console.log("✅ Calling stored onComplete callback after reaching target");
+          movementLog("✅ Calling stored onComplete callback after reaching target");
           currentOnComplete();
           setCurrentOnComplete(null);
         }
@@ -281,13 +293,15 @@ const CharacterBody = forwardRef<
         } else if (completedAnimation === CharacterAnimationType.WALK_RIGHT) {
           idleAnimation = CharacterAnimationType.IDLE_RIGHT;
         }
-        console.log("📍 Setting idle animation:", idleAnimation);
+        movementLog("📍 Setting idle animation:", idleAnimation);
         // --- End Idle Animation Fix --- 
         setAnimation?.(idleAnimation);
         
         setCurrentFrame(0);
         setFrameTimeAccumulator(0);
-        if (onMoveComplete) onMoveComplete();
+        if (setPosition) {
+          setPosition([currentPos.x, currentPos.y, currentPos.z]);
+        }
         return;
       }
 
@@ -303,7 +317,8 @@ const CharacterBody = forwardRef<
       
       const newPosition = currentPos.clone().add(movement);
       
-      console.log(`📍 Moving character. Delta: ${delta.toFixed(4)}, Speed: ${speed}, Target: [${target.x.toFixed(2)}, ${target.y.toFixed(2)}], Dist: ${distance.toFixed(4)}, Movement:`, [movement.x.toFixed(4), movement.y.toFixed(4)], "New Pos:", [newPosition.x.toFixed(4), newPosition.y.toFixed(4)]);
+      // Replace verbose movement log with conditional logging
+      movementLog(`📍 Moving character. Delta: ${delta.toFixed(4)}, Speed: ${speed}, Target: [${target.x.toFixed(2)}, ${target.y.toFixed(2)}], Dist: ${distance.toFixed(4)}, Movement:`, [movement.x.toFixed(4), movement.y.toFixed(4)], "New Pos:", [newPosition.x.toFixed(4), newPosition.y.toFixed(4)]);
       
       // Update state ONLY
       if (setPosition) {

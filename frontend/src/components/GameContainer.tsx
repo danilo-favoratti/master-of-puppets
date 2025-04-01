@@ -19,6 +19,16 @@ interface GameContainerProps {
   toolCalls: ToolCall[];
 }
 
+// Disable verbose logging
+const VERBOSE_LOGGING = false;
+
+// Helper function for conditional logging
+const log = (message: string, ...args: any[]) => {
+    if (VERBOSE_LOGGING) {
+        console.log(message, ...args);
+    }
+};
+
 const GameContainer = ({
   executeCommand,
   registerCommandHandler,
@@ -55,14 +65,14 @@ const GameContainer = ({
   // Log mapData changes from props
   useEffect(() => {
     if (mapData && isMapReady) {
-      console.log("MapData prop changed and ready:", mapData);
+      log("MapData prop changed and ready:", mapData);
       if (mapData.map && mapData.entities) {
         setGameData(mapData);
         setIsLoading(false);
         setMapInitialized(true);
-        console.log("Game initialized with valid map data from props");
+        log("Game initialized with valid map data from props");
       } else {
-        console.error(
+        log(
           "Received mapData prop is missing map or entities:",
           mapData
         );
@@ -74,55 +84,53 @@ const GameContainer = ({
   useEffect(() => {
     if (websocket) {
       const handleWebSocketMessage = (event: MessageEvent) => {
-        // Check if data is binary BEFORE parsing
-        if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-          console.log("GameContainer: Ignoring binary WebSocket message.");
-          return; // Don't try to parse binary data
-        }
-
-        try {
-          // Now it's safe to parse
-          const messageData = JSON.parse(event.data);
-          console.log("GameContainer received message:", messageData);
-          if (messageData.type === "map_created") {
-            console.log("Map created event received in GameContainer:", messageData);
-
-            if (
-              messageData.environment &&
-              messageData.entities &&
-              !messageData.environment.error &&
-              messageData.environment.grid
-            ) {
-              const newMapData: GameData = {
-                map: {
-                  width: messageData.environment.width,
-                  height: messageData.environment.height,
-                  grid: messageData.environment.grid,
-                },
-                entities: messageData.entities,
-              };
-
-              console.log(
-                "Valid map data received in WebSocket event, updating game:",
-                newMapData
-              );
-              setGameData(newMapData);
-              setIsLoading(false);
-              setMapInitialized(true);
-              setHasTriedGenerateWorld(false);
-            } else {
-              console.error(
-                "Received map_created event via WebSocket missing expected properties or contains error:",
-                messageData
-              );
+        if (typeof event.data === "string") {
+          try {
+            const message = JSON.parse(event.data);
+            if (VERBOSE_LOGGING) {
+              log("GameContainer received message:", message);
             }
+            if (message.type === "map_created") {
+              log("Map created event received in GameContainer:", message);
+
+              if (
+                message.environment &&
+                message.entities &&
+                !message.environment.error &&
+                message.environment.grid
+              ) {
+                const newMapData: GameData = {
+                  map: {
+                    width: message.environment.width,
+                    height: message.environment.height,
+                    grid: message.environment.grid,
+                  },
+                  entities: message.entities,
+                };
+
+                log(
+                  "Valid map data received in WebSocket event, updating game:",
+                  newMapData
+                );
+                setGameData(newMapData);
+                setIsLoading(false);
+                setMapInitialized(true);
+                setHasTriedGenerateWorld(false);
+              } else {
+                log(
+                  "Received map_created event via WebSocket missing expected properties or contains error:",
+                  message
+                );
+              }
+            }
+          } catch (error) {
+            log("GameContainer Error parsing WebSocket message:", error);
           }
-        } catch (error) {
-          // Log parsing errors for non-binary data
-          console.error(
-            "GameContainer Error parsing WebSocket message:",
-            error
-          );
+        } else if (event.data instanceof ArrayBuffer) {
+          // Handle binary messages (audio)
+          if (VERBOSE_LOGGING) {
+            log("GameContainer: Ignoring binary WebSocket message.");
+          }
         }
       };
 
@@ -138,15 +146,15 @@ const GameContainer = ({
   useEffect(() => {
     // Don't do anything if we already have good map data
     if (mapInitialized) {
-      console.log("Map already initialized, no need to generate world");
+      log("Map already initialized, no need to generate world");
       return;
     }
 
     if (localMapData) {
-      console.log("Processing localMapData:", localMapData);
+      log("Processing localMapData:", localMapData);
 
       if (localMapData.error) {
-        console.error("Map data error detected:", localMapData.error);
+        log("Map data error detected:", localMapData.error);
 
         // Only try to generate world once to prevent infinite loops
         if (
@@ -154,7 +162,7 @@ const GameContainer = ({
           websocket &&
           websocket.readyState === WebSocket.OPEN
         ) {
-          console.log("Attempting to generate world (first attempt)");
+          log("Attempting to generate world (first attempt)");
           websocket.send(
             JSON.stringify({
               type: "text",
@@ -166,7 +174,7 @@ const GameContainer = ({
           // Since we're waiting for the server, show loading indicator
           setIsLoading(true);
         } else if (hasTriedGenerateWorld) {
-          console.log(
+          log(
             "Already attempted to generate world, showing fallback data"
           );
           // After one attempt, use fallback data to avoid blocking UI
@@ -179,7 +187,7 @@ const GameContainer = ({
         }
       } else if (localMapData) {
         // We have valid map data
-        console.log("Valid map data found in localMapData");
+        log("Valid map data found in localMapData");
         setIsLoading(false);
         setMapInitialized(true);
       }
@@ -194,7 +202,7 @@ const GameContainer = ({
       websocket &&
       websocket.readyState === WebSocket.OPEN
     ) {
-      console.log("Initial mount - requesting map generation");
+      log("Initial mount - requesting map generation");
       websocket.send(
         JSON.stringify({
           type: "text",
@@ -206,7 +214,7 @@ const GameContainer = ({
     }
   }, [websocket, hasTriedGenerateWorld, mapInitialized]);
 
-  console.log("gameData", gameData);
+  log("gameData", gameData);
   return (
     <div className="relative w-full h-full">
       {isLoading ? (

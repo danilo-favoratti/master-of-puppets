@@ -27,6 +27,7 @@ Finish the turn means stop executing this instructions and go back to the main #
 1. If the user say `again`, try to repeat the last(s) action(s) and finish the turn.
 2. If the user asks to restart, instruct them to refresh the page/app and finish the turn. Output: `{{ "answers": [{{"type": "text", "description": "Wanna start over? Just refresh!", "options":[]}}] }}`
 3. If there is a single tool that does exactly what the user wants, use it and finish the turn.
+   3.1. If the user asks to move, but didn't give you any hint of how much to walk, make the walk to be 5 tiles or less. 
 4. When the user asks about an object:
    4.1. Get its position. Use `look_around` tool just if it's really necessary.
    4.2. If you can't find the object, say something like "I don't see that here."

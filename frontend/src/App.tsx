@@ -26,6 +26,19 @@ let globalSocketInitialized = false;
 let hasLoggedConnection = false;
 let globalWelcomeReceived = false;
 
+// In App.tsx or where WebSocket is created, add a simple connection counter
+let connectionCount = 0;
+
+// Enable or disable verbose logging
+const VERBOSE_LOGGING = false;
+
+// Helper function for conditional logging
+const log = (message: string, ...args: any[]) => {
+    if (VERBOSE_LOGGING) {
+        console.log(message, ...args);
+    }
+};
+
 // Helper function to parse JSON from string
 const tryParseJsonInString = (text: string) => {
     try {
@@ -35,8 +48,10 @@ const tryParseJsonInString = (text: string) => {
             return JSON.parse(text);
         }
     } catch (e) {
-        // If parsing fails, it's not valid JSON
-        console.log("Not valid JSON in message:", e);
+        // Don't log parsing errors in normal operation
+        if (VERBOSE_LOGGING) {
+            console.log("Not valid JSON in message:", e);
+        }
     }
     return null;
 };
@@ -97,6 +112,10 @@ function App() {
 
     // Connect to backend WebSocket
     useEffect(() => {
+        if (VERBOSE_LOGGING) {
+            console.log(`Creating WebSocket connection #${++connectionCount}`);
+        }
+        
         const connectWebSocket = () => {
             console.log("WEBSOCKET: Connecting at:", WS_URL);
             const newSocket = new WebSocket(WS_URL);
@@ -136,7 +155,12 @@ function App() {
                 try {
                     // Try to parse JSON message
                     const data = JSON.parse(event.data);
-                    console.log("WEBSOCKET: Received message:", data);
+                    if (VERBOSE_LOGGING) {
+                        console.log("WEBSOCKET: Received message:", data);
+                    } else if (data.type === "error") {
+                        // Always log errors
+                        console.error("WEBSOCKET: Received error:", data);
+                    }
 
                     // Check for tool call and track it
                     if (data.type === "command" && data.name && data.params) {
@@ -153,7 +177,9 @@ function App() {
                       // Add to tool calls state
                       setToolCalls(prev => [newToolCall, ...prev].slice(0, 50)); // Keep only most recent 50
 
-                      console.log("Tool call tracked:", newToolCall);
+                      if (VERBOSE_LOGGING) {
+                        console.log("Tool call tracked:", newToolCall);
+                      }
                     }
 
                     // Handle different message types
@@ -218,7 +244,7 @@ function App() {
                         // --- Command Queue Logic ---
                         // Add animation commands to the queue instead of executing directly
                         if (["move", "move_step", "jump"].includes(data.name)) {
-                            console.log(`📬 Queuing command: ${data.name}`);
+                            log(`📬 Queuing command: ${data.name}`);
                             const newCommand: QueuedCommand = {
                                 id: `${data.name}-${Date.now()}`,
                                 name: data.name,
@@ -234,7 +260,7 @@ function App() {
                         } else if (data.name === "create_map") {
                             // Handle map creation immediately (not an animation)
                             if (data.map_data && data.map_data.grid) {
-                                console.log("Processing create_map command with map_data:", data.map_data);
+                                log("Processing create_map command with map_data:", data.map_data);
                                 const newMapData: GameData = {
                                     map: {
                                         width: data.map_data.width,
@@ -258,7 +284,7 @@ function App() {
                             }
                         } else {
                             // Execute other non-animation commands directly
-                            console.log(`🚀 Executing non-animation command directly: ${data.name}`);
+                            log(`🚀 Executing non-animation command directly: ${data.name}`);
                             if (data.result) {
                                 addMessage(data.result, data.sender || "system");
                             }
@@ -321,34 +347,23 @@ function App() {
             }
 
             const commandToProcess = commandQueue[0];
-            console.log(`⚙️ Dequeuing command: ${commandToProcess.name} (ID: ${commandToProcess.id})`);
+            log(`⚙️ Dequeuing command: ${commandToProcess.name} (ID: ${commandToProcess.id})`);
             setIsProcessingAnimation(true);
-            // Remove command immediately visually? Or wait until onComplete?
-            // Let's wait until onComplete to be safer in case of immediate errors.
-            // setCommandQueue((prev) => prev.slice(1)); // Moved to onComplete
 
             // Define the completion callback
             const onComplete = () => {
-                console.log(`✅ Animation complete for command: ${commandToProcess.name} (ID: ${commandToProcess.id})`);
+                log(`✅ Animation complete for command: ${commandToProcess.name} (ID: ${commandToProcess.id})`);
                 
                 // --- Remove the completed command from the queue --- 
                 setCommandQueue((prevQueue) => 
                     prevQueue.filter((cmd) => cmd.id !== commandToProcess.id)
                 );
-                // Use filter by ID for robustness in case queue order changes unexpectedly
-                // Or simply: setCommandQueue((prevQueue) => prevQueue.slice(1)); if order is guaranteed.
-                // Let's use slice(1) assuming order is maintained for simplicity.
-                // setCommandQueue((prevQueue) => prevQueue.slice(1)); 
-                // --- End Command Removal --- 
                 
                 setIsProcessingAnimation(false);
                 if (processingTimeoutRef.current) {
                     clearTimeout(processingTimeoutRef.current);
                     processingTimeoutRef.current = null;
                 }
-                // Trigger processing the next command *after* state updates
-                // Using setTimeout ensures state has time to update - this is generally okay
-                // setTimeout(processNextCommand, 0); // Replaced by direct call below
             };
             
             // Set a timeout for the animation
@@ -372,8 +387,6 @@ function App() {
         };
 
         // Trigger processing if not busy and queue has items
-        // This structure means processNextCommand is called whenever 
-        // isProcessingAnimation becomes false AND commandQueue.length > 0
         if (!isProcessingAnimation && commandQueue.length > 0) {
             processNextCommand();
         }
@@ -389,14 +402,14 @@ function App() {
 
     // Reset thinking state on component mount
     useEffect(() => {
-        console.log("Resetting thinking state on App mount");
+        log("Resetting thinking state on App mount");
         setIsThinking(false);
     }, []);
 
     // Update the handleServerMessage function to handle 'info' message type
     const handleServerMessage = (data: any) => {
         setIsWaitingForResponse(false);
-        console.log("Received server message:", data);
+        log("Received server message:", data);
 
         try {
             // Handle different message types
@@ -436,7 +449,7 @@ function App() {
                     break;
 
                 case "info":
-                    console.log("Info message received:", data.content);
+                    log("Info message received:", data.content);
                     // Add to messages if it's informative to the user
                     if (data.content && data.content.includes("Map created")) {
                         addMessage("Map created and ready for exploration!", "system");
@@ -454,7 +467,7 @@ function App() {
                     break;
 
                 default:
-                    console.log(`Received unhandled message type: ${data.type}`);
+                    log(`Received unhandled message type: ${data.type}`);
                     break;
             }
         } catch (err) {
@@ -519,7 +532,7 @@ function App() {
               content.includes("jumped") ||
               content.includes("pushed") ||
               content.includes("pulled")))) {
-            console.log("Filtered out tool message from chat:", content);
+            log("Filtered out tool message from chat:", content);
             return; // Skip adding this message to the chat
         }
 
@@ -553,21 +566,15 @@ function App() {
         }
     };
 
-    // Execute a command (NOW ACCEPTS onComplete callback)
-    // Ensure this function signature matches where it's called
+    // Execute a command
     const executeCommand = useCallback((commandName: string, result: string, params: any, onComplete: () => void) => {
-        console.log(`🚀 executeCommand called with:`, {
-            commandName,
-            params,
-            hasCharacterRef: !!characterRef.current,
-            hasHandler: !!gameCommandHandlerRef.current
-        });
+        log(`🚀 executeCommand called:`, { commandName, params });
         
         if (gameCommandHandlerRef.current) {
             try {
-                console.log(`🚀 Forwarding command to gameCommandHandler: ${commandName}`);
+                log(`🚀 Forwarding command to gameCommandHandler: ${commandName}`);
                 gameCommandHandlerRef.current(commandName, result, params, onComplete);
-                console.log(`🚀 Command forwarded successfully to Game.tsx`);
+                log(`🚀 Command forwarded successfully to Game.tsx`);
             } catch (error) {
                 console.error(`Error forwarding command ${commandName}:`, error);
                 onComplete();
@@ -583,14 +590,7 @@ function App() {
         setIsChatVisible(!isChatVisible);
     };
 
-    // Fix the map generation function to use the correct format "generate_world"
-    // THIS FUNCTION IS NO LONGER NEEDED FOR MAP GEN - THEME SELECTION HANDLES IT.
-    // const requestMapGeneration = (theme: string) => {
-    //     // ... existing implementation ...
-    // };
-
     // Helper function to actually send the map request - NOW SENDS THEME
-    // Renamed for clarity
     const sendThemeSelection = (theme: string) => {
         // Safety check again to make sure socket exists
         if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -684,9 +684,6 @@ function App() {
         );
     }
 
-    // Log toolCalls state before rendering
-    console.log("🔧 Rendering App, toolCalls state:", toolCalls);
-
     return (
         <div className="flex flex-col h-screen">
             <GameContainer
@@ -698,13 +695,17 @@ function App() {
                 websocket={socket}
                 toolCalls={toolCalls}
             />
-            <Chat
-                messages={messages}
-                sendTextMessage={sendTextMessage}
-                isThinking={isThinking}
-                isConnected={isConnected}
-                websocket={socket}
-            />
+            {/* Chat container with increased width */}
+            <div className="relative" style={{ width: "115%", maxWidth: "115%", margin: "0 auto" }}>
+                <Chat
+                    messages={messages}
+                    sendTextMessage={sendTextMessage}
+                    isThinking={isThinking}
+                    isConnected={isConnected}
+                    websocket={socket}
+                    isMapReady={isMapReady}
+                />
+            </div>
             <ToolsMenu toolCalls={toolCalls} />
         </div>
     );
