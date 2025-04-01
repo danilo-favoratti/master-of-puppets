@@ -94,7 +94,7 @@ This document explains the structure of the source code for various game objects
 }
 
 {
-  "type": "pot", "possible_states": ["default", "breaking", "broken"], "possible_actions": ["fill", "empty", "cook", "examine"],
+  "type": "pot", "possible_states": ["default", "breaking", "broken"], "possible_actions": ["get", "cook", "examine"],
   "variants": ["small", "medium", "big"], "can_be_at_water": True, "can_be_at_land": True, "might_be_movable": True,
   "might_be_jumpable": False, "might_be_used_alone": True, "is_container": True, "is_collectable": False, "is_wearable": False
 }
@@ -106,25 +106,25 @@ This document explains the structure of the source code for various game objects
 }
 
 {
-  "type": "bedroll", "possible_states": ["rolled", "unrolled"], "possible_actions": ["sleep", "roll", "unroll"],
+  "type": "bedroll", "possible_states": ["rolled", "unrolled"], "possible_actions": [],
   "variants": ["basic", "comfort", "luxury"], "can_be_at_water": False, "can_be_at_land": True, "might_be_movable": True,
   "might_be_jumpable": False, "might_be_used_alone": True, "is_container": False, "is_collectable": True, "is_wearable": False
 }
 
 {
-  "type": "firewood", "possible_states": ["dry", "wet", "burning"], "possible_actions": ["collect", "burn", "stack"],
+  "type": "firewood", "possible_states": ["dry", "wet", "burning"], "possible_actions": ["add_to_inventory", "burn", "stack"],
   "variants": ["branch", "log", "kindling"], "can_be_at_water": False, "can_be_at_land": True, "might_be_movable": True,
   "might_be_jumpable": False, "might_be_used_alone": True, "is_container": False, "is_collectable": True, "is_wearable": False
 }
 
 {
-  "type": "log_stool", "possible_states": ["default", "occupied"], "possible_actions": ["sit", "stand", "move"],
+  "type": "log_stool", "possible_states": ["default", "occupied"], "possible_actions": [],
   "variants": ["small", "medium", "large"], "can_be_at_water": False, "can_be_at_land": True, "might_be_movable": True,
   "might_be_jumpable": False, "might_be_used_alone": True, "is_container": False, "is_collectable": False, "is_wearable": False
 }
 
 {
-  "type": "obstacle", "possible_states": ["default", "broken", "moved"], "possible_actions": ["examine", "break", "climb", "jump"],
+  "type": "obstacle", "possible_states": ["default", "broken", "moved"], "possible_actions": ["examine", "break", "jump"],
   "variants": ["rock", "plant", "log", "stump", "hole", "tree"], "can_be_at_water": True, "can_be_at_land": True, "might_be_movable": True,
   "might_be_jumpable": True, "might_be_used_alone": True, "is_container": False, "is_collectable": False, "is_wearable": False
 }
