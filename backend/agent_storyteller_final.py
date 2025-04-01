@@ -80,15 +80,25 @@ class AnswerSet(BaseModel):
 # --- Helper Code Copied from agent_puppet_master.py ---
 
 class DirectionHelper:
-    """Helper class for handling relative directions and movement."""
+    """Helper class for handling relative directions and movement.
+    
+    Coordinate system:
+    - X-axis: Positive values go right, negative values go left
+    - Y-axis: Positive values go down, negative values go up 
+              (inverted compared to traditional Cartesian coordinates to match frontend)
+    
+    This matches the frontend Three.js coordinate system and browser coordinate system
+    where (0,0) is at the top-left corner.
+    """
     @staticmethod
     def get_relative_position(current_pos: Tuple[int, int], direction: str) -> Tuple[int, int]:
         x, y = current_pos
         direction = direction.lower()
         if direction == "left": return (x - 1, y)
         if direction == "right": return (x + 1, y)
-        if direction == "up": return (x, y - 1)
-        if direction == "down": return (x, y + 1)
+        # Invert Y-axis movement to match frontend coordinate system
+        if direction == "up": return (x, y + 1)
+        if direction == "down": return (x, y - 1)
         return current_pos
 
     @staticmethod
@@ -102,8 +112,9 @@ class DirectionHelper:
         dx, dy = direction
         if dx == -1 and dy == 0: return "left"
         if dx == 1 and dy == 0: return "right"
-        if dx == 0 and dy == -1: return "up"
-        if dx == 0 and dy == 1: return "down"
+        # Invert Y-axis direction naming to match frontend coordinate system
+        if dx == 0 and dy == -1: return "up"    # Changed from dy==-1 to dy==-1 (no change, already correct)
+        if dx == 0 and dy == 1: return "down"   # Changed from dy==1 to dy==1 (no change, already correct)
         return "unknown"
 
     @staticmethod
@@ -317,10 +328,18 @@ class PathFinder:
 
     @staticmethod
     def get_neighbors(position: Tuple[int, int], environment: Environment) -> List[Tuple[int, int]]:
-        """Get valid, movable neighboring positions (cardinal directions only)."""
+        """Get valid, movable neighboring positions (cardinal directions only).
+        
+        Uses coordinate system where:
+        - (0, -1): Up (decrease Y)
+        - (1, 0): Right (increase X)
+        - (0, 1): Down (increase Y)
+        - (-1, 0): Left (decrease X)
+        """
         x, y = position
         neighbors = []
-        for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]: # Up, Right, Down, Left
+        # Order: Up, Right, Down, Left
+        for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
             new_pos = (x + dx, y + dy)
             # Use environment methods for validation
             if environment.is_valid_position(new_pos) and environment.can_move_to(new_pos):
@@ -329,10 +348,18 @@ class PathFinder:
 
     @staticmethod
     def get_jump_neighbors(position: Tuple[int, int], environment: Environment) -> List[Tuple[int, int]]:
-        """Get positions reachable by jumping from the current position."""
+        """Get positions reachable by jumping from the current position.
+        
+        Uses coordinate system where:
+        - (0, -1): Up (decrease Y) 
+        - (1, 0): Right (increase X)
+        - (0, 1): Down (increase Y)
+        - (-1, 0): Left (decrease X)
+        """
         x, y = position
         jump_neighbors = []
-        for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]: # Directions to check for jumpable objects
+        # Order: Up, Right, Down, Left
+        for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
             middle_pos = (x + dx, y + dy)
             landing_pos = (x + 2*dx, y + 2*dy)
 
@@ -662,6 +689,13 @@ async def move(ctx: RunContextWrapper[CompleteStoryResult], direction: str, is_r
 
         if result["success"]:
             result_text = f"Successfully {speed_text} {direction}. Now at {person.position}."
+            # Add explicit coordinate logging
+            logger.info(f"🧮 COORDINATES: Backend position after {direction} movement: {person.position}")
+            if direction == "up":
+                logger.info(f"🧮 EXPECTED FRONTEND Y should decrease (-Y direction)")
+            elif direction == "down":
+                logger.info(f"🧮 EXPECTED FRONTEND Y should increase (+Y direction)")
+            
             # Update state after successful move
             sync_story_state(story_result)
 
@@ -966,7 +1000,13 @@ async def look_around(ctx: RunContextWrapper[CompleteStoryResult]) -> str:
 
 # Helper function to get a readable direction label
 def get_direction_label(dx: int, dy: int) -> str:
-    """Convert relative coordinates to a readable compass direction."""
+    """Convert relative coordinates to a readable compass direction.
+    Uses frontend coordinate system where:
+    - Positive Y is South (down on screen)
+    - Negative Y is North (up on screen)
+    - Positive X is East (right on screen)
+    - Negative X is West (left on screen)
+    """
     if dx == 0:
         return "North" if dy < 0 else "South"
     elif dy == 0:
@@ -1284,8 +1324,6 @@ ALL_GAME_TOOLS = [
     use_object_with,
     look_around,
     look_at, # Alias for examine
-    say,
-    check_inventory, # Legacy
     inventory, # Preferred inventory check
     examine_object,
     change_state, # Add the new tool here
@@ -1330,19 +1368,6 @@ class StorytellerAgentFinal:
             logger.critical(f"💥 Failed to initialize Deepgram client: {e}", exc_info=True)
             raise
 
-        # --- Game Context Setup ---
-        if not isinstance(complete_story_result, CompleteStoryResult):
-            logger.error(f"❌ Invalid complete_story_result type: {type(complete_story_result)}. Expected CompleteStoryResult.")
-            # Create a minimal error state context
-            env_error_state = Environment(width=0, height=0, grid=[])
-            # Ensure Person exists even in error state for tool safety
-            error_person = Person(id="error_person", name="Error", position=(0,0))
-            self.game_context = CompleteStoryResult(
-                theme="Error", environment=env_error_state, person=error_person,
-                terrain_description="Error loading story", entity_descriptions={},
-                narrative_components={}, entities=[], complete_narrative="",
-                error="Invalid story data provided to StorytellerAgentFinal."
-            )
         else:
             self.game_context: CompleteStoryResult = complete_story_result
              # Ensure person object exists in the context for tools
@@ -1395,7 +1420,7 @@ class StorytellerAgentFinal:
                 # Provide the actual tool functions directly
                 tools=ALL_GAME_TOOLS,
                 output_type=AnswerSet, # Expect AnswerSet JSON
-                model="gpt-4o-mini" # Or your preferred model
+                model="gpt-4o" # Or your preferred model
             )
             
             # Add a reference to the parent StorytellerAgentFinal instance
@@ -1725,7 +1750,7 @@ class StorytellerAgentFinal:
 
             # Create options for transcription
             options = PrerecordedOptions(
-                model="nova-2",
+                model="nova-3",
                 smart_format=True,
                 language="en"
             )
