@@ -1132,7 +1132,7 @@ async def examine_object(ctx: RunContextWrapper[CompleteStoryResult], object_id:
 
 # --- ADDED NEW TOOL: changeState --- 
 @function_tool
-async def changeState(ctx: RunContextWrapper[CompleteStoryResult], object_id: str, new_state: str) -> str:
+async def change_state(ctx: RunContextWrapper[CompleteStoryResult], object_id: str, new_state: str) -> str:
     """Change the state of a specified object (by object_id) to a new state.
     Use this as a fallback tool for actions that modify an object's condition when no other specific tool applies.
     Examples: 'light campfire', 'extinguish torch', 'open box', 'close door', 'unlock chest'.
@@ -1288,7 +1288,7 @@ ALL_GAME_TOOLS = [
     check_inventory, # Legacy
     inventory, # Preferred inventory check
     examine_object,
-    changeState, # Add the new tool here
+    change_state, # Add the new tool here
     # Temporarily remove this tool until we fix the schema issue
     # execute_movement_sequence,
     # move_continuously # Covered by move(continuous=True)
@@ -1714,35 +1714,41 @@ class StorytellerAgentFinal:
         
         if not self.deepgram_client:
             raise ValueError("Deepgram client not initialized")
-            
+
         try:
+            # --- MODIFICATION: Moved imports inside the function --- 
             from deepgram import (
                 PrerecordedOptions,
                 FileSource
             )
-            
+            # --- END MODIFICATION --- 
+
             # Create options for transcription
             options = PrerecordedOptions(
                 model="nova-2",
                 smart_format=True,
                 language="en"
             )
-            
+
             # Generate buffer source from bytes
-            source = FileSource(buffer=audio_data)
-            
+            source: FileSource = {"buffer": audio_data} # Use dict literal as per Deepgram SDK docs
+
             # Get transcription response
-            response = await self.deepgram_client.listen.prerecorded.v("1").transcribe_file(source, options)
-            
+            # --- MODIFICATION: Removed await as transcribe_file seems synchronous here ---
+            response = self.deepgram_client.listen.prerecorded.v("1").transcribe_file(source, options)
+            # --- END MODIFICATION ---
+
             # Extract transcript from response
-            if hasattr(response, 'results') and hasattr(response.results, 'channels') and len(response.results.channels) > 0:
+            if response and hasattr(response, 'results') and hasattr(response.results, 'channels') and len(response.results.channels) > 0:
                 transcript = response.results.channels[0].alternatives[0].transcript
+                logger.info(f"  Deepgram Transcript: '{transcript}'")
                 return transcript if transcript else ""
             else:
                 logger.warning("No transcript found in Deepgram response")
+                logger.debug(f"Deepgram full response: {response}")
                 return ""
         except Exception as e:
-            logger.error(f"Error transcribing audio: {e}", exc_info=True)
+            logger.error(f"Error transcribing audio with Deepgram: {e}", exc_info=True)
             raise ValueError(f"Audio transcription failed: {e}")
 
     async def send_command_to_frontend(self, command_name: str, command_params: Dict[str, Any], result: str = None) -> bool:
