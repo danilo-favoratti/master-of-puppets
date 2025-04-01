@@ -252,7 +252,7 @@
   },
   "entities": [
     {
-      "id": "chest_basic_wooden",
+      "id": "chest_basic_wooden1",
       "type": "chest",
       "name": "Basic Wooden Chest",
       "position": {
@@ -567,7 +567,7 @@
       "possible_actions": ["sleep"]
     },
     {
-      "id": "bedroll_standard_7524",
+      "id": "bedroll_standard_75w24",
       "type": "bedroll",
       "name": "Bedroll",
       "position": {
@@ -627,7 +627,7 @@
       "possible_actions": []
     },
     {
-      "id": "campfire_unlit_6122",
+      "id": "campfire_unlit_612s22",
       "type": "campfire",
       "name": "Unlit Campfire",
       "position": {
