@@ -15,8 +15,15 @@ import CharacterHair from "./CharacterHair";
 import CharacterHat from "./CharacterHat";
 import CharacterOutfit from "./CharacterOutfit";
 
+// Define the type for the ref methods including steps
+export interface CharacterRefMethods {
+  moveAlongPath: (path: Position[]) => void;
+  move: (direction: string, steps?: number, onComplete?: () => void) => void;
+}
+
 const CharacterBody = forwardRef<
-  { moveAlongPath: (path: Position[]) => void; move: (direction: string) => void },
+  // Use the defined type here
+  CharacterRefMethods,
   CharacterBodyProps
 >(
   (
@@ -38,6 +45,7 @@ const CharacterBody = forwardRef<
     ref
   ) => {
     const meshRef = useRef<THREE.Mesh>(null);
+    const [currentOnComplete, setCurrentOnComplete] = useState<(() => void) | null>(null);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const [currentFrame, setCurrentFrame] = useState(0);
     const [frameTimeAccumulator, setFrameTimeAccumulator] = useState(0);
@@ -110,114 +118,125 @@ const CharacterBody = forwardRef<
       texture.offset.set(col / cols, 1 - (row + 1) / rows);
     };
 
-    // Expor moveAlongPath através da ref
-    useImperativeHandle(ref, () => ({
+    // Update useImperativeHandle to match the new move signature
+    useImperativeHandle(ref, (): CharacterRefMethods => ({
       moveAlongPath: (path: Position[]) => {
+        setCurrentOnComplete(null); // Clear any pending move callbacks
         setMovementState({
           path,
           currentPathIndex: 0,
           isMoving: true,
         });
       },
-      // Add move method to handle direction-based movement
-      move: (direction: string) => {
-        // Get current position
-        if (!meshRef.current) {
-          console.error("📍 Move failed: meshRef.current is null");
-          return;
-        }
+      // Update move method signature here
+      move: (direction: string, steps: number = 1, onComplete?: () => void) => {
+        console.log(`📍 CharacterBody.move called with direction: ${direction}, steps: ${steps}`);
+        setCurrentOnComplete(() => onComplete || null);
+
+        // --- Use logical position prop for calculation --- 
+        // Instead of: const currentPos = meshRef.current.position;
+        const currentLogicalX = position[0];
+        const currentLogicalY = position[1];
+        const currentZ = position[2] || 0.03; // Use prop Z or default
         
-        console.log("📍 CharacterBody.move called with direction:", direction);
-        
-        const currentPos = meshRef.current.position;
-        console.log("📍 Current position:", [currentPos.x, currentPos.y, currentPos.z]);
-        
-        let targetX = currentPos.x;
-        let targetY = currentPos.y;
-        
-        // Calculate target position based on direction
-        switch(direction.toLowerCase()) {
+        console.log("📍 Current logical position:", [currentLogicalX, currentLogicalY, currentZ]);
+
+        let targetX = currentLogicalX;
+        let targetY = currentLogicalY;
+        // --- End position change ---
+
+        // Calculate target offset based on direction and steps
+        switch (direction.toLowerCase()) {
           case 'up':
-            targetY += 1;
+            console.log("📍 MOVE HITTING 'UP'");
+            targetY += steps;
             break;
           case 'down':
-            targetY -= 1;
+            console.log("📍 MOVE HITTING 'DOWN'");
+            targetY -= steps;
             break;
           case 'left':
-            targetX -= 1;
+            console.log("📍 MOVE HITTING 'LEFT'");
+            targetX -= steps;
             break;
           case 'right':
-            targetX += 1;
+            console.log("📍 MOVE HITTING 'RIGHT'");
+            targetX += steps;
             break;
           default:
             console.warn(`Unknown direction: ${direction}`);
+            setCurrentOnComplete(null);
+            onComplete?.();
             return;
         }
         
-        console.log("📍 Target position:", [targetX, targetY, currentPos.z]);
-        
-        // Create a path with just the target position
-        const path: Position[] = [{ x: targetX, y: targetY }];
-        
+        const targetPosition = { x: targetX, y: targetY };
+        // Use currentZ for the target log
+        console.log("📍 Final target position calculated:", [targetPosition.x, targetPosition.y, currentZ]);
+
+        const path: Position[] = [targetPosition];
+
         // Set animation based on direction
         let newAnimation: CharacterAnimationType;
         switch(direction.toLowerCase()) {
-          case 'up':
-            newAnimation = CharacterAnimationType.WALK_UP;
-            break;
-          case 'down':
-            newAnimation = CharacterAnimationType.WALK_DOWN;
-            break;
-          case 'left':
-            newAnimation = CharacterAnimationType.WALK_LEFT;
-            break;
-          case 'right':
-            newAnimation = CharacterAnimationType.WALK_RIGHT;
-            break;
-          default:
-            newAnimation = CharacterAnimationType.WALK_DOWN;
+          case 'up': newAnimation = CharacterAnimationType.WALK_UP; break;
+          case 'down': newAnimation = CharacterAnimationType.WALK_DOWN; break;
+          case 'left': newAnimation = CharacterAnimationType.WALK_LEFT; break;
+          case 'right': newAnimation = CharacterAnimationType.WALK_RIGHT; break;
+          default: newAnimation = CharacterAnimationType.WALK_DOWN;
         }
         
-        // Update animation
-        console.log("📍 Setting animation to:", newAnimation);
+        // --- Store the intended animation for the whole move --- 
+        animationRef.current = newAnimation; // Update the ref directly
+        console.log("📍 Setting animation ref to:", newAnimation);
         if (setAnimation) {
+          // Also update the state to trigger immediate visual change if needed
           setAnimation(newAnimation);
         }
-        
-        // Use moveAlongPath to handle the movement
-        console.log("📍 Setting movement state with path:", path);
+        // --- End animation change ---
+
+        console.log("📍 Setting movement state with final path:", path);
         setMovementState({
           path,
           currentPathIndex: 0,
           isMoving: true,
         });
-      }
+      },
     }));
 
     // Update movement in the animation frame
     useFrame((_, delta) => {
       if (!meshRef.current || !movementState.isMoving) return;
 
-      const currentPos = meshRef.current.position;
+      const currentPos = meshRef.current.position; // Still use live position for animation
       const currentPathIndex = movementState.currentPathIndex;
 
-      if (currentPathIndex >= movementState.path.length) {
-        console.log("📍 Movement complete - reached end of path");
+      if (!movementState.path || currentPathIndex >= movementState.path.length) {
+        // This case should ideally be hit when path is completed
+        console.log("📍 Movement complete - path index out of bounds or path empty");
         setMovementState((prev) => ({ ...prev, isMoving: false }));
-        
-        // Determine which idle animation to use based on current animation
-        const currentAnimation = animationRef.current;
-        let idleAnimation = CharacterAnimationType.IDLE_DOWN;
-        
-        if (currentAnimation === CharacterAnimationType.WALK_UP) {
-          idleAnimation = CharacterAnimationType.IDLE_UP;
-        } else if (currentAnimation === CharacterAnimationType.WALK_LEFT) {
-          idleAnimation = CharacterAnimationType.IDLE_LEFT;
-        } else if (currentAnimation === CharacterAnimationType.WALK_RIGHT) {
-          idleAnimation = CharacterAnimationType.IDLE_RIGHT;
+
+        // --- Call the stored onComplete callback --- 
+        if (currentOnComplete) {
+            console.log("✅ Calling stored onComplete callback");
+            currentOnComplete();
+            setCurrentOnComplete(null); // Clear after calling
         }
+        // --- End onComplete call ---
+
+        // --- Fix Idle Animation Logic --- 
+        const completedAnimation = animationRef.current;
+        let idleAnimation = CharacterAnimationType.IDLE_DOWN;
+        if (completedAnimation === CharacterAnimationType.WALK_UP) {
+          idleAnimation = CharacterAnimationType.IDLE_UP;
+        } else if (completedAnimation === CharacterAnimationType.WALK_LEFT) {
+          idleAnimation = CharacterAnimationType.IDLE_LEFT;
+        } else if (completedAnimation === CharacterAnimationType.WALK_RIGHT) {
+          idleAnimation = CharacterAnimationType.IDLE_RIGHT;
+        } // Defaults to IDLE_DOWN otherwise
         
         console.log("📍 Setting idle animation:", idleAnimation);
+        // --- End Idle Animation Fix ---
         setAnimation?.(idleAnimation);
         
         setCurrentFrame(0);
@@ -230,66 +249,65 @@ const CharacterBody = forwardRef<
       }
 
       const target = movementState.path[currentPathIndex];
+      // Ensure Z position is maintained correctly if needed
       const targetPos = new THREE.Vector3(target.x, target.y, currentPos.z);
       const distance = currentPos.distanceTo(targetPos);
 
-      // Determinar a direção do movimento e atualizar a animação
-      const dx = targetPos.x - currentPos.x;
-      const dy = targetPos.y - currentPos.y;
-
-      // Determinar a direção predominante e atualizar a animação global
-      let newAnimation: CharacterAnimationType;
-      if (Math.abs(dx) > Math.abs(dy)) {
-        // Movimento horizontal
-        if (dx > 0) {
-          newAnimation = CharacterAnimationType.WALK_RIGHT;
-        } else {
-          newAnimation = CharacterAnimationType.WALK_LEFT;
-        }
-      } else {
-        // Movimento vertical
-        if (dy > 0) {
-          newAnimation = CharacterAnimationType.WALK_UP;
-        } else {
-          newAnimation = CharacterAnimationType.WALK_DOWN;
-        }
-      }
-
-      // Atualizar a animação apenas se mudou
-      if (newAnimation !== animationRef.current) {
-        console.log("📍 Updating animation during movement:", newAnimation);
-        animationRef.current = newAnimation;
-        if (setAnimation) {
-          setAnimation(newAnimation);
-        }
-        // Reset frame time accumulator to start the animation from the beginning
-        setFrameTimeAccumulator(0);
-        setCurrentFrame(0);
-      }
-
-      if (distance < 0.1) {
-        console.log("📍 Reached target", currentPathIndex, "moving to next target");
+      // Check if target is reached
+      if (distance < 0.01) {
+        console.log("📍 Reached target", currentPathIndex, ". Final position:", [target.x, target.y, currentPos.z]);
+        // Snap to target position
+        currentPos.x = target.x;
+        currentPos.y = target.y;
         if (setPosition) {
           setPosition([target.x, target.y, currentPos.z]);
         }
-        setMovementState((prev) => ({
-          ...prev,
-          currentPathIndex: prev.currentPathIndex + 1,
-        }));
+        
+        setMovementState((prev) => ({ ...prev, isMoving: false }));
+
+        if (currentOnComplete) {
+          console.log("✅ Calling stored onComplete callback after reaching target");
+          currentOnComplete();
+          setCurrentOnComplete(null);
+        }
+
+        // --- Fix Idle Animation Logic (Copied from above block) --- 
+        const completedAnimation = animationRef.current;
+        let idleAnimation = CharacterAnimationType.IDLE_DOWN;
+        if (completedAnimation === CharacterAnimationType.WALK_UP) {
+          idleAnimation = CharacterAnimationType.IDLE_UP;
+        } else if (completedAnimation === CharacterAnimationType.WALK_LEFT) {
+          idleAnimation = CharacterAnimationType.IDLE_LEFT;
+        } else if (completedAnimation === CharacterAnimationType.WALK_RIGHT) {
+          idleAnimation = CharacterAnimationType.IDLE_RIGHT;
+        }
+        console.log("📍 Setting idle animation:", idleAnimation);
+        // --- End Idle Animation Fix --- 
+        setAnimation?.(idleAnimation);
+        
+        setCurrentFrame(0);
+        setFrameTimeAccumulator(0);
+        if (onMoveComplete) onMoveComplete();
         return;
       }
 
-      // Calculate movement direction
-      const direction = new THREE.Vector3()
+      // Calculate movement vector towards the single target in the path
+      const moveDirection = new THREE.Vector3()
         .subVectors(targetPos, currentPos)
         .normalize();
-
-      // Move towards target
-      const movement = direction.multiplyScalar(speed * delta);
-      currentPos.add(movement);
-
+      let movement = moveDirection.clone().multiplyScalar(speed * delta);
+      
+      if (movement.length() >= distance) {
+        movement.setLength(distance);
+      }
+      
+      const newPosition = currentPos.clone().add(movement);
+      
+      console.log(`📍 Moving character. Delta: ${delta.toFixed(4)}, Speed: ${speed}, Target: [${target.x.toFixed(2)}, ${target.y.toFixed(2)}], Dist: ${distance.toFixed(4)}, Movement:`, [movement.x.toFixed(4), movement.y.toFixed(4)], "New Pos:", [newPosition.x.toFixed(4), newPosition.y.toFixed(4)]);
+      
+      // Update state ONLY
       if (setPosition) {
-        setPosition([currentPos.x, currentPos.y, currentPos.z]);
+        setPosition([newPosition.x, newPosition.y, newPosition.z]);
       }
     });
 

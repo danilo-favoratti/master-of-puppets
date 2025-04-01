@@ -4,6 +4,17 @@ import Chat from "./components/Chat";
 import GameContainer from "./components/GameContainer";
 import HomeScreen from "./ui/HomeScreen";
 import {GameData, Position} from "./types/game";
+import ToolsMenu from "./components/ToolsMenu";  // Import the ToolsMenu component
+import {CharacterRefMethods} from "./components/character/CharacterBody";
+
+// Define interface for tool calls
+export interface ToolCall {
+  id: string;
+  name: string;
+  params: Record<string, any>;
+  timestamp: number;
+  result?: string;
+}
 
 // Fix the WebSocket URL declaration - Add type assertion
 const WS_URL = (import.meta as any).env.VITE_WS_URL ||
@@ -31,6 +42,13 @@ const tryParseJsonInString = (text: string) => {
     return null;
 };
 
+interface QueuedCommand {
+    id: string;
+    name: string;
+    result: string;
+    params: any;
+}
+
 function App() {
     const [socket, setSocket] = useState<WebSocket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -46,6 +64,8 @@ function App() {
             options?: string[];
         }>
     >([]);
+    // Add state for tool calls
+    const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
     const [isMapCreated, setIsMapCreated] = useState(false);
     const [mapData, setMapData] = useState<GameData | null>(null);
     const [isMapReady, setIsMapReady] = useState(false);
@@ -53,20 +73,28 @@ function App() {
     const [loadingMap, setLoadingMap] = useState(false);
     const [socketMessage, setSocketMessage] = useState<string | null>(null);
 
+    // --- Command Queue State ---
+    const [commandQueue, setCommandQueue] = useState<QueuedCommand[]>([]);
+    const [isProcessingAnimation, setIsProcessingAnimation] = useState(false);
+    const processingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const ANIMATION_TIMEOUT = 5000; // 5 seconds timeout for animations
+    // -------------------------
+
     // Create a ref to store the real executeCommand implementation from Game
     const gameCommandHandlerRef = useRef<
-        null | ((cmd: string, result: string, params: any) => void)
+        null | ((cmd: string, result: string, params: any, onComplete: () => void) => void)
     >(null);
 
     // Function to register the game command handler
     const registerGameCommandHandler = useCallback(
-        (handler: (cmd: string, result: string, params: any) => void) => {
+        (handler: (cmd: string, result: string, params: any, onComplete: () => void) => void) => {
             gameCommandHandlerRef.current = handler;
         },
         []
     );
-
-    const characterRef = useRef<{ moveAlongPath: (path: Position[]) => void; move: (direction: string) => void } | null>(null);
+    
+    // Fix the ref type here to match the expected signature in GameContainer
+    const characterRef = useRef<CharacterRefMethods | null>(null);
 
     // Connect to backend WebSocket
     useEffect(() => {
@@ -84,6 +112,12 @@ function App() {
                 console.log("WEBSOCKET: Connection closed");
                 setIsConnected(false);
                 setSocketMessage("Connection closed");
+                // Reset command queue on disconnect
+                setCommandQueue([]);
+                setIsProcessingAnimation(false);
+                if (processingTimeoutRef.current) {
+                    clearTimeout(processingTimeoutRef.current);
+                }
                 // Try to reconnect after a delay
                 setTimeout(connectWebSocket, 3000);
             };
@@ -101,12 +135,27 @@ function App() {
                 }
 
                 try {
-                    // Parse JSON message
+                    // Try to parse JSON message
                     const data = JSON.parse(event.data);
                     console.log("WEBSOCKET: Received message:", data);
 
-                    // Use the dedicated message handler instead of inline processing
-                    //handleServerMessage(data);
+                    // Check for tool call and track it
+                    if (data.type === "command" && data.name && data.params) {
+                      // Create a new tool call object
+                      const newToolCall: ToolCall = {
+                        id: Date.now().toString(),
+                        name: data.name, // Keep original name (move or move_step)
+                        params: data.params || {},
+                        timestamp: Date.now(),
+                        // Only include result if it exists and is not null/empty
+                        result: (data.result && data.result.trim()) ? data.result : undefined
+                      };
+
+                      // Add to tool calls state
+                      setToolCalls(prev => [newToolCall, ...prev].slice(0, 50)); // Keep only most recent 50
+
+                      console.log("Tool call tracked:", newToolCall);
+                    }
 
                     // Handle different message types
                     if (data.type === "text") {
@@ -161,78 +210,63 @@ function App() {
                         ]);
                         setIsThinking(false);
                         setLoadingMap(false);
+                        // Clear animation state on error
+                        setIsProcessingAnimation(false);
+                        if (processingTimeoutRef.current) {
+                            clearTimeout(processingTimeoutRef.current);
+                        }
                     } else if (data.type === "command") {
-                        if (data.name === "create_map") {
-                            // Check if map_data exists in the message
+                        // --- Command Queue Logic ---
+                        // Add animation commands to the queue instead of executing directly
+                        if (["move", "move_step", "jump"].includes(data.name)) {
+                            console.log(`📬 Queuing command: ${data.name}`);
+                            const newCommand: QueuedCommand = {
+                                id: `${data.name}-${Date.now()}`,
+                                name: data.name,
+                                result: data.result || "",
+                                params: data.params || {},
+                            };
+                            setCommandQueue((prev) => [...prev, newCommand]);
+
+                            // If it's a move command with a result, add result to chat immediately
+                            if (data.name === "move" && data.result) {
+                                addMessage(data.result, data.sender || "system");
+                            }
+                        } else if (data.name === "create_map") {
+                            // Handle map creation immediately (not an animation)
                             if (data.map_data && data.map_data.grid) {
                                 console.log("Processing create_map command with map_data:", data.map_data);
-
-                                // Construct the internal GameData structure from map_data
                                 const newMapData: GameData = {
                                     map: {
                                         width: data.map_data.width,
                                         height: data.map_data.height,
                                         grid: data.map_data.grid
                                     },
-                                    // Use top-level entities if they exist, otherwise default to empty array
                                     entities: data.entities || []
                                 };
-
                                 setMapData(newMapData);
-                                setIsMapReady(true); // Mark map as ready
-                                setIsMapCreated(true); // Also set this flag
+                                setIsMapReady(true);
+                                setIsMapCreated(true);
                                 setGameStarted(true);
                                 setLoadingMap(false);
-
-                                // Add the result message to the chat if it exists
                                 if (data.result) {
-                                    addMessage(data.result, data.sender || "system"); // Use sender from backend or default to "system"
+                                    addMessage(data.result, data.sender || "system");
                                 }
-
                             } else {
                                 console.error("Received create_map command but map_data is missing or invalid:", data);
                                 setLoadingMap(false);
-                                // Optionally, add an error message to the chat
                                 addMessage("Error: Failed to process map data from server.", "system", true);
                             }
-                        } else if (data.name === "move") {
-                            // Add detailed debugging for move commands
-                            console.log("⭐ MOVE COMMAND RECEIVED:", data);
-                            console.log("Direction:", data.params?.direction);
-                            console.log("Is running:", data.params?.is_running);
-                            console.log("Is continuous:", data.params?.continuous);
-                            
-                            try {
-                                // Forward to executeCommand
-                                executeCommand(data.name, data.result || "", data.params || {});
-                                
-                                // Check if we have a character reference
-                                if (characterRef.current && characterRef.current.move && typeof characterRef.current.move === 'function') {
-                                    console.log("🤖 Attempting to directly call characterRef.move from WebSocket handler...");
-                                    characterRef.current.move(data.params?.direction);
-                                } else {
-                                    console.error("🔴 Character ref or move method not available:", 
-                                        characterRef.current ? "Missing move method" : "Missing ref");
-                                }
-                            } catch (error) {
-                                console.error("🔴 Error executing move command:", error);
-                            }
-                            
-                            // Show the result as a message if available
-                            if (data.result) {
-                                addMessage(data.result, data.sender || "system");
-                            }
                         } else {
-                            // Other command, just show the result as a message
-                            console.log("Executing command:", data.name, data.params);
-                            // Using addMessage ensures consistent handling
+                            // Execute other non-animation commands directly
+                            console.log(`🚀 Executing non-animation command directly: ${data.name}`);
                             if (data.result) {
                                 addMessage(data.result, data.sender || "system");
                             }
-                            
-                            // Forward to executeCommand
-                            executeCommand(data.name, data.result || "", data.params || {});
+                            // Pass a dummy onComplete for non-animation commands
+                            executeCommand(data.name, data.result || "", data.params || {}, () => {});
                         }
+                        // --- End Command Queue Logic ---
                     } else if (data.type === "user_message") {
                         // This is a user message from transcription
                         setMessages((prevMessages) => [
@@ -258,6 +292,11 @@ function App() {
                     console.error("Error processing message:", error);
                     setIsThinking(false);
                     setLoadingMap(false);
+                    // Clear animation state on error
+                    setIsProcessingAnimation(false);
+                    if (processingTimeoutRef.current) {
+                        clearTimeout(processingTimeoutRef.current);
+                    }
                 }
             };
 
@@ -273,7 +312,81 @@ function App() {
         };
 
         connectWebSocket();
-    }, []);
+    }, []); // Empty dependency array ensures this runs only once
+
+    // --- Command Queue Processing Effect ---
+    useEffect(() => {
+        const processNextCommand = () => {
+            if (isProcessingAnimation || commandQueue.length === 0) {
+                return;
+            }
+
+            const commandToProcess = commandQueue[0];
+            console.log(`⚙️ Dequeuing command: ${commandToProcess.name} (ID: ${commandToProcess.id})`);
+            setIsProcessingAnimation(true);
+            // Remove command immediately visually? Or wait until onComplete?
+            // Let's wait until onComplete to be safer in case of immediate errors.
+            // setCommandQueue((prev) => prev.slice(1)); // Moved to onComplete
+
+            // Define the completion callback
+            const onComplete = () => {
+                console.log(`✅ Animation complete for command: ${commandToProcess.name} (ID: ${commandToProcess.id})`);
+                
+                // --- Remove the completed command from the queue --- 
+                setCommandQueue((prevQueue) => 
+                    prevQueue.filter((cmd) => cmd.id !== commandToProcess.id)
+                );
+                // Use filter by ID for robustness in case queue order changes unexpectedly
+                // Or simply: setCommandQueue((prevQueue) => prevQueue.slice(1)); if order is guaranteed.
+                // Let's use slice(1) assuming order is maintained for simplicity.
+                // setCommandQueue((prevQueue) => prevQueue.slice(1)); 
+                // --- End Command Removal --- 
+                
+                setIsProcessingAnimation(false);
+                if (processingTimeoutRef.current) {
+                    clearTimeout(processingTimeoutRef.current);
+                    processingTimeoutRef.current = null;
+                }
+                // Trigger processing the next command *after* state updates
+                // Using setTimeout ensures state has time to update - this is generally okay
+                // setTimeout(processNextCommand, 0); // Replaced by direct call below
+            };
+            
+            // Set a timeout for the animation
+            processingTimeoutRef.current = setTimeout(() => {
+                console.warn(`⌛ Animation timeout for command: ${commandToProcess.name} (ID: ${commandToProcess.id}). Forcing completion.`);
+                onComplete(); // Force completion on timeout
+            }, ANIMATION_TIMEOUT);
+
+            // Execute the command via the registered handler
+            try {
+                executeCommand(
+                    commandToProcess.name,
+                    commandToProcess.result,
+                    commandToProcess.params,
+                    onComplete // Pass the callback
+                );
+            } catch (error) {
+                console.error(`🔴 Error executing command ${commandToProcess.name} from queue:`, error);
+                onComplete(); // Ensure we always complete, even on error
+            }
+        };
+
+        // Trigger processing if not busy and queue has items
+        // This structure means processNextCommand is called whenever 
+        // isProcessingAnimation becomes false AND commandQueue.length > 0
+        if (!isProcessingAnimation && commandQueue.length > 0) {
+            processNextCommand();
+        }
+
+        // Cleanup timeout on unmount or if queue state changes
+        return () => {
+            if (processingTimeoutRef.current) {
+                clearTimeout(processingTimeoutRef.current);
+            }
+        };
+    }, [commandQueue, isProcessingAnimation]);
+    // -------------------------------------
 
     // Reset thinking state on component mount
     useEffect(() => {
@@ -304,7 +417,8 @@ function App() {
                     break;
 
                 case "command":
-                    executeCommand(data.name, data.result, data.params);
+                    // Commands are now handled by the WebSocket onmessage handler
+                    // executeCommand(data.name, data.result, data.params);
                     break;
 
                 case "error":
@@ -350,7 +464,7 @@ function App() {
             setIsThinking(false);
         }
     };
-    
+
     // Helper function to handle JSON messages
     const handleJsonMessage = (data: any) => {
         try {
@@ -397,6 +511,19 @@ function App() {
         isError: boolean = false,
         options?: string[]
     ) => {
+        // Filter out tool-related messages to keep them from the chat
+        if (sender === "system" &&
+            (content.includes("Successfully") &&
+             (content.includes("moved") ||
+              content.includes("walked") ||
+              content.includes("ran") ||
+              content.includes("jumped") ||
+              content.includes("pushed") ||
+              content.includes("pulled")))) {
+            console.log("Filtered out tool message from chat:", content);
+            return; // Skip adding this message to the chat
+        }
+
         setMessages((prev) => [...prev, {content, sender, isError, options}]);
     };
 
@@ -409,7 +536,7 @@ function App() {
 
         // Add the user's message to the messages array first
         addMessage(message, "user");
-        
+
         setIsThinking(true);
 
         // Use the format the backend expects
@@ -427,43 +554,30 @@ function App() {
         }
     };
 
-    // Execute a command from the character
-    const executeCommand = (commandName: string, result: string, params: any) => {
-        // Log command execution for debugging
+    // Execute a command (NOW ACCEPTS onComplete callback)
+    // Ensure this function signature matches where it's called
+    const executeCommand = useCallback((commandName: string, result: string, params: any, onComplete: () => void) => {
         console.log(`🚀 executeCommand called with:`, {
             commandName,
-            result,
             params,
-            hasCharacterRef: !!characterRef.current
+            hasCharacterRef: !!characterRef.current,
+            hasHandler: !!gameCommandHandlerRef.current
         });
-
-        // Add the command result to chat
-        addMessage(result, "command");
-
-        // Handle create_map command
-        if (commandName === "create_map" && params.environment) {
-            // Send the map data to the game container
-            if (gameCommandHandlerRef.current) {
-                gameCommandHandlerRef.current(
-                    "update_map",
-                    "Map updated",
-                    params.environment
-                );
-            }
-        }
-        // Forward other commands to the game component if the handler is registered
-        else if (gameCommandHandlerRef.current) {
+        
+        if (gameCommandHandlerRef.current) {
             try {
                 console.log(`🚀 Forwarding command to gameCommandHandler: ${commandName}`);
-                gameCommandHandlerRef.current(commandName, result, params);
-                console.log(`🚀 Command forwarded successfully`);
+                gameCommandHandlerRef.current(commandName, result, params, onComplete);
+                console.log(`🚀 Command forwarded successfully to Game.tsx`);
             } catch (error) {
                 console.error(`Error forwarding command ${commandName}:`, error);
+                onComplete();
             }
         } else {
-            console.warn(`No gameCommandHandler registered for command: ${commandName}`);
+            console.warn(`No gameCommandHandler registered for command: ${commandName}. Calling onComplete immediately.`);
+            onComplete();
         }
-    };
+    }, [gameCommandHandlerRef]);
 
     // Toggle chat visibility
     const toggleChat = () => {
@@ -571,6 +685,9 @@ function App() {
         );
     }
 
+    // Log toolCalls state before rendering
+    console.log("🔧 Rendering App, toolCalls state:", toolCalls);
+
     return (
         <div className="flex flex-col h-screen">
             <GameContainer
@@ -580,6 +697,7 @@ function App() {
                 isMapReady={isMapReady}
                 characterRef={characterRef}
                 websocket={socket}
+                toolCalls={toolCalls}
             />
             <Chat
                 messages={messages}
@@ -588,6 +706,7 @@ function App() {
                 isConnected={isConnected}
                 websocket={socket}
             />
+            <ToolsMenu toolCalls={toolCalls} />
         </div>
     );
 }

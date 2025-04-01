@@ -1,13 +1,14 @@
 import React, { useMemo } from "react";
 import { Vector3 } from "three";
-import { Entity } from "../types/game";
+import { Entity, Position } from "../types/game";
+import { GameEntity } from "../types/entities";
 import ForestTile from "./ForestTile";
 
 interface MapDisplayProps {
   mapGridData: number[][];
   width: number;
   height: number;
-  entities: Entity[];
+  entities: GameEntity[];
 }
 
 const MapDisplay: React.FC<MapDisplayProps> = ({
@@ -116,16 +117,14 @@ const MapDisplay: React.FC<MapDisplayProps> = ({
       {terrainMap.map((row, y) =>
         row.map((tile, x) => {
           return (
-            <>
-              <ForestTile
-                key={`${x}-${y}`}
-                tileX={tile.tileX}
-                tileY={tile.tileY}
-                size={1}
-                gridX={x}
-                gridY={y}
-              />
-            </>
+            <ForestTile
+              key={`${x}-${y}`}
+              tileX={tile.tileX}
+              tileY={tile.tileY}
+              size={1}
+              gridX={x}
+              gridY={y}
+            />
           );
         })
       )}

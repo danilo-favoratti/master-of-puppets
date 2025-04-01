@@ -16,11 +16,14 @@ import GameEntities from "./GameEntities";
 import MapDisplay from "./MapDisplay";
 
 interface GameProps {
-  executeCommand: (commandName: string, result: string, params: any) => void;
+  executeCommand: (commandName: string, result: string, params: any, onComplete: () => void) => void;
   registerCommandHandler: (
-    handler: (cmd: string, result: string, params: any) => void
+    handler: (cmd: string, result: string, params: any, onComplete: () => void) => void
   ) => void;
-  characterRef: React.RefObject<{ moveAlongPath: (path: Position[]) => void; move: (direction: string) => void }>;
+  characterRef: React.RefObject<{
+    moveAlongPath: (path: Position[]) => void;
+    move: (direction: string, steps?: number, onComplete?: () => void) => void;
+  }>;
   lightIntensity: number;
   lightDistance: number;
   lightDecay: number;
@@ -128,205 +131,13 @@ const Game = ({
 
   // Execute animation commands received from websocket
   useEffect(() => {
-    // Define a mapping of commands to animation functions
-    const commandMap: Record<string, (params: any) => void> = {
-      jump: (params) => {
-        const direction = params?.direction || "down";
-        let animation: CharacterAnimationType;
-        const originalPos = position;
-        switch (direction) {
-          case "up":
-            animation = CharacterAnimationType.JUMP_UP;
-            animateMovement(0.2, 0.5, "up");
-            break;
-          case "left":
-            animation = CharacterAnimationType.JUMP_LEFT;
-            animateMovement(0.2, 0.5, "left");
-            break;
-          case "right":
-            animation = CharacterAnimationType.JUMP_RIGHT;
-            animateMovement(0.2, 0.5, "right");
-            break;
-          default:
-            animation = CharacterAnimationType.JUMP_DOWN;
-            animateMovement(0.2, 0.5, "down");
-        }
-        setAnimation(animation);
-        setIsJumping(true);
-        // After first phase (0.5 sec), animate back to original position
-        setTimeout(() => {
-          movementRef.current = {
-            start: position,
-            end: originalPos,
-            duration: 0.5,
-            elapsedTime: 0,
-          };
-          setIsJumping(false);
-        }, 500);
-      },
-
-      walk: (params) => {
-        const direction = params?.direction || "down";
-        let animation: CharacterAnimationType;
-        const moveDistance = 1.0; // Distance to move
-        switch (direction) {
-          case "up":
-            animation = CharacterAnimationType.WALK_UP;
-            animateMovement(1.0, 1.0, "up");
-            break;
-          case "left":
-            animation = CharacterAnimationType.WALK_LEFT;
-            animateMovement(1.0, 1.0, "left");
-            break;
-          case "right":
-            animation = CharacterAnimationType.WALK_RIGHT;
-            animateMovement(1.0, 1.0, "right");
-            break;
-          default:
-            animation = CharacterAnimationType.WALK_DOWN;
-            animateMovement(1.0, 1.0, "down");
-        }
-        setAnimation(animation);
-        // After walking duration, revert to idle animation
-        setTimeout(() => {
-          if (animation === CharacterAnimationType.WALK_UP) {
-            setAnimation(CharacterAnimationType.IDLE_UP);
-          } else if (animation === CharacterAnimationType.WALK_LEFT) {
-            setAnimation(CharacterAnimationType.IDLE_LEFT);
-          } else if (animation === CharacterAnimationType.WALK_RIGHT) {
-            setAnimation(CharacterAnimationType.IDLE_RIGHT);
-          } else {
-            setAnimation(CharacterAnimationType.IDLE_DOWN);
-          }
-        }, 1000);
-      },
-
-      run: (params) => {
-        const direction = params?.direction || "down";
-        let animation: CharacterAnimationType;
-        const moveDistance = 2.0; // Distance to move when running
-        switch (direction) {
-          case "up":
-            animation = CharacterAnimationType.RUN_UP;
-            animateMovement(2.0, 0.6, "up");
-            break;
-          case "left":
-            animation = CharacterAnimationType.RUN_LEFT;
-            animateMovement(2.0, 0.6, "left");
-            break;
-          case "right":
-            animation = CharacterAnimationType.RUN_RIGHT;
-            animateMovement(2.0, 0.6, "right");
-            break;
-          default:
-            animation = CharacterAnimationType.RUN_DOWN;
-            animateMovement(2.0, 0.6, "down");
-        }
-        setAnimation(animation);
-        // After running, revert to idle
-        setTimeout(() => {
-          if (animation === CharacterAnimationType.RUN_UP) {
-            setAnimation(CharacterAnimationType.IDLE_UP);
-          } else if (animation === CharacterAnimationType.RUN_LEFT) {
-            setAnimation(CharacterAnimationType.IDLE_LEFT);
-          } else if (animation === CharacterAnimationType.RUN_RIGHT) {
-            setAnimation(CharacterAnimationType.IDLE_RIGHT);
-          } else {
-            setAnimation(CharacterAnimationType.IDLE_DOWN);
-          }
-        }, 600);
-      },
-
-      // Other commands (push, pull) remain unchanged
-      push: (params) => {
-        const direction = params?.direction || "down";
-        let animation: CharacterAnimationType;
-        switch (direction) {
-          case "up":
-            animation = CharacterAnimationType.PUSH_UP;
-            break;
-          case "left":
-            animation = CharacterAnimationType.PUSH_LEFT;
-            break;
-          case "right":
-            animation = CharacterAnimationType.PUSH_RIGHT;
-            break;
-          default:
-            animation = CharacterAnimationType.PUSH_DOWN;
-        }
-        setAnimation(animation);
-        setIsPushing(true);
-        setTimeout(() => {
-          setIsPushing(false);
-          if (animation === CharacterAnimationType.PUSH_UP) {
-            setAnimation(CharacterAnimationType.IDLE_UP);
-          } else if (animation === CharacterAnimationType.PUSH_LEFT) {
-            setAnimation(CharacterAnimationType.IDLE_LEFT);
-          } else if (animation === CharacterAnimationType.PUSH_RIGHT) {
-            setAnimation(CharacterAnimationType.IDLE_RIGHT);
-          } else {
-            setAnimation(CharacterAnimationType.IDLE_DOWN);
-          }
-        }, 800);
-      },
-
-      pull: (params) => {
-        const direction = params?.direction || "down";
-        let animation: CharacterAnimationType;
-        switch (direction) {
-          case "up":
-            animation = CharacterAnimationType.PULL_UP;
-            break;
-          case "left":
-            animation = CharacterAnimationType.PULL_LEFT;
-            break;
-          case "right":
-            animation = CharacterAnimationType.PULL_RIGHT;
-            break;
-          default:
-            animation = CharacterAnimationType.PULL_DOWN;
-        }
-        setAnimation(animation);
-        setIsPulling(true);
-        setTimeout(() => {
-          setIsPulling(false);
-          if (animation === CharacterAnimationType.PULL_UP) {
-            setAnimation(CharacterAnimationType.IDLE_UP);
-          } else if (animation === CharacterAnimationType.PULL_LEFT) {
-            setAnimation(CharacterAnimationType.IDLE_LEFT);
-          } else if (animation === CharacterAnimationType.PULL_RIGHT) {
-            setAnimation(CharacterAnimationType.IDLE_RIGHT);
-          } else {
-            setAnimation(CharacterAnimationType.IDLE_DOWN);
-          }
-        }, 800);
-      },
-
-      move: (params) => {
-        // Handle character movement
-        if (params.direction && characterRef.current) {
-          console.log("🎮 MOVE command execution in Game.tsx:", params);
-          const direction = params.direction;
-          
-          try {
-            // Call the move method on the character ref
-            if (typeof characterRef.current.move === 'function') {
-              console.log(`📣 Game.tsx: Calling move(${direction}) on character ref`);
-              characterRef.current.move(direction);
-            } else {
-              console.error("🔴 Character ref doesn't have a move method:", characterRef.current);
-            }
-          } catch (error) {
-            console.error("🔴 Error executing character move:", error);
-          }
-        } else {
-          console.warn("🟠 Move command missing direction or characterRef:", { params, hasRef: !!characterRef.current });
-        }
-      },
-    };
-
-    const handleCommand = (cmd: string, result: string, params: any) => {
-      console.log(`Handling command: ${cmd}`, params);
+    const handleCommand = (
+      cmd: string,
+      result: string,
+      params: any,
+      onComplete: () => void
+    ) => {
+      console.log(`🚀 Handling command in Game.tsx: ${cmd}`, { params });
 
       switch (cmd) {
         case "update_map":
@@ -334,47 +145,74 @@ const Game = ({
           if (params && typeof params === "object") {
             setGameDataState(params);
           }
+          onComplete(); // Non-animation command, complete immediately
           break;
 
         case "generate_world":
-          console.log("Handling generate_world command");
-          // This command is sent to request map generation
-          // We'll just acknowledge it here since actual generation happens on the server
+          console.log("Handling generate_world command (no action)");
+          onComplete(); // Non-animation command, complete immediately
           break;
 
         case "move":
-          // Handle character movement
+        case "move_step":
           if (params.direction && characterRef.current) {
-            console.log("🎮 MOVE command execution in Game.tsx:", params);
+            console.log(
+              `🎮 Animation command execution in Game.tsx: ${cmd}`,
+              params
+            );
             const direction = params.direction;
-            
+            // Extract steps, default to 1 if not provided
+            const steps = typeof params.steps === 'number' && params.steps > 0 ? params.steps : 1;
+
             try {
-              // Call the move method on the character ref
-              if (typeof characterRef.current.move === 'function') {
-                console.log(`📣 Game.tsx: Calling move(${direction}) on character ref`);
-                characterRef.current.move(direction);
+              if (typeof characterRef.current.move === "function") {
+                console.log(
+                  `📣 Game.tsx: Calling move(${direction}, steps=${steps}) on character ref for ${cmd}, passing onComplete`
+                );
+                characterRef.current.move(direction, steps, onComplete);
               } else {
-                console.error("🔴 Character ref doesn't have a move method:", characterRef.current);
+                console.error(
+                  "🔴 Character ref doesn't have a move method:",
+                  characterRef.current
+                );
+                onComplete(); // Complete immediately if no move method
               }
             } catch (error) {
-              console.error("🔴 Error executing character move:", error);
+              console.error(
+                `🔴 Error executing character move/animation for ${cmd}:`,
+                error
+              );
+              onComplete(); // Complete immediately on error
             }
           } else {
-            console.warn("🟠 Move command missing direction or characterRef:", { params, hasRef: !!characterRef.current });
+            console.warn(
+              `🟠 Animation command ${cmd} missing direction or characterRef:`,
+              { params, hasRef: !!characterRef.current }
+            );
+            onComplete(); // Complete immediately if params/ref missing
           }
           break;
 
+        case "jump":
+          console.log("🤸 Jump command received, needs implementation in Game.tsx handleCommand");
+          onComplete(); // Complete immediately for now
+          break;
+
         default:
-          console.log(`Unknown command received: ${cmd}`);
+          console.log(`Unknown command received in Game.tsx: ${cmd}. Calling onComplete.`);
+          onComplete(); // Complete immediately for unhandled commands
       }
     };
 
     registerCommandHandler(handleCommand);
 
+    // No cleanup needed for the handler itself
+    // Return an empty function or handle specific cleanup if necessary
     return () => {
-      // Cleanup
+      // Optional: Unregister handler if App.tsx provides a way
     };
-  }, [executeCommand, setAnimation, registerCommandHandler, position]);
+    // IMPORTANT: Remove executeCommand from dependencies if it causes infinite loops
+  }, [registerCommandHandler, characterRef]); // Dependencies should be stable refs/functions
 
   // Make camera follow the character
   useEffect(() => {
@@ -449,21 +287,32 @@ const Game = ({
         animation={currentAnimation}
         setAnimation={setAnimation}
         setPosition={setPosition}
+        // The onMoveComplete prop in CharacterBody might be where the final onComplete should be called
+        // This depends on CharacterBody's implementation
         onMoveComplete={() => {
-          // Converter a animação de movimento para a respectiva animação idle
+          console.log("CharacterBody onMoveComplete called (Default handler)")
+          // Default idle animation logic
           switch (currentAnimation) {
             case CharacterAnimationType.WALK_UP:
+            case CharacterAnimationType.RUN_UP:
+            case CharacterAnimationType.JUMP_UP:
               setAnimation(CharacterAnimationType.IDLE_UP);
               break;
             case CharacterAnimationType.WALK_LEFT:
+            case CharacterAnimationType.RUN_LEFT:
+            case CharacterAnimationType.JUMP_LEFT:
               setAnimation(CharacterAnimationType.IDLE_LEFT);
               break;
             case CharacterAnimationType.WALK_RIGHT:
+            case CharacterAnimationType.RUN_RIGHT:
+            case CharacterAnimationType.JUMP_RIGHT:
               setAnimation(CharacterAnimationType.IDLE_RIGHT);
               break;
             default:
               setAnimation(CharacterAnimationType.IDLE_DOWN);
           }
+          // IMPORTANT: The actual onComplete passed from App.tsx needs to be called here
+          // Currently, this component doesn't receive it. We need to modify CharacterBody.
         }}
         zOffset={0.03}
       />

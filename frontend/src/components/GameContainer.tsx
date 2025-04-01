@@ -4,16 +4,19 @@ import "../LoadingSpinner.css";
 import { GameData, Position } from "../types/game";
 import Game from "./Game";
 import GameDebugUI from "./GameDebugUI";
+import { CharacterRefMethods } from "./character/CharacterBody";
+import { ToolCall } from "../App";
 
 interface GameContainerProps {
-  executeCommand: (commandName: string, result: string, params: any) => void;
+  executeCommand: (commandName: string, result: string, params: any, onComplete: () => void) => void;
   registerCommandHandler: (
-    handler: (cmd: string, result: string, params: any) => void
+    handler: (cmd: string, result: string, params: any, onComplete: () => void) => void
   ) => void;
   mapData: GameData | null;
   isMapReady: boolean;
-  characterRef: React.RefObject<{ moveAlongPath: (path: Position[]) => void; move: (direction: string) => void }>;
+  characterRef: React.RefObject<CharacterRefMethods>;
   websocket?: WebSocket | null;
+  toolCalls: ToolCall[];
 }
 
 const GameContainer = ({
@@ -23,6 +26,7 @@ const GameContainer = ({
   isMapReady,
   characterRef,
   websocket,
+  toolCalls,
 }: GameContainerProps) => {
   const [ambientLightIntensity, setAmbientLightIntensity] = useState(0.1);
   const [lightIntensity, setLightIntensity] = useState(1.2);
@@ -70,24 +74,32 @@ const GameContainer = ({
   useEffect(() => {
     if (websocket) {
       const handleWebSocketMessage = (event: MessageEvent) => {
+        // Check if data is binary BEFORE parsing
+        if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
+          console.log("GameContainer: Ignoring binary WebSocket message.");
+          return; // Don't try to parse binary data
+        }
+
         try {
-          const data = JSON.parse(event.data);
-          if (data.type === "map_created") {
-            console.log("Map created event received in GameContainer:", data);
+          // Now it's safe to parse
+          const messageData = JSON.parse(event.data);
+          console.log("GameContainer received message:", messageData);
+          if (messageData.type === "map_created") {
+            console.log("Map created event received in GameContainer:", messageData);
 
             if (
-              data.environment &&
-              data.entities &&
-              !data.environment.error &&
-              data.environment.grid
+              messageData.environment &&
+              messageData.entities &&
+              !messageData.environment.error &&
+              messageData.environment.grid
             ) {
               const newMapData: GameData = {
                 map: {
-                  width: data.environment.width,
-                  height: data.environment.height,
-                  grid: data.environment.grid,
+                  width: messageData.environment.width,
+                  height: messageData.environment.height,
+                  grid: messageData.environment.grid,
                 },
-                entities: data.entities,
+                entities: messageData.entities,
               };
 
               console.log(
@@ -101,13 +113,14 @@ const GameContainer = ({
             } else {
               console.error(
                 "Received map_created event via WebSocket missing expected properties or contains error:",
-                data
+                messageData
               );
             }
           }
         } catch (error) {
+          // Log parsing errors for non-binary data
           console.error(
-            "Error parsing WebSocket message (it is ok if audio was sent):",
+            "GameContainer Error parsing WebSocket message:",
             error
           );
         }
@@ -237,6 +250,7 @@ const GameContainer = ({
           onLightDistanceChange={setLightDistance}
           onAmbientLightIntensityChange={setAmbientLightIntensity}
           onLightDecayChange={setLightDecay}
+          toolCalls={toolCalls}
         />
       )}
     </div>

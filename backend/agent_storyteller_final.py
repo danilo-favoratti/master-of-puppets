@@ -76,16 +76,6 @@ class Answer(BaseModel):
 class AnswerSet(BaseModel):
     """The required JSON structure for all storyteller responses."""
     answers: List[Answer]
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "answers": [
-                    {"type": "text", "description": "The salty air whips around you.", "options": []},
-                    {"type": "text", "description": "What will you do?", "options": ["Look around", "Check map"]}
-                ]
-            }
-        }
-    }
 
 # --- Helper Code Copied from agent_puppet_master.py ---
 
@@ -122,59 +112,87 @@ class DirectionHelper:
         moves = 0
         max_moves = 50
         
-        # Get storyteller reference for WebSocket commands
         storyteller = getattr(story_result, '_storyteller_agent', None)
         can_send_websocket = storyteller and hasattr(storyteller, 'send_command_to_frontend')
         
+        final_message = ""
+
         while moves < max_moves:
             current_pos = story_result.person.position
-            target_pos = DirectionHelper.get_relative_position(current_pos, direction)
-            logger.debug(f"  Continuous move attempt #{moves + 1}: {current_pos} -> {target_pos}")
-            result = story_result.person.move(story_result.environment, target_pos, False)
+            # Ensure current_pos is a tuple for DirectionHelper
+            current_pos_tuple = None
+            if hasattr(current_pos, 'x') and hasattr(current_pos, 'y'):
+                current_pos_tuple = (current_pos.x, current_pos.y)
+            elif isinstance(current_pos, (tuple, list)) and len(current_pos) >= 2:
+                current_pos_tuple = (current_pos[0], current_pos[1])
+            else:
+                logger.error(f"❌ Invalid current_pos format in move_continuously: {current_pos}")
+                final_message = "Error: Could not determine starting position."
+                break # Exit loop on error
+                
+            target_pos_tuple = DirectionHelper.get_relative_position(current_pos_tuple, direction)
+            logger.debug(f"  Continuous move attempt #{moves + 1}: {current_pos_tuple} -> {target_pos_tuple}")
+            
+            # Pass tuple to person.move if it expects it, otherwise pass original object if needed
+            # Assuming person.move internally handles tuple or object position based on its implementation
+            result = story_result.person.move(story_result.environment, target_pos_tuple, False)
             
             if not result["success"]:
                 logger.info(f"🛑 Continuous movement stopped: {result['message']}")
                 stop_reason = f"stopped: {result['message']}"
-                return f"Moved {moves} steps {direction} and {stop_reason}"
+                final_message = f"Moved {moves} steps {direction} and {stop_reason}"
+                break # Exit loop
                 
-            sync_story_state(story_result) # Sync after successful move
+            # sync_story_state(story_result) # Syncing after every step might be slow, sync at end?
             moves += 1
             
-            # Send a WebSocket command for this single step to animate on frontend
-            if can_send_websocket:
-                try:
-                    # Create command params for frontend - always single movement 
-                    command_params = {
-                        "direction": direction,
-                        "is_running": False,
-                        "continuous": False  # Always single movement for frontend
-                    }
-                    
-                    # Result text for this step
-                    step_result = f"Step {moves}: Moved {direction} to {story_result.person.position}"
-                    
-                    # Send command to frontend
-                    logger.info(f"🚀 CONTINUOUS: Sending step {moves} move to frontend: {direction}")
-                    await storyteller.send_command_to_frontend("move", command_params, step_result)
-                    
-                    # Add a small delay between steps to let frontend animate
-                    await asyncio.sleep(0.1)
-                except Exception as e:
-                    logger.error(f"❌ CONTINUOUS: Error sending WebSocket command: {e}")
+            # --- REMOVED: Don't send move_step for each step --- 
+            # if can_send_websocket:
+            #     try:
+            #         command_params = {"direction": direction, "is_running": False, "continuous": False}
+            #         await storyteller.send_command_to_frontend("move_step", command_params, None)
+            #         await asyncio.sleep(0.1)
+            #     except Exception as e:
+            #         logger.error(f"❌ CONTINUOUS: Error sending WebSocket command: {e}")
+            # --------
             
             # Check for edge or next obstacle *before* next loop
-            next_pos_check = DirectionHelper.get_relative_position(story_result.person.position, direction)
-            if not story_result.environment.is_valid_position(next_pos_check):
+            next_pos_check_tuple = DirectionHelper.get_relative_position(story_result.person.position, direction)
+            if not story_result.environment.is_valid_position(next_pos_check_tuple):
                 logger.info(f"🌍 Reached board edge at {story_result.person.position}")
-                return f"Moved {moves} steps {direction} and reached the edge."
-            elif not story_result.environment.can_move_to(next_pos_check):
-                 obstacle = story_result.environment.get_object_at(next_pos_check)
+                final_message = f"Moved {moves} steps {direction} and reached the edge."
+                break # Exit loop
+            elif not story_result.environment.can_move_to(next_pos_check_tuple):
+                 obstacle = story_result.environment.get_object_at(next_pos_check_tuple)
                  obstacle_name = obstacle.name if obstacle else "an obstacle"
-                 logger.info(f"🚧 Reached {obstacle_name} at {next_pos_check}")
-                 return f"Moved {moves} steps {direction} and reached {obstacle_name}."
+                 logger.info(f"🚧 Reached {obstacle_name} at {next_pos_check_tuple}")
+                 final_message = f"Moved {moves} steps {direction} and reached {obstacle_name}."
+                 break # Exit loop
                  
-        logger.warning(f"⚠️ Hit move limit ({max_moves}) moving {direction}")
-        return f"Moved {moves} steps {direction} and stopped (max distance)."
+        if not final_message: # If loop finished due to max_moves
+            logger.warning(f"⚠️ Hit move limit ({max_moves}) moving {direction}")
+            final_message = f"Moved {moves} steps {direction} and stopped (max distance)."
+
+        # Sync state once at the end of the movement sequence
+        sync_story_state(story_result)
+        
+        # --- ADDED: Send ONE move command if steps were taken --- 
+        if moves > 0 and can_send_websocket:
+            try:
+                command_params = {
+                    "direction": direction,
+                    "steps": moves, # Add the number of steps
+                    "is_running": False
+                    # No need for "continuous" flag in frontend command anymore
+                }
+                logger.info(f"🚀 Sending final multi-step move command to frontend: direction={direction}, steps={moves}")
+                # Send command as 'move' type, let frontend handle multi-step animation
+                await storyteller.send_command_to_frontend("move", command_params, None) # Result sent separately by agent
+            except Exception as e:
+                logger.error(f"❌ Error sending final multi-step WebSocket command: {e}")
+        # --------
+                 
+        return final_message
 
 def sync_story_state(story_result: CompleteStoryResult):
     """Synchronize the story state (nearby objects, entity maps)."""
@@ -262,108 +280,416 @@ def get_weight_description(weight: int) -> str:
     if weight <= 8: return "heavy"
     return "extremely heavy"
 
-# --- Tool Definitions Copied from agent_puppet_master.py ---
+# --- Pathfinding Helper Code (Copied and Adapted from agent_path_researcher.py) ---
+
+class PathNode:
+    """Node used in the A* path-finding algorithm."""
+    def __init__(self, position, parent=None):
+        self.position: Tuple[int, int] = position  # (x, y) tuple
+        self.parent: Optional[PathNode] = parent  # parent PathNode
+        self.g: int = 0  # cost from start to current node
+        self.h: int = 0  # heuristic (estimated cost from current to goal)
+        self.f: int = 0  # total cost (g + h)
+
+    def __eq__(self, other):
+        if not isinstance(other, PathNode):
+            return NotImplemented
+        return self.position == other.position
+
+    def __lt__(self, other):
+        if not isinstance(other, PathNode):
+            return NotImplemented
+        # Prioritize lower f cost, then lower h cost as tie-breaker
+        if self.f != other.f:
+            return self.f < other.f
+        return self.h < other.h
+
+    def __hash__(self):
+        return hash(self.position)
+
+class PathFinder:
+    """Class implementing A* path-finding algorithm with jump support for Storyteller context."""
+
+    @staticmethod
+    def manhattan_distance(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
+        """Calculate Manhattan distance between two positions."""
+        return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+
+    @staticmethod
+    def get_neighbors(position: Tuple[int, int], environment: Environment) -> List[Tuple[int, int]]:
+        """Get valid, movable neighboring positions (cardinal directions only)."""
+        x, y = position
+        neighbors = []
+        for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]: # Up, Right, Down, Left
+            new_pos = (x + dx, y + dy)
+            # Use environment methods for validation
+            if environment.is_valid_position(new_pos) and environment.can_move_to(new_pos):
+                neighbors.append(new_pos)
+        return neighbors
+
+    @staticmethod
+    def get_jump_neighbors(position: Tuple[int, int], environment: Environment) -> List[Tuple[int, int]]:
+        """Get positions reachable by jumping from the current position."""
+        x, y = position
+        jump_neighbors = []
+        for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]: # Directions to check for jumpable objects
+            middle_pos = (x + dx, y + dy)
+            landing_pos = (x + 2*dx, y + 2*dy)
+
+            if environment.is_valid_position(middle_pos) and environment.is_valid_position(landing_pos):
+                middle_obj = environment.get_object_at(middle_pos)
+                # Check if middle object exists, is jumpable, and landing spot is clear
+                if middle_obj and getattr(middle_obj, 'is_jumpable', False) and environment.can_move_to(landing_pos):
+                    jump_neighbors.append(landing_pos)
+        return jump_neighbors
+
+    @staticmethod
+    def find_path(environment: Environment, start_pos: Tuple[int, int], end_pos: Tuple[int, int]) -> List[Tuple[int, int]]:
+        """Find the shortest path using A*.
+
+        Returns:
+            List of positions (tuples) from start to end, or empty list if no path.
+        """
+        logger.debug(f"PATHFINDER: Finding path from {start_pos} to {end_pos}")
+        if not environment.is_valid_position(start_pos) or not environment.is_valid_position(end_pos):
+            logger.warning("PATHFINDER: Start or end position invalid.")
+            return []
+        # Optimization: If start and end are the same
+        if start_pos == end_pos:
+             return [start_pos]
+
+        start_node = PathNode(start_pos)
+        end_node = PathNode(end_pos)
+
+        open_list = [] # Priority queue (min-heap)
+        closed_set = set() # Set of visited positions
+
+        heapq.heappush(open_list, start_node)
+
+        while open_list:
+            current_node = heapq.heappop(open_list)
+
+            if current_node.position in closed_set:
+                continue # Already processed this position via a better path
+            closed_set.add(current_node.position)
+
+            # Goal check
+            if current_node.position == end_node.position:
+                path = []
+                temp = current_node
+                while temp:
+                    path.append(temp.position)
+                    temp = temp.parent
+                logger.debug(f"PATHFINDER: Path found with {len(path)-1} steps.")
+                return path[::-1] # Return reversed path
+
+            # Explore neighbors (Move + Jump)
+            neighbors_pos = PathFinder.get_neighbors(current_node.position, environment)
+            jump_neighbors_pos = PathFinder.get_jump_neighbors(current_node.position, environment)
+
+            for neighbor_pos in neighbors_pos + jump_neighbors_pos:
+                if neighbor_pos in closed_set:
+                    continue
+
+                # Determine cost (g value)
+                move_cost = 5 if neighbor_pos in jump_neighbors_pos else 1 # Jump costs 5, move costs 1
+                new_g = current_node.g + move_cost
+
+                # Check if neighbor is already in open_list and if this path is better
+                existing_node = next((node for node in open_list if node.position == neighbor_pos), None)
+
+                if existing_node and new_g >= existing_node.g:
+                    continue # Found a better or equal path already
+
+                # Create or update neighbor node
+                neighbor_node = PathNode(neighbor_pos, current_node)
+                neighbor_node.g = new_g
+                neighbor_node.h = PathFinder.manhattan_distance(neighbor_pos, end_pos)
+                neighbor_node.f = neighbor_node.g + neighbor_node.h
+
+                # Add to open list (or update priority if already exists)
+                # heapq handles priority updates implicitly if node is re-inserted
+                heapq.heappush(open_list, neighbor_node)
+
+        logger.warning("PATHFINDER: No path found.")
+        return [] # No path found
+
+# --- END Pathfinding Helper Code ---
+
+
+# --- Tool Definitions Copied from agent_puppet_master.py --- 
 
 # NOTE: These tools now operate directly on the ctx.context (CompleteStoryResult)
 # They need access to story_result.person, story_result.environment, etc.
 
+# --- ADDED NEW TOOL: moveToObject ---
 @function_tool
-async def move(ctx: RunContextWrapper[CompleteStoryResult], direction: str, is_running: bool, continuous: bool) -> str:
-    """Move the player in a given direction (up, down, left, right).
-    
+async def move_to_object(ctx: RunContextWrapper[CompleteStoryResult], target_x: int, target_y: int) -> str:
+    """Moves the player character to a valid, empty space adjacent to the target coordinates.
+    This is useful for approaching objects or locations without needing to land exactly on them.
+    The tool calculates the path and executes the necessary move/jump steps.
+
     Args:
         ctx: The RunContext containing the game state.
-        direction: Direction to move (up, down, left, right).
-        is_running: Whether to run (move faster) or walk.
-        continuous: Whether to keep moving until hitting obstacle.
-        
+        target_x: The X coordinate of the target object/location.
+        target_y: The Y coordinate of the target object/location.
+
     Returns:
-        str: Description of the movement result
+        str: Description of the movement result (success, failure, path taken) or an error message.
+    """
+    logger.info(f"🚶‍♂️ Tool: moveToObject(target_x={target_x}, target_y={target_y})")
+    story_result = ctx.context
+    if not story_result.person: return "❌ Error: Player character not found."
+    if not story_result.environment: return "❌ Error: Game environment not found."
+
+    person = story_result.person
+    environment = story_result.environment
+
+    # --- Get and Validate Player Position --- 
+    current_pos_tuple = None
+    if person.position:
+        if hasattr(person.position, 'x') and hasattr(person.position, 'y'):
+             current_pos_tuple = (person.position.x, person.position.y)
+        elif isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
+             current_pos_tuple = (person.position[0], person.position[1])
+
+    if not current_pos_tuple or not environment.is_valid_position(current_pos_tuple):
+        logger.error(f"💥 TOOL moveToObject: Invalid or missing player start position: {person.position}")
+        sync_story_state(story_result) # Attempt to sync state to fix position
+        # Re-check position after sync
+        if person.position and isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
+            current_pos_tuple = (person.position[0], person.position[1])
+            if not environment.is_valid_position(current_pos_tuple):
+                 return "Error: Cannot determine player's valid starting position even after sync."
+        else:
+             return "Error: Cannot determine player's starting position."
+
+    target_pos = (target_x, target_y)
+    logger.debug(f"  Player at {current_pos_tuple}, Target location {target_pos}")
+
+    # If already adjacent, no need to move
+    if PathFinder.manhattan_distance(current_pos_tuple, target_pos) == 1 and environment.can_move_to(current_pos_tuple):
+        logger.info("  Player is already adjacent to the target location.")
+        return f"You are already standing next to the location ({target_x},{target_y})."
+
+    # --- Find Valid, Empty Adjacent Target Positions --- 
+    adjacent_candidates = []
+    for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]: # Up, Right, Down, Left
+        adj_pos = (target_pos[0] + dx, target_pos[1] + dy)
+        # Check validity and if player can stand there
+        if environment.is_valid_position(adj_pos) and environment.can_move_to(adj_pos):
+            adjacent_candidates.append(adj_pos)
+
+    if not adjacent_candidates:
+        logger.warning(f"  No valid, empty adjacent spaces found around target {target_pos}")
+        obj_at_target = environment.get_object_at(target_pos)
+        obj_name = getattr(obj_at_target, 'name', 'the target location') if obj_at_target else 'the target location'
+        return f"There are no free spaces to stand next to {obj_name} at ({target_x},{target_y})."
+
+    logger.debug(f"  Found {len(adjacent_candidates)} potential adjacent spots: {adjacent_candidates}")
+
+    # --- Select Best Adjacent Spot (Closest to Player) --- 
+    best_destination = None
+    min_dist = float('inf')
+    for dest_pos in adjacent_candidates:
+        dist = PathFinder.manhattan_distance(current_pos_tuple, dest_pos)
+        if dist < min_dist:
+            min_dist = dist
+            best_destination = dest_pos
+        # Tie-breaking: If distances are equal, prefer one with path? (More complex) - Simple closest for now.
+
+    if not best_destination:
+         # This should theoretically not happen if adjacent_candidates is not empty
+         logger.error("  Failed to select a best destination despite having candidates.")
+         return "Error: Could not determine the best adjacent spot to move to."
+
+    logger.info(f"  Selected best adjacent destination: {best_destination}")
+
+    # --- Find Path to Best Adjacent Spot --- 
+    path = PathFinder.find_path(environment, current_pos_tuple, best_destination)
+
+    if not path or len(path) < 2: # Need at least start and end points
+        logger.warning(f"  No path found from {current_pos_tuple} to {best_destination}")
+        return f"Cannot find a path to reach the space next to ({target_x},{target_y})."
+
+    logger.info(f"  Path found with {len(path) - 1} steps: {path}")
+
+    # --- Generate Movement Commands from Path --- 
+    movement_commands = []
+    results_log = [f"Starting path to ({target_x},{target_y})..."]
+    for i in range(len(path) - 1):
+        start_step = path[i]
+        end_step = path[i+1]
+        dx = end_step[0] - start_step[0]
+        dy = end_step[1] - start_step[1]
+
+        tool_name = None
+        params = {}
+
+        if abs(dx) + abs(dy) == 1: # Cardinal move
+            tool_name = "move"
+            if dx == 1: direction = "right"
+            elif dx == -1: direction = "left"
+            elif dy == 1: direction = "down"
+            else: direction = "up"
+            params = {"direction": direction, "is_running": False, "continuous": False}
+        elif abs(dx) + abs(dy) == 2: # Jump move
+            tool_name = "jump"
+            params = {"target_x": end_step[0], "target_y": end_step[1]}
+        else:
+            logger.error(f"  Invalid step in path: {start_step} -> {end_step}. Skipping.")
+            results_log.append(f"Step {i+1}: Invalid movement detected, stopping.")
+            break # Stop if path contains invalid step
+
+        movement_commands.append({"tool": tool_name, "parameters": params})
+
+    # --- Execute Movement Commands Sequentially --- 
+    logger.info(f"  Executing {len(movement_commands)} movement commands...")
+    final_outcome = f"Failed to reach the destination near ({target_x},{target_y})."
+
+    for i, cmd in enumerate(movement_commands):
+        tool_name = cmd['tool']
+        params = cmd['parameters']
+        logger.debug(f"    Executing Step {i+1}: {tool_name} with {params}")
+        step_result = ""
+        success = False
+        try:
+            if tool_name == 'move':
+                step_result = await move(ctx, **params)
+                # Check success (crude check, relies on move tool's return string)
+                if "Successfully moved" in step_result or "Successfully walked" in step_result or "already there" in step_result.lower():
+                    success = True
+            elif tool_name == 'jump':
+                step_result = await jump(ctx, **params)
+                if "Successfully jumped" in step_result or "jumped" in step_result.lower():
+                    success = True
+
+            results_log.append(f"Step {i+1} ({tool_name}): {step_result}")
+            if not success:
+                logger.warning(f"  Movement failed at step {i+1}: {step_result}")
+                final_outcome = f"Stopped moving towards ({target_x},{target_y}) after step {i+1}: {step_result}"
+                break # Stop sequence on failure
+            else:
+                 # If this is the last command, set success message
+                 if i == len(movement_commands) - 1:
+                     final_outcome = f"Successfully moved next to the location ({target_x},{target_y}). Now at {person.position}."
+
+        except Exception as e:
+            logger.error(f"  Error executing step {i+1} ({tool_name}): {e}", exc_info=True)
+            results_log.append(f"Step {i+1} ({tool_name}): Error - {e}")
+            final_outcome = f"An error occurred during movement towards ({target_x},{target_y})."
+            break
+
+    logger.info(f"🏁 moveToObject finished: {final_outcome}")
+    # Optionally return results_log as well for more detail, but final_outcome is usually sufficient
+    return final_outcome
+
+# --- END ADDED TOOL ---
+
+@function_tool
+async def move(ctx: RunContextWrapper[CompleteStoryResult], direction: str, is_running: bool, continuous: bool) -> str:
+    """Move the player character one step in a given cardinal direction (up, down, left, right).
+    Diagonal movement is not supported.
+
+    Args:
+        ctx: The RunContext containing the game state.
+        direction: Cardinal direction to move (up, down, left, right, or north, south, east, west).
+        is_running: Whether to run (move faster) or walk. Not applicable for continuous movement.
+        continuous: Whether to keep moving in the specified cardinal direction until hitting an obstacle or edge.
+
+    Returns:
+        str: Description of the movement result or an error message.
     """
     try:
-        # Normalize direction parameter to ensure compatibility with frontend
+        # Normalize direction parameter
         direction = direction.lower()
-        # Convert compass directions to cardinal directions
         if direction == "north": direction = "up"
         elif direction == "south": direction = "down"
         elif direction == "east": direction = "right"
         elif direction == "west": direction = "left"
-        
+
+        # --- ADDED: Explicitly check for allowed cardinal directions --- 
+        allowed_directions = ["up", "down", "left", "right"]
+        if direction not in allowed_directions:
+            logger.warning(f"🚫 TOOL: Invalid move direction received: '{direction}'. Only cardinal directions are allowed.")
+            return f"Cannot move '{direction}'. Movement is only possible in cardinal directions (up, down, left, right)."
+        # --- END ADDED CHECK --- 
+
         story_result = ctx.context
         person = story_result.person
         environment = story_result.environment
-        
+
         # Make sure position exists
         if person.position is None:
-            person.position = (20, 20)  # Default starting position
-            
-        orig_pos = person.position
-        logger.info(f"🏃 Starting {'continuous ' if continuous else ''}movement: {direction} from {orig_pos}")
-        
-        # Always use single movement when sending to frontend to prevent continuous movement
-        # loops, even if the backend was requested to do continuous movement
-        frontend_continuous = False  # Override continuous flag for frontend
-        
-        if continuous:
-            # Call the helper to keep moving until hitting obstacle
-            return await DirectionHelper.move_continuously(story_result, direction)
-            
-        # Single step movement
-        # Calculate target position based on current position and direction
-        current_x, current_y = person.position
-        target_x, target_y = current_x, current_y
-        
-        # Determine new position based on direction
-        if direction == "up":
-            target_y += 1
-        elif direction == "down":
-            target_y -= 1
-        elif direction == "left":
-            target_x -= 1
-        elif direction == "right":
-            target_x += 1
-            
-        target_position = (target_x, target_y)
-        logger.info(f"🎯 Target position: {target_position}")
+            # Try to get position from environment if available, otherwise default
+            default_pos = (environment.width // 2, environment.height // 2) if environment else (20, 20)
+            person.position = default_pos
+            logger.warning(f"Player position was None, set to default: {person.position}")
 
-        # Attempt the move in the backend
-        result = person.move(environment, target_position, is_running)
-        
+        # Handle potential None position again after default assignment attempt
+        if person.position is None:
+             logger.error("💥 TOOL: Critical error - Player position is still None after attempting default assignment.")
+             return "Error: Cannot determine player's starting position."
+
+        # Ensure position is usable (convert if needed, though Person class should handle tuples)
+        current_pos_tuple = None
+        if hasattr(person.position, 'x') and hasattr(person.position, 'y'):
+             current_pos_tuple = (person.position.x, person.position.y)
+        elif isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
+             current_pos_tuple = (person.position[0], person.position[1])
+        else:
+            logger.error(f"💥 TOOL: Invalid current_pos format in move tool: {person.position}")
+            return "Error: Could not determine valid starting coordinates."
+
+        orig_pos = current_pos_tuple # Use the validated tuple
+        logger.info(f"🏃 Starting {'continuous ' if continuous else ''}movement: {direction} from {orig_pos}")
+
+        # Use the DirectionHelper for continuous movement
+        if continuous:
+            # Pass the validated tuple position to the helper
+            return await DirectionHelper.move_continuously(story_result, direction)
+
+        # Single step movement
+        target_pos_tuple = DirectionHelper.get_relative_position(orig_pos, direction)
+        logger.info(f"🎯 Target position for single step: {target_pos_tuple}")
+
+        # Attempt the move in the backend using the target tuple
+        # The Person.move method should ideally accept a tuple (x, y)
+        result = person.move(environment, target_pos_tuple, is_running)
+
         # Get speed and result text
-        speed_text = "ran to" if is_running else "walked to"
-        result_text = f"Successfully {speed_text} {target_position}. Now at {person.position}."
-        
+        speed_text = "ran" if is_running else "walked"
+
         if result["success"]:
+            result_text = f"Successfully {speed_text} {direction}. Now at {person.position}."
             # Update state after successful move
             sync_story_state(story_result)
-            
+
             # DIRECT WEBSOCKET COMMAND: Send move command to frontend
-            # Access the StorytellerAgentFinal instance through the story_result
             storyteller = getattr(story_result, '_storyteller_agent', None)
-            
             if storyteller and hasattr(storyteller, 'send_command_to_frontend'):
                 try:
-                    # Create command params for frontend
                     command_params = {
                         "direction": direction,
                         "is_running": is_running,
-                        "continuous": frontend_continuous  # Always use single movement for frontend
+                        "continuous": False # Single step for frontend command
                     }
-                    
-                    # Send command to frontend
-                    logger.info(f"🚀 TOOL: Sending move command to frontend via websocket: direction={direction}, continuous={frontend_continuous}")
+                    logger.info(f"🚀 TOOL: Sending move command to frontend via websocket: direction={direction}, continuous=False")
+                    # Send the backend result message along with the command
                     await storyteller.send_command_to_frontend("move", command_params, result_text)
                     logger.info(f"✅ TOOL: Command sent to frontend")
                 except Exception as e:
                     logger.error(f"❌ TOOL: Error sending WebSocket command: {e}")
             else:
                 logger.warning(f"⚠️ TOOL: Could not access storyteller agent to send WebSocket command")
-            
+
             return result_text
         else:
+            # If move failed, return the reason from the person.move result
             return f"Couldn't move {direction}: {result['message']}"
+
     except Exception as e:
-        logger.error(f"💥 TOOL: Error during movement: {str(e)}", exc_info=True)
+        logger.error(f"💥 TOOL: Unexpected error during movement: {str(e)}", exc_info=True)
         return f"Error during movement: {str(e)}"
 
 @function_tool
@@ -417,12 +743,30 @@ async def push(ctx: RunContextWrapper[CompleteStoryResult], object_id: str, dire
     if object_id not in story_result.nearby_objects:
         return f"❓ Cannot push '{object_id}'. It's not nearby."
     obj = story_result.nearby_objects[object_id]
-    if not hasattr(obj, 'position') or not obj.position:
-         return f"❓ Cannot push '{object_id}'. It has no position."
-    logger.debug(f"  Attempting push: Player at {story_result.person.position}, Object '{obj.name}' at {obj.position}")
-    target_pos = DirectionHelper.get_relative_position(obj.position, direction)
-    push_vector = DirectionHelper.get_direction_vector(obj.position, target_pos)
-    result = story_result.person.push(story_result.environment, obj.position, push_vector)
+    obj_pos_attr = getattr(obj, 'position', None)
+    if not obj_pos_attr:
+         return f"❓ Cannot push '{obj.name}' ({object_id}). It has no position."
+         
+    # Ensure position is a tuple for DirectionHelper
+    obj_pos_tuple = None
+    if hasattr(obj_pos_attr, 'x') and hasattr(obj_pos_attr, 'y'):
+        obj_pos_tuple = (obj_pos_attr.x, obj_pos_attr.y)
+    elif isinstance(obj_pos_attr, (tuple, list)) and len(obj_pos_attr) >= 2:
+        obj_pos_tuple = (obj_pos_attr[0], obj_pos_attr[1])
+        
+    if obj_pos_tuple is None:
+        return f"❓ Could not determine valid coordinates for '{obj.name}' ({object_id})."
+
+    logger.debug(f"  Attempting push: Player at {story_result.person.position}, Object '{obj.name}' at {obj_pos_tuple}")
+    
+    # Use tuple position with DirectionHelper
+    target_pos_tuple = DirectionHelper.get_relative_position(obj_pos_tuple, direction)
+    push_vector = DirectionHelper.get_direction_vector(obj_pos_tuple, target_pos_tuple)
+    
+    # Pass the original object position attribute to the person's push method 
+    # (assuming person.push can handle the original format or it gets normalized internally)
+    result = story_result.person.push(story_result.environment, obj_pos_attr, push_vector)
+    
     result_msg = result["message"]
     logger.info(f"  Push result: {'✅ Success' if result['success'] else '❌ Failed'} - {result_msg}")
     if result["success"]:
@@ -509,8 +853,24 @@ async def look_around(ctx: RunContextWrapper[CompleteStoryResult]) -> str:
     if not story_result.person: return "❌ Error: Player character not found."
     sync_story_state(story_result) # Crucial to update nearby_objects first
     
-    player_pos = story_result.person.position
-    logger.debug(f"  Looking around from position: {player_pos}")
+    player_pos_attr = story_result.person.position
+    if not player_pos_attr:
+        logger.error("❌ Player has no position in look_around!")
+        return "Error: Cannot determine your location."
+        
+    # Handle both object and tuple style positions robustly
+    player_x, player_y = None, None
+    if hasattr(player_pos_attr, 'x') and hasattr(player_pos_attr, 'y'):
+        player_x, player_y = player_pos_attr.x, player_pos_attr.y
+    elif isinstance(player_pos_attr, (tuple, list)) and len(player_pos_attr) >= 2:
+        player_x, player_y = player_pos_attr[0], player_pos_attr[1]
+        
+    if player_x is None or player_y is None:
+        logger.error(f"❌ Could not extract player coordinates from position: {player_pos_attr}")
+        return "Error: Cannot determine your exact coordinates."
+        
+    player_pos_tuple = (player_x, player_y) # Use tuple internally now
+    logger.debug(f"  Looking around from position: {player_pos_tuple}")
     
     # Define scan radius (3 tiles in each direction for a 7x7 grid)
     SCAN_RADIUS = 3
@@ -531,9 +891,9 @@ async def look_around(ctx: RunContextWrapper[CompleteStoryResult]) -> str:
             if dx == 0 and dy == 0:
                 continue
                 
-            # Calculate target position
-            check_x = player_pos[0] + dx
-            check_y = player_pos[1] + dy
+            # Calculate target position using tuple components
+            check_x = player_pos_tuple[0] + dx
+            check_y = player_pos_tuple[1] + dy
             check_pos = (check_x, check_y)
             
             # Calculate Manhattan distance for sorting
@@ -577,7 +937,7 @@ async def look_around(ctx: RunContextWrapper[CompleteStoryResult]) -> str:
                     )
     
     # Add objects at the player's position
-    entities_at_player = story_result.environment.get_entities_at(player_pos)
+    entities_at_player = story_result.environment.get_entities_at(player_pos_tuple)
     if len(entities_at_player) > 1:  # More than just the player
         descriptions.append("At your position:")
         for entity in entities_at_player:
@@ -721,8 +1081,19 @@ async def examine_object(ctx: RunContextWrapper[CompleteStoryResult], object_id:
     base_desc = getattr(target_obj, 'description', None)
     if base_desc: desc_list.append(f"- Description: {base_desc}")
 
-    position = getattr(target_obj, 'position', None)
-    if position and source != "inventory": desc_list.append(f"- Location: ({position[0]},{position[1]})")
+    position_attr = getattr(target_obj, 'position', None)
+    if position_attr and source != "inventory":
+        # Handle both object and tuple style positions robustly
+        pos_x, pos_y = None, None
+        if hasattr(position_attr, 'x') and hasattr(position_attr, 'y'):
+            pos_x, pos_y = position_attr.x, position_attr.y
+        elif isinstance(position_attr, (tuple, list)) and len(position_attr) >= 2:
+            pos_x, pos_y = position_attr[0], position_attr[1]
+        
+        if pos_x is not None and pos_y is not None:
+            desc_list.append(f"- Location: ({pos_x},{pos_y})")
+        else:
+            logger.warning(f"  Could not determine position coordinates for {object_id}")
 
     weight = getattr(target_obj, 'weight', None)
     if weight is not None: desc_list.append(f"- Weight: {weight} ({get_weight_description(weight)})")
@@ -759,6 +1130,74 @@ async def examine_object(ctx: RunContextWrapper[CompleteStoryResult], object_id:
     logger.info(f"  Examination complete for '{object_id}'.")
     return result_msg
 
+# --- ADDED NEW TOOL: changeState --- 
+@function_tool
+async def changeState(ctx: RunContextWrapper[CompleteStoryResult], object_id: str, new_state: str) -> str:
+    """Change the state of a specified object (by object_id) to a new state.
+    Use this as a fallback tool for actions that modify an object's condition when no other specific tool applies.
+    Examples: 'light campfire', 'extinguish torch', 'open box', 'close door', 'unlock chest'.
+
+    Args:
+        ctx: The RunContext containing the game state.
+        object_id: The unique ID of the object whose state needs to change.
+        new_state: The desired new state for the object (e.g., 'lit', 'unlit', 'open', 'closed', 'locked', 'unlocked').
+
+    Returns:
+        str: Description of the state change result or an error message.
+    """
+    logger.info(f"⚙️ Tool: changeState(object_id='{object_id}', new_state='{new_state}')")
+    story_result = ctx.context
+    if not story_result.person: return "❌ Error: Player character not found."
+    sync_story_state(story_result) # Ensure lists are up-to-date
+
+    target_obj = None
+    source = None
+
+    # 1. Check nearby objects
+    if hasattr(story_result, 'nearby_objects') and object_id in story_result.nearby_objects:
+        target_obj = story_result.nearby_objects[object_id]
+        source = "nearby"
+        logger.debug(f"  Found '{object_id}' nearby for state change.")
+
+    # 2. Check inventory if not found nearby
+    if not target_obj and hasattr(story_result.person, 'inventory'):
+        for item in story_result.person.inventory.contents:
+            if hasattr(item, 'id') and item.id == object_id:
+                target_obj = item
+                source = "inventory"
+                logger.debug(f"  Found '{object_id}' in inventory for state change.")
+                break
+
+    # 3. Check environment entity map if still not found
+    if not target_obj and hasattr(story_result.environment, '_entity_map') and object_id in story_result.environment._entity_map:
+        target_obj = story_result.environment._entity_map[object_id]
+        source = "world"
+        logger.debug(f"  Found '{object_id}' in world entities map for state change.")
+
+    if not target_obj:
+        logger.warning(f"  Object '{object_id}' not found for state change.")
+        return f"You can't find anything called '{object_id}' to change its state."
+
+    object_name = getattr(target_obj, 'name', object_id)
+
+    # Check if the object has a 'state' attribute
+    if not hasattr(target_obj, 'state'):
+        logger.warning(f"  Object '{object_name}' ({object_id}) does not have a 'state' attribute.")
+        return f"The {object_name} doesn't seem to have a state that can be changed."
+
+    # Change the state
+    try:
+        old_state = getattr(target_obj, 'state', 'unknown')
+        setattr(target_obj, 'state', new_state)
+        # Optional: Sync state again after modification, though sync was called at start
+        # sync_story_state(story_result)
+        logger.info(f"  ✅ Successfully changed state of '{object_name}' ({object_id}) from '{old_state}' to '{new_state}'.")
+        return f"You changed the state of the {object_name} to '{new_state}'."
+    except Exception as e:
+        logger.error(f"💥 TOOL: Error setting state for '{object_id}': {e}", exc_info=True)
+        return f"An error occurred while trying to change the state of the {object_name}."
+
+# --- END ADDED TOOL --- 
 
 @function_tool
 async def execute_movement_sequence(ctx: RunContextWrapper[CompleteStoryResult], commands: List[Dict[str, Any]]) -> str:
@@ -782,7 +1221,8 @@ async def execute_movement_sequence(ctx: RunContextWrapper[CompleteStoryResult],
                 if direction:
                      step_result = await move(ctx, direction, is_running, continuous)
                      # Check if move was successful (crude check, depends on message format)
-                     if "moved" in step_result.lower() or "reached" in step_result.lower() or "already there" in step_result.lower() : success = True
+                     if "moved" in step_result.lower() or "reached" in step_result.lower() or "already there" in step_result.lower():
+                         success = True
                      else: success = False
                 else:
                      step_result = "Move command missing direction."
@@ -835,6 +1275,7 @@ async def execute_movement_sequence(ctx: RunContextWrapper[CompleteStoryResult],
 # List of all available tools for the agent
 ALL_GAME_TOOLS = [
     move,
+    move_to_object,
     jump,
     push,
     pull,
@@ -847,6 +1288,7 @@ ALL_GAME_TOOLS = [
     check_inventory, # Legacy
     inventory, # Preferred inventory check
     examine_object,
+    changeState, # Add the new tool here
     # Temporarily remove this tool until we fix the schema issue
     # execute_movement_sequence,
     # move_continuously # Covered by move(continuous=True)
@@ -944,49 +1386,7 @@ class StorytellerAgentFinal:
                 quest_title = quest_data.get('title', quest_title)
 
         # --- MODIFIED SYSTEM PROMPT ---
-        system_prompt = f"""You are Jan, the Storyteller and Game Master for a '{theme}' themed adventure.
-
-Your Goal: Guide the player through the story, describe the world, react to their actions, and manage the game state using your tools.
-
-Your Responsibilities:
-1.  **Narrate:** Describe scenes, events, and the results of player actions vividly. Use the game's theme and tone.
-2.  **Respond to Player:** Understand player text or voice input. If it's a command to interact with the world, use the appropriate tool. If it's dialogue or a question, respond in character.
-3.  **Use Tools:** You have direct access to tools for player actions (move, look, jump, push, pull, get, put, use, examine, inventory, say). Use these tools when the player wants to perform an action.
-4.  **Manage Quest:** Keep track of the current quest: '{quest_title}'. Guide the player towards objectives.
-5.  **Format Output:** ALWAYS respond with a JSON object matching the `AnswerSet` schema. Each answer in the list should be short (max 20 words). Provide relevant action options (max 5 words each) in the *last* answer object.
-6.  **Game Mechanics:** Adhere to the basic game mechanics (movement, interaction limits, etc.). Reference:
-    {get_game_mechanics_reference()}
-
-Example Interaction:
-Player: "Look around"
-You: (Use 'look_around' tool) -> Tool returns "You see a dusty chest."
-Your JSON Response:
-```json
-{{
-  "answers": [
-    {{"type": "text", "description": "You scan your surroundings.", "options": []}},
-    {{"type": "text", "description": "You see a dusty chest.", "options": ["Examine chest", "Move closer"]}}
-  ]
-}}
-```
-
-Player: "Open the chest"
-You: (Use 'examine_object' tool with 'chest' ID) -> Tool returns "The chest is unlocked. It contains a gold key."
-Your JSON Response:
-```json
-{{
-  "answers": [
-    {{"type": "text", "description": "You try the lid. It creaks open!", "options": []}},
-    {{"type": "text", "description": "Inside, you find a gold key.", "options": ["Take key", "Close chest"]}}
-  ]
-}}
-```
-
-IMPORTANT: Use the movement tool (move) when the player wants to move in any direction or go somewhere.
-Player commands like 'go east', 'walk left', 'move forward', etc. should use the move tool, not just be described.
-Always use the push, pull, and jump tools for those specific actions rather than describing them.
-
-**Important:** Be concise. Ensure every response strictly follows the `AnswerSet` JSON format. Use your tools to make the game world interactive!"""
+        system_prompt = get_storyteller_system_prompt(theme, quest_title, get_game_mechanics_reference())
 
         try:
             storyteller_agent_core = Agent[CompleteStoryResult]( # Use context type hint
@@ -995,7 +1395,7 @@ Always use the push, pull, and jump tools for those specific actions rather than
                 # Provide the actual tool functions directly
                 tools=ALL_GAME_TOOLS,
                 output_type=AnswerSet, # Expect AnswerSet JSON
-                model="gpt-4o" # Or your preferred model
+                model="gpt-4o-mini" # Or your preferred model
             )
             
             # Add a reference to the parent StorytellerAgentFinal instance
@@ -1096,7 +1496,9 @@ Always use the push, pull, and jump tools for those specific actions rather than
             run_result = await Runner.run(
                 starting_agent=agent_core,
                 input=user_input,
-                context=self.game_context
+                context=self.game_context,
+                # You could potentially adjust max_turns here if needed
+                # max_turns=10 
             )
             logger.info(f"✅ Agent run completed")
             
@@ -1158,8 +1560,10 @@ Always use the push, pull, and jump tools for those specific actions rather than
                     return {"type": "json", "content": response_content}, conversation_history
                     
         except Exception as e:
-            logger.error(f"💥 Error processing text input: {e}", exc_info=True)
-            return self._create_error_response(f"Error processing input: {e}", conversation_history)
+            logger.error(f"💥 Agent hit max turns limit: {e}", exc_info=False) # Don't need full traceback here
+            user_message = "I seem to have gotten stuck in a loop thinking about that. Could you try rephrasing your request or giving a different command?"
+            response_content = self._create_basic_answer_json(user_message, options=["Okay"])
+            return {"type": "json", "content": response_content}, conversation_history
 
     def _create_error_response(self, error_message: str, history: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Create a standardized error response."""

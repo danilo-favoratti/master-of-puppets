@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useGameStore } from "../store/gameStore";
 import { Position } from "../types/game";
 import LightControls from "./LightControls";
+import { ToolCall } from "../App";
 
 interface GameDebugUIProps {
   characterRef: React.RefObject<{ moveAlongPath: (path: Position[]) => void }>;
@@ -13,6 +14,7 @@ interface GameDebugUIProps {
   onLightDistanceChange: (value: number) => void;
   onLightDecayChange: (value: number) => void;
   onAmbientLightIntensityChange: (value: number) => void;
+  toolCalls: ToolCall[];
 }
 
 const GameDebugUI = ({
@@ -25,6 +27,7 @@ const GameDebugUI = ({
   onLightDistanceChange,
   onLightDecayChange,
   onAmbientLightIntensityChange,
+  toolCalls,
 }: GameDebugUIProps) => {
   const position = useGameStore((state) => state.position);
   const [isMoving, setIsMoving] = useState(false);
@@ -68,6 +71,15 @@ const GameDebugUI = ({
     }, 1000);
   };
 
+  // Format tool calls for display
+  const formattedToolCalls = toolCalls
+    .map((call) => {
+      const paramsString = JSON.stringify(call.params);
+      const resultString = call.result ? ` -> ${call.result}` : "";
+      return `${call.name}(${paramsString})${resultString}`;
+    })
+    .join("\n");
+
   return (
     <div
       style={{
@@ -79,8 +91,11 @@ const GameDebugUI = ({
         padding: "8px",
         borderRadius: "4px",
         zIndex: 50,
+        maxWidth: "400px",
+        maxHeight: "80vh",
+        overflowY: "auto",
       }}
-      className="flex flex-col gap-4 bg-black/70 p-4 rounded-lg z-50"
+      className="flex flex-col gap-4 bg-black/70 p-4 rounded-lg z-50 text-white text-xs"
     >
       {/* <div className="text-white text-sm">
         Posição Atual: ({position[0]}, {position[1]})
@@ -193,6 +208,20 @@ const GameDebugUI = ({
         onDecayChange={onLightDecayChange}
         onAmbientLightIntensityChange={onAmbientLightIntensityChange}
       />
+
+      <div className="mt-4">
+        <label htmlFor="tool-calls-display" className="block mb-1 font-bold">
+          Recent Tool Calls:
+        </label>
+        <textarea
+          id="tool-calls-display"
+          readOnly
+          value={formattedToolCalls}
+          rows={20}
+          className="w-full p-2 rounded bg-white/10 text-white text-xs font-mono resize-none"
+          style={{ fontFamily: "monospace", width: "100%", height: "100%" }}
+        />
+      </div>
     </div>
   );
 };
