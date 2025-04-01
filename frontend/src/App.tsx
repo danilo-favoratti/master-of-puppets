@@ -18,7 +18,7 @@ export interface ToolCall {
 
 // Fix the WebSocket URL declaration - Add type assertion
 const WS_URL = (import.meta as any).env.VITE_WS_URL ||
-    ((import.meta as any).env.DEV ? `ws://localhost:8080/ws` : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`);
+    ((import.meta as any).env.DEV ? `ws://localhost:8080/ws` : `wss://masterofpuppets-ws.favoratti.com/ws`);
 
 // Global variables to maintain a single WebSocket connection across component mounts
 let globalSocket: WebSocket | null = null;
