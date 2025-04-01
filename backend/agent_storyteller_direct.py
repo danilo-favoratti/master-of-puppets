@@ -10,8 +10,6 @@ from typing import Dict, Any, Tuple, Awaitable, Callable, List, Optional
 # Added for schema debugging
 from pydantic.json_schema import models_json_schema
 
-from agent_puppet_master import GameState
-
 # Third-party imports (ensure versions are compatible)
 try:
     from agents import Agent, Runner, function_tool, \

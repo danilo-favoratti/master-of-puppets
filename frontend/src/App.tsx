@@ -3,7 +3,7 @@ import "./App.css";
 import Chat from "./components/Chat";
 import GameContainer from "./components/GameContainer";
 import HomeScreen from "./ui/HomeScreen";
-import {GameData} from "./types/game";
+import {GameData, Position} from "./types/game";
 
 // Fix the WebSocket URL declaration - Add type assertion
 const WS_URL = (import.meta as any).env.VITE_WS_URL ||
@@ -47,7 +47,7 @@ function App() {
         }>
     >([]);
     const [isMapCreated, setIsMapCreated] = useState(false);
-    const [mapData, setMapData] = useState(null);
+    const [mapData, setMapData] = useState<GameData | null>(null);
     const [isMapReady, setIsMapReady] = useState(false);
     const [gameStarted, setGameStarted] = useState(false);
     const [loadingMap, setLoadingMap] = useState(false);
@@ -66,7 +66,7 @@ function App() {
         []
     );
 
-    const characterRef = useRef(null);
+    const characterRef = useRef<{ moveAlongPath: (path: Position[]) => void; move: (direction: string) => void } | null>(null);
 
     // Connect to backend WebSocket
     useEffect(() => {
@@ -195,12 +195,43 @@ function App() {
                                 // Optionally, add an error message to the chat
                                 addMessage("Error: Failed to process map data from server.", "system", true);
                             }
+                        } else if (data.name === "move") {
+                            // Add detailed debugging for move commands
+                            console.log("⭐ MOVE COMMAND RECEIVED:", data);
+                            console.log("Direction:", data.params?.direction);
+                            console.log("Is running:", data.params?.is_running);
+                            console.log("Is continuous:", data.params?.continuous);
+                            
+                            try {
+                                // Forward to executeCommand
+                                executeCommand(data.name, data.result || "", data.params || {});
+                                
+                                // Check if we have a character reference
+                                if (characterRef.current && characterRef.current.move && typeof characterRef.current.move === 'function') {
+                                    console.log("🤖 Attempting to directly call characterRef.move from WebSocket handler...");
+                                    characterRef.current.move(data.params?.direction);
+                                } else {
+                                    console.error("🔴 Character ref or move method not available:", 
+                                        characterRef.current ? "Missing move method" : "Missing ref");
+                                }
+                            } catch (error) {
+                                console.error("🔴 Error executing move command:", error);
+                            }
+                            
+                            // Show the result as a message if available
+                            if (data.result) {
+                                addMessage(data.result, data.sender || "system");
+                            }
                         } else {
                             // Other command, just show the result as a message
+                            console.log("Executing command:", data.name, data.params);
                             // Using addMessage ensures consistent handling
                             if (data.result) {
                                 addMessage(data.result, data.sender || "system");
                             }
+                            
+                            // Forward to executeCommand
+                            executeCommand(data.name, data.result || "", data.params || {});
                         }
                     } else if (data.type === "user_message") {
                         // This is a user message from transcription
@@ -398,6 +429,14 @@ function App() {
 
     // Execute a command from the character
     const executeCommand = (commandName: string, result: string, params: any) => {
+        // Log command execution for debugging
+        console.log(`🚀 executeCommand called with:`, {
+            commandName,
+            result,
+            params,
+            hasCharacterRef: !!characterRef.current
+        });
+
         // Add the command result to chat
         addMessage(result, "command");
 
@@ -414,7 +453,15 @@ function App() {
         }
         // Forward other commands to the game component if the handler is registered
         else if (gameCommandHandlerRef.current) {
-            gameCommandHandlerRef.current(commandName, result, params);
+            try {
+                console.log(`🚀 Forwarding command to gameCommandHandler: ${commandName}`);
+                gameCommandHandlerRef.current(commandName, result, params);
+                console.log(`🚀 Command forwarded successfully`);
+            } catch (error) {
+                console.error(`Error forwarding command ${commandName}:`, error);
+            }
+        } else {
+            console.warn(`No gameCommandHandler registered for command: ${commandName}`);
         }
     };
 

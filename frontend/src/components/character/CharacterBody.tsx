@@ -16,7 +16,7 @@ import CharacterHat from "./CharacterHat";
 import CharacterOutfit from "./CharacterOutfit";
 
 const CharacterBody = forwardRef<
-  { moveAlongPath: (path: Position[]) => void },
+  { moveAlongPath: (path: Position[]) => void; move: (direction: string) => void },
   CharacterBodyProps
 >(
   (
@@ -119,6 +119,79 @@ const CharacterBody = forwardRef<
           isMoving: true,
         });
       },
+      // Add move method to handle direction-based movement
+      move: (direction: string) => {
+        // Get current position
+        if (!meshRef.current) {
+          console.error("📍 Move failed: meshRef.current is null");
+          return;
+        }
+        
+        console.log("📍 CharacterBody.move called with direction:", direction);
+        
+        const currentPos = meshRef.current.position;
+        console.log("📍 Current position:", [currentPos.x, currentPos.y, currentPos.z]);
+        
+        let targetX = currentPos.x;
+        let targetY = currentPos.y;
+        
+        // Calculate target position based on direction
+        switch(direction.toLowerCase()) {
+          case 'up':
+            targetY += 1;
+            break;
+          case 'down':
+            targetY -= 1;
+            break;
+          case 'left':
+            targetX -= 1;
+            break;
+          case 'right':
+            targetX += 1;
+            break;
+          default:
+            console.warn(`Unknown direction: ${direction}`);
+            return;
+        }
+        
+        console.log("📍 Target position:", [targetX, targetY, currentPos.z]);
+        
+        // Create a path with just the target position
+        const path: Position[] = [{ x: targetX, y: targetY }];
+        
+        // Set animation based on direction
+        let newAnimation: CharacterAnimationType;
+        switch(direction.toLowerCase()) {
+          case 'up':
+            newAnimation = CharacterAnimationType.WALK_UP;
+            break;
+          case 'down':
+            newAnimation = CharacterAnimationType.WALK_DOWN;
+            break;
+          case 'left':
+            newAnimation = CharacterAnimationType.WALK_LEFT;
+            break;
+          case 'right':
+            newAnimation = CharacterAnimationType.WALK_RIGHT;
+            break;
+          default:
+            newAnimation = CharacterAnimationType.WALK_DOWN;
+        }
+        
+        // Update animation
+        console.log("📍 Setting animation to:", newAnimation);
+        if (setAnimation) {
+          setAnimation(newAnimation);
+        }
+        
+        // Use moveAlongPath to handle the movement
+        console.log("📍 Setting movement state with path:", path);
+        setMovementState({
+          path,
+          currentPathIndex: 0,
+          isMoving: true,
+        });
+      }
     }));
 
     // Update movement in the animation frame
@@ -129,8 +202,24 @@ const CharacterBody = forwardRef<
       const currentPathIndex = movementState.currentPathIndex;
 
       if (currentPathIndex >= movementState.path.length) {
+        console.log("📍 Movement complete - reached end of path");
         setMovementState((prev) => ({ ...prev, isMoving: false }));
-        setAnimation?.(CharacterAnimationType.IDLE_DOWN);
+        
+        // Determine which idle animation to use based on current animation
+        const currentAnimation = animationRef.current;
+        let idleAnimation = CharacterAnimationType.IDLE_DOWN;
+        
+        if (currentAnimation === CharacterAnimationType.WALK_UP) {
+          idleAnimation = CharacterAnimationType.IDLE_UP;
+        } else if (currentAnimation === CharacterAnimationType.WALK_LEFT) {
+          idleAnimation = CharacterAnimationType.IDLE_LEFT;
+        } else if (currentAnimation === CharacterAnimationType.WALK_RIGHT) {
+          idleAnimation = CharacterAnimationType.IDLE_RIGHT;
+        }
+        
+        console.log("📍 Setting idle animation:", idleAnimation);
+        setAnimation?.(idleAnimation);
+        
         setCurrentFrame(0);
         setFrameTimeAccumulator(0);
         if (setPosition) {
@@ -168,6 +257,7 @@ const CharacterBody = forwardRef<
 
       // Atualizar a animação apenas se mudou
       if (newAnimation !== animationRef.current) {
+        console.log("📍 Updating animation during movement:", newAnimation);
         animationRef.current = newAnimation;
         if (setAnimation) {
           setAnimation(newAnimation);
@@ -178,6 +268,7 @@ const CharacterBody = forwardRef<
       }
 
       if (distance < 0.1) {
+        console.log("📍 Reached target", currentPathIndex, "moving to next target");
         if (setPosition) {
           setPosition([target.x, target.y, currentPos.z]);
         }

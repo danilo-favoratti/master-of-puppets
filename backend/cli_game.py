@@ -120,7 +120,7 @@ async def run_game_with_board_display(game_state):
     Args:
         game_state: The game state containing the board, player, and other game information
     """
-    agent = create_puppet_master(game_state.person.name)
+    agent = create_puppet_master(complete_story_result, game_state.person.name)
     
     # Thread ID for tracing
     thread_id = f"game-conversation-{game_state.person.id}"

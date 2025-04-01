@@ -10,7 +10,7 @@ import {
   PigEntity,
   PotEntity,
 } from "../types/entities";
-import { GameData } from "../types/game";
+import { GameData, Position } from "../types/game";
 import CharacterBody from "./character/CharacterBody.tsx";
 import GameEntities from "./GameEntities";
 import MapDisplay from "./MapDisplay";
@@ -20,7 +20,7 @@ interface GameProps {
   registerCommandHandler: (
     handler: (cmd: string, result: string, params: any) => void
   ) => void;
-  characterRef: React.RefObject<{ moveAlongPath: (path: Point[]) => void }>;
+  characterRef: React.RefObject<{ moveAlongPath: (path: Position[]) => void; move: (direction: string) => void }>;
   lightIntensity: number;
   lightDistance: number;
   lightDecay: number;
@@ -51,7 +51,7 @@ const Game = ({
 
   // Use provided gameData if available, otherwise use the default from JSON
   const [gameDataState, setGameDataState] = useState<GameData>(
-    gameData || (gameDataJSON as GameData)
+    gameData || (gameDataJSON as unknown as GameData)
   );
 
   // Initialize entities from gameDataState with fallback to empty array
@@ -301,6 +301,28 @@ const Game = ({
           }
         }, 800);
       },
+
+      move: (params) => {
+        // Handle character movement
+        if (params.direction && characterRef.current) {
+          console.log("🎮 MOVE command execution in Game.tsx:", params);
+          const direction = params.direction;
+          
+          try {
+            // Call the move method on the character ref
+            if (typeof characterRef.current.move === 'function') {
+              console.log(`📣 Game.tsx: Calling move(${direction}) on character ref`);
+              characterRef.current.move(direction);
+            } else {
+              console.error("🔴 Character ref doesn't have a move method:", characterRef.current);
+            }
+          } catch (error) {
+            console.error("🔴 Error executing character move:", error);
+          }
+        } else {
+          console.warn("🟠 Move command missing direction or characterRef:", { params, hasRef: !!characterRef.current });
+        }
+      },
     };
 
     const handleCommand = (cmd: string, result: string, params: any) => {
@@ -323,8 +345,22 @@ const Game = ({
         case "move":
           // Handle character movement
           if (params.direction && characterRef.current) {
+            console.log("🎮 MOVE command execution in Game.tsx:", params);
             const direction = params.direction;
-            characterRef.current.move(direction);
+            
+            try {
+              // Call the move method on the character ref
+              if (typeof characterRef.current.move === 'function') {
+                console.log(`📣 Game.tsx: Calling move(${direction}) on character ref`);
+                characterRef.current.move(direction);
+              } else {
+                console.error("🔴 Character ref doesn't have a move method:", characterRef.current);
+              }
+            } catch (error) {
+              console.error("🔴 Error executing character move:", error);
+            }
+          } else {
+            console.warn("🟠 Move command missing direction or characterRef:", { params, hasRef: !!characterRef.current });
           }
           break;
 

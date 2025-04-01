@@ -1,4 +1,18 @@
 {
+  "person": {
+    "id": "game-char",
+    "name": "Player",
+    "position": [20, 20],
+    "inventory": {
+      "id": "user-container",
+      "name": "user-container",
+      "contents": [],
+      "capacity": 10,
+      "is_open": true
+    },
+    "wearable_items": [],
+    "strength": 5
+  },
   "theme": "Lost Memory",
   "environment": {
     "width": 40,
@@ -2161,5 +2175,6 @@
       "contents": []
     }
   ],
-  "complete_narrative": "You find yourself in 'You find yourself on a mysterious island engulfed in a thick mist. Fragments of your memory return with each landmark you encounter.'. The air holds a sense of mysterious and contemplative. Theme: 'Lost Memory'...\n\n**World:**\nOcean, small islands (~24% land)\n\n**Quest: Fragments of the Forgotten**\nReclaim your lost memories scattered across the island.\n- Find the ancient chest and unlock its secrets.\n- Piece together clues from the abandoned backpack.\n- Cultivate the campfire to rekindle past experiences.\n\n**Notable Features:**\n- Chest: An ancient chest, its wood worn and covered with mysterious runes, hints at treasures forgotten.\n- Plant: A Bush.\n- Hole: A Hole.\n- Stump: A Tree Stump (1m).\n- Rock: A Large Boulder.\n- ...and 12 more descriptions.\n\n**Possible Interactions:**\n- Open with chest: As you open the chest, a blinding light envelops you, and images of forgotten lands flash before your eyes.\n- Search with backpack: Rummaging through the backpack, you find old notes and maps that trigger familiarity.\n- Ignite with campfire: Lighting the campfire, warmth surrounds you, and faces of forgotten acquaintances appear in the flickering flames."
+  "complete_narrative": "You find yourself in 'You find yourself on a mysterious island engulfed in a thick mist. Fragments of your memory return with each landmark you encounter.'. The air holds a sense of mysterious and contemplative. Theme: 'Lost Memory'...\n\n**World:**\nOcean, small islands (~24% land)\n\n**Quest: Fragments of the Forgotten**\nReclaim your lost memories scattered across the island.\n- Find the ancient chest and unlock its secrets.\n- Piece together clues from the abandoned backpack.\n- Cultivate the campfire to rekindle past experiences.\n\n**Notable Features:**\n- Chest: An ancient chest, its wood worn and covered with mysterious runes, hints at treasures forgotten.\n- Plant: A Bush.\n- Hole: A Hole.\n- Stump: A Tree Stump (1m).\n- Rock: A Large Boulder.\n- ...and 12 more descriptions.\n\n**Possible Interactions:**\n- Open with chest: As you open the chest, a blinding light envelops you, and images of forgotten lands flash before your eyes.\n- Search with backpack: Rummaging through the backpack, you find old notes and maps that trigger familiarity.\n- Ignite with campfire: Lighting the campfire, warmth surrounds you, and faces of forgotten acquaintances appear in the flickering flames.",
+  "nearby_objects": {}
 }

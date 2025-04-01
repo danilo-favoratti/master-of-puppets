@@ -14,6 +14,8 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from person import Person
+
 # Third-party imports
 try:
     # Make sure 'openai-agents' or the specific SDK package name is correct
@@ -195,6 +197,76 @@ class Environment(BaseModel):
     height: int
     grid: List[List[int]]
     model_config = {"json_schema_extra": {"example": {"width": 10, "height": 10, "grid": [[0, 1], [1, 0]]}}}
+    
+    def is_valid_position(self, position) -> bool:
+        """Check if a position is within the bounds of the environment.
+        
+        Args:
+            position: A tuple or list with (x, y) coordinates, or an object with x and y attributes
+            
+        Returns:
+            bool: True if the position is valid, False otherwise
+        """
+        # Handle different position formats
+        if hasattr(position, 'x') and hasattr(position, 'y'):
+            x, y = position.x, position.y
+        elif isinstance(position, (tuple, list)) and len(position) >= 2:
+            x, y = position[0], position[1]
+        else:
+            return False
+            
+        return 0 <= x < self.width and 0 <= y < self.height
+    
+    def can_move_to(self, position) -> bool:
+        """Check if a position is valid and traversable (value = 1 in grid).
+        
+        Args:
+            position: A tuple or list with (x, y) coordinates, or an object with x and y attributes
+            
+        Returns:
+            bool: True if the position is valid and traversable, False otherwise
+        """
+        if not self.is_valid_position(position):
+            return False
+            
+        # Handle different position formats
+        if hasattr(position, 'x') and hasattr(position, 'y'):
+            x, y = position.x, position.y
+        else:
+            x, y = position[0], position[1]
+            
+        # Grid is indexed as [y][x] since it's a list of rows
+        try:
+            return self.grid[y][x] == 1  # Assuming 1 means traversable
+        except IndexError:
+            # Handle potential index errors
+            return False
+    
+    def get_entities_at(self, position) -> List["Entity"]:
+        """Get all entities at a specific position.
+        
+        Args:
+            position: A tuple or list with (x, y) coordinates, or an object with x and y attributes
+            
+        Returns:
+            List of entities at the position (empty list if none found)
+        """
+        # For compatibility with the Person.look method
+        # This should be populated by the sync_story_state function
+        return []
+    
+    def get_object_at(self, position) -> Optional["GameObject"]:
+        """Get the first GameObject at a position, if any.
+        
+        Args:
+            position: A tuple or list with (x, y) coordinates, or an object with x and y attributes
+            
+        Returns:
+            GameObject at the position or None if not found
+        """
+        # For compatibility with the Person.jump method
+        # This should be populated by the sync_story_state function
+        return None
 
 
 class EntityModel(BaseModel):
@@ -341,6 +413,7 @@ class StoryComponentsResult(BaseModel):
 
 
 class CompleteStoryResult(BaseModel):
+    person: Person
     theme: str
     environment: Environment
     terrain_description: str
@@ -349,6 +422,24 @@ class CompleteStoryResult(BaseModel):
     entities: List[Entity]
     complete_narrative: str
     error: Optional[str] = None
+    nearby_objects: Dict[str, Entity] = Field(default_factory=dict)
+    
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_schema_extra": {
+            "example": {
+                "theme": "Fantasy Adventure",
+                "environment": {"width": 10, "height": 10, "grid": [[0, 1], [1, 0]]},
+                "terrain_description": "A mystical forest",
+                "entity_descriptions": {"chest": "An ornate wooden chest"},
+                "narrative_components": {"quest": {"title": "The Lost Artifact"}},
+                "entities": [],
+                "complete_narrative": "A tale of adventure...",
+                "nearby_objects": {},
+                "error": None
+            }
+        }
+    }
 
 
 # --- Helper Functions ---
@@ -851,7 +942,8 @@ async def complete_story(ctx: RunContextWrapper[CopywriterContext]) -> CompleteS
             narrative_components={},
             entities=[],
             complete_narrative="",
-            error="Context missing during final compilation."
+            error="Context missing during final compilation.",
+            nearby_objects={}
         )
 
     context = ctx.context
@@ -875,7 +967,8 @@ async def complete_story(ctx: RunContextWrapper[CopywriterContext]) -> CompleteS
                 narrative_components=comps,
                 entities=ents,
                 complete_narrative="",
-                error="Environment missing or invalid during final compilation."
+                error="Environment missing or invalid during final compilation.",
+                nearby_objects={}
             )
 
         terrain = generate_terrain_description(env)
@@ -948,7 +1041,8 @@ async def complete_story(ctx: RunContextWrapper[CopywriterContext]) -> CompleteS
             entity_descriptions=descs,
             narrative_components=comps,
             entities=ents,
-            complete_narrative=complete_narrative
+            complete_narrative=complete_narrative,
+            nearby_objects={}
             # No error if successful
         )
 
@@ -986,7 +1080,8 @@ async def complete_story(ctx: RunContextWrapper[CopywriterContext]) -> CompleteS
             narrative_components=comps_fallback,
             entities=ents_fallback,
             complete_narrative="",
-            error=f"Compilation failed: {type(e).__name__} - {e}"
+            error=f"Compilation failed: {type(e).__name__} - {e}",
+            nearby_objects={}
         )
 
 

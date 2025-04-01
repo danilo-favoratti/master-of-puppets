@@ -31,7 +31,7 @@ class GameSession:
                 )
 
                 # Initialize other agents that need the game state
-                self.puppet_master = create_puppet_master("Game Character")
+                self.puppet_master = create_puppet_master(complete_story_result, "Game Character")
 
                 # Switch to storyteller mode
                 self.current_agent = "storyteller"

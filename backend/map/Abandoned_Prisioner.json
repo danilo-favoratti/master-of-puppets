@@ -1,5 +1,19 @@
 {
-  "theme": "Abandoned Prisoner",
+  "person": {
+    "id": "game-char",
+    "name": "Player",
+    "position": [20, 20],
+    "inventory": {
+      "id": "user-container",
+      "name": "user-container",
+      "contents": [],
+      "capacity": 10,
+      "is_open": true
+    },
+    "wearable_items": [],
+    "strength": 5
+  },
+  "theme": "Abandoned Prisoner in a Far Away Island",
   "environment": {
     "width": 40,
     "height": 40,
@@ -86,10 +100,6 @@
       ],
       [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-        1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
-      ],
-      [
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0
       ],
       [
@@ -130,6 +140,10 @@
       ],
       [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+      ],
+      [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
       ],
       [
@@ -655,5 +669,6 @@
       "contents": []
     }
   ],
-  "complete_narrative": "You find yourself in 'A desolate island, scarred by a forgotten past, where silence reigns and echoes of despair linger.'. The air holds a sense of Somber and Mystical. Theme: 'Abandoned Prisoner'...\n\n**World:**\nOcean, small islands (~24% land)\n\n**Quest: The Light of Freedom**\nAwaken on a deserted island with no memory of arrival. Unravel the mystery of your imprisonment and escape the island's grasp.\n- Discover the source of a mysterious light in the center of the island.\n- Find and assemble pieces of a forgotten map.\n- Unlock the secrets hidden in an ancient chest.\n\n**Notable Features:**\n- Chest: An old wooden chest, worn by time, with its lock long rusted and broken. It sits half-buried in the dirt, perhaps holding forgotten treasures of past inmates.\n- Tree: A Chestnut Tree.\n- Log: A Medium Fallen Log.\n- Plant: A Grass.\n- Campfire [unlit]: A Unlit Campfire (unlit).\n- ...and 11 more descriptions.\n\n**Possible Interactions:**\n- Open with chest: As you pry open the chest, a creak of age fills the air. Dust rises, revealing the glint of metal and a fragment of an old map.\n- Ignite with campfire: The flames struggle against the wind but soon roar to life, casting flickering shadows that dance among the trees.\n- Search with backpack: Rummaging through the backpack, your fingers find rough fabric and hard metal. There's more here than dust and decay."
+  "complete_narrative": "You find yourself in 'A desolate island, scarred by a forgotten past, where silence reigns and echoes of despair linger.'. The air holds a sense of Somber and Mystical. Theme: 'Abandoned Prisoner'...\n\n**World:**\nOcean, small islands (~24% land)\n\n**Quest: The Light of Freedom**\nAwaken on a deserted island with no memory of arrival. Unravel the mystery of your imprisonment and escape the island's grasp.\n- Discover the source of a mysterious light in the center of the island.\n- Find and assemble pieces of a forgotten map.\n- Unlock the secrets hidden in an ancient chest.\n\n**Notable Features:**\n- Chest: An old wooden chest, worn by time, with its lock long rusted and broken. It sits half-buried in the dirt, perhaps holding forgotten treasures of past inmates.\n- Tree: A Chestnut Tree.\n- Log: A Medium Fallen Log.\n- Plant: A Grass.\n- Campfire [unlit]: A Unlit Campfire (unlit).\n- ...and 11 more descriptions.\n\n**Possible Interactions:**\n- Open with chest: As you pry open the chest, a creak of age fills the air. Dust rises, revealing the glint of metal and a fragment of an old map.\n- Ignite with campfire: The flames struggle against the wind but soon roar to life, casting flickering shadows that dance among the trees.\n- Search with backpack: Rummaging through the backpack, your fingers find rough fabric and hard metal. There's more here than dust and decay.",
+  "nearby_objects": {}
 }

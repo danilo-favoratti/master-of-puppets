@@ -1,7 +1,7 @@
 import { Canvas } from "@react-three/fiber";
 import React, { useEffect, useState } from "react";
 import "../LoadingSpinner.css";
-import { GameData } from "../types/game";
+import { GameData, Position } from "../types/game";
 import Game from "./Game";
 import GameDebugUI from "./GameDebugUI";
 
@@ -12,7 +12,7 @@ interface GameContainerProps {
   ) => void;
   mapData: GameData | null;
   isMapReady: boolean;
-  characterRef: React.RefObject<any>;
+  characterRef: React.RefObject<{ moveAlongPath: (path: Position[]) => void; move: (direction: string) => void }>;
   websocket?: WebSocket | null;
 }
 

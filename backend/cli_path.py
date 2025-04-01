@@ -265,7 +265,7 @@ async def run_pathfinding_cli():
     game_state.person = player
     
     # Create the agent
-    agent = create_puppet_master("Pathfinder")
+    agent = create_puppet_master(complete_story_result, "Pathfinder")
     
     # Print initial board
     print_board(board)

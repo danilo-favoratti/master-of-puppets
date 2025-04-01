@@ -73,6 +73,7 @@ class GameObject(Entity):
 @dataclass
 class Container(GameObject):
     """A game object that can contain other objects."""
+    id: str
     contents: List[GameObject] = field(default_factory=list)
     capacity: int = 10  # Maximum number of items it can hold
     is_open: bool = True  # Whether items can be added/removed

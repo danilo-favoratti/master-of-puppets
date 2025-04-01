@@ -1,4 +1,18 @@
 {
+  "person": {
+    "id": "game-char",
+    "name": "Player",
+    "position": [20, 20],
+    "inventory": {
+      "id": "user-container",
+      "name": "user-container",
+      "contents": [],
+      "capacity": 10,
+      "is_open": true
+    },
+    "wearable_items": [],
+    "strength": 5
+  },
   "theme": "Crash in the Sea",
   "environment": {
     "width": 40,
@@ -2474,5 +2488,6 @@
       "contents": []
     }
   ],
-  "complete_narrative": "You find yourself in 'An isolated island surrounded by treacherous waters, where the remnants of a shipwreck tell of the survivors' recent plight.'. The air holds a sense of Survival and discovery tinted with the longing for rescue.. Theme: 'Crash in the Sea'...\n\n**World:**\nArchipelago (~32% land)\n\n**Quest: Escape from the Forgotten Isle**\nSurvive the aftermath of a mysterious shipwreck and uncover the secrets of the island to find a way home.\n- Gather resources to strengthen your camp.\n- Solve the mysteries hidden within the island's caves.\n- Build a signal fire to attract possible rescuers.\n- Discover ancient ruins rumored to hold the secrets of escape.\n\n**Notable Features:**\n- Chest: A weathered wooden chest, partially covered in seaweed and sand.\n- Log: A Medium Fallen Log.\n- Hole: A Hole.\n- Rock: A Large Boulder.\n- Tree: A Chestnut Tree.\n- ...and 13 more descriptions.\n\n**Possible Interactions:**\n- Open with chest: As you pry open the timeworn chest, the hinges groan to reveal its hidden bounty.\n- Ignite with campfire: The kindling crackles as flames dance into life, casting flickering shadows across the sand.\n- Explore with backpack: Rummaging through the backpack, you find items of both utility and mystery.\n- Repair with tent: With careful hands, you mend the fabric of the tent, securing a fragile refuge from the elements.\n- Climb with obstacle: Scaling the rocky barrier, you glimpse new horizons and possible paths to safety."
+  "complete_narrative": "You find yourself in 'An isolated island surrounded by treacherous waters, where the remnants of a shipwreck tell of the survivors' recent plight.'. The air holds a sense of Survival and discovery tinted with the longing for rescue.. Theme: 'Crash in the Sea'...\n\n**World:**\nArchipelago (~32% land)\n\n**Quest: Escape from the Forgotten Isle**\nSurvive the aftermath of a mysterious shipwreck and uncover the secrets of the island to find a way home.\n- Gather resources to strengthen your camp.\n- Solve the mysteries hidden within the island's caves.\n- Build a signal fire to attract possible rescuers.\n- Discover ancient ruins rumored to hold the secrets of escape.\n\n**Notable Features:**\n- Chest: A weathered wooden chest, partially covered in seaweed and sand.\n- Log: A Medium Fallen Log.\n- Hole: A Hole.\n- Rock: A Large Boulder.\n- Tree: A Chestnut Tree.\n- ...and 13 more descriptions.\n\n**Possible Interactions:**\n- Open with chest: As you pry open the timeworn chest, the hinges groan to reveal its hidden bounty.\n- Ignite with campfire: The kindling crackles as flames dance into life, casting flickering shadows across the sand.\n- Explore with backpack: Rummaging through the backpack, you find items of both utility and mystery.\n- Repair with tent: With careful hands, you mend the fabric of the tent, securing a fragile refuge from the elements.\n- Climb with obstacle: Scaling the rocky barrier, you glimpse new horizons and possible paths to safety.",
+  "nearby_objects": {}
 }
