@@ -18,7 +18,7 @@ export interface ToolCall {
 }
 
 // Fix the WebSocket URL declaration - Add type assertion
-const WS_URL = `ws://localhost:8080/ws`;
+const WS_URL = `wss://masterofpuppets-ws.favoratti.com/ws`;
 
 // Global variables to maintain a single WebSocket connection across component mounts
 let globalSocket: WebSocket | null = null;
