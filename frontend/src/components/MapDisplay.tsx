@@ -90,7 +90,7 @@ const MapDisplay: React.FC<MapDisplayProps> = ({
         }
 
         const entity = entities.find(
-          (entity) => entity.position?.x === x && entity.position?.y === y
+          (entity) => entity.position?.[0] === x && entity.position?.[1] === y
         );
         const isEmpty = entity === undefined;
 

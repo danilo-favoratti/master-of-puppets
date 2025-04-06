@@ -97,6 +97,10 @@ const GameDebugUI = ({
       }}
       className="flex flex-col gap-4 bg-black/70 p-4 rounded-lg z-50 text-white text-xs"
     >
+      <div className="text-white text-lg mb-2 font-bold">
+        Position: ({position[0].toFixed(1)}, {position[1].toFixed(1)})
+      </div>
+
       {/* <div className="text-white text-sm">
         Posição Atual: ({position[0]}, {position[1]})
       </div>

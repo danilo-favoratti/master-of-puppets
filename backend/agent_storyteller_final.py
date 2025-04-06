@@ -1,23 +1,30 @@
+import heapq  # Add heapq import for PathFinder
+import inspect
 import json
 import logging
 import os
-import asyncio # Added
+import asyncio  # Added for audio processing delays
+import time
 import traceback
-from prompt.storyteller_prompts import get_storyteller_system_prompt, get_game_mechanics_reference
-# Adjusted imports: Removed Entity, Position (pulled in via game_object), added Person, GameObject, Container
-from agent_copywriter_direct import Environment, CompleteStoryResult
-from person import Person # Added
-from game_object import GameObject, Container # Added
+from functools import wraps
+from typing import Dict, Any, Tuple, Awaitable, Callable, List, Optional, Union, Literal, Annotated
 
-from typing import Dict, Any, Tuple, Awaitable, Callable, List, Optional
-
-# Added for schema debugging
+from pydantic import BaseModel, Field, field_validator
 from pydantic.json_schema import models_json_schema
 
-# Third-party imports
+from fastapi import WebSocket
+
+from agent_copywriter_direct import Environment, CompleteStoryResult, Position
+from game_object import GameObject, Container  # Added
+from person import Person  # Added
+from prompt.storyteller_prompts import get_storyteller_system_prompt, get_game_mechanics_reference
+
+# Import shared logging utils
+from utils import log_tool_execution, _format_result_for_logging
+
 try:
     from agents import Agent, Runner, function_tool, \
-        RunContextWrapper # Added RunContextWrapper here
+        RunContextWrapper  # Added RunContextWrapper here
 except ImportError:
     print("\\nERROR: Could not import 'agents'.")
     print("Please ensure the OpenAI Agents SDK is installed correctly.")
@@ -40,25 +47,196 @@ except ImportError:
     print("Please install it (`pip install deepgram-sdk`).")
     raise
 
-# --- Configuration ---
+# --- Constants, Config & Logger Setup ---
 DEBUG_MODE = os.getenv("DEBUG", "false").lower() == "true"
 LOG_LEVEL = logging.DEBUG if DEBUG_MODE else logging.INFO
 DEFAULT_VOICE = "nova"
+# Use environment variable or empty string
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY", "")
 
-# --- Logging Setup ---
 root_logger = logging.getLogger()
 if root_logger.hasHandlers():
     root_logger.handlers.clear()
 
 logging.basicConfig(level=LOG_LEVEL,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-# Create a logger specific to this final agent
 logger = logging.getLogger("StorytellerAgentFinal")
 if DEBUG_MODE:
     logger.info("🔧 Debug mode enabled for StorytellerAgentFinal.")
 
 
-# --- Pydantic Models for Storyteller Output --- (Unchanged from direct)
+# --- Utility Functions ---
+# Remove duplicated log_tool_execution decorator
+# def log_tool_execution(func: Callable) -> Callable:
+# ... (entire function removed) ...
+
+# Remove duplicated _format_result_for_logging helper
+# def _format_result_for_logging(result: Any) -> tuple[str, Any]:
+# ... (entire function removed) ...
+
+
+# --- Model Definitions ---
+
+# --- Movement Command Models ---
+
+class MovementCommand(BaseModel):
+    """Base model for movement commands."""
+    command_type: Literal["move",
+    "jump"] = Field(...,
+     description="The type of movement command.")
+    # Move parameters
+    direction: Optional[Literal["up", "down", "left", "right"]] = Field(
+        None, description="Direction for move command.")
+    is_running: Optional[bool] = Field(
+    None, description="Whether to run (move faster).")
+    continuous: Optional[bool] = Field(
+    None, description="If True, keeps moving until hitting an obstacle or edge.")
+    steps: Optional[int] = Field(
+    None, description="Number of steps for move command.")
+    # Jump parameters
+    target_x: Optional[int] = Field(
+    None, description="Target X coordinate for jump command.")
+    target_y: Optional[int] = Field(
+    None, description="Target Y coordinate for jump command.")
+
+    @field_validator("*")
+    def validate_command_fields(cls, v, info):
+        field_name = info.field_name
+        instance = info.context.get("instance", {})
+        command_type = instance.get("command_type")
+
+        if command_type == "move":
+            if field_name in [
+    "direction",
+    "is_running",
+    "continuous",
+     "steps"]:
+                if field_name == "direction" and v is None:
+                    raise ValueError("direction is required for move command")
+                if field_name == "is_running" and v is None:
+                    raise ValueError("is_running is required for move command")
+                if field_name == "continuous" and v is None:
+                    raise ValueError("continuous is required for move command")
+                if field_name == "steps" and v is None:
+                    raise ValueError("steps is required for move command")
+            elif field_name in ["target_x", "target_y"] and v is not None:
+                raise ValueError(
+                    f"{field_name} should not be set for move command")
+
+        elif command_type == "jump":
+            if field_name in ["target_x", "target_y"]:
+                if v is None:
+                    raise ValueError(
+                        f"{field_name} is required for jump command")
+            elif field_name in ["direction", "is_running", "continuous", "steps"] and v is not None:
+                raise ValueError(
+                    f"{field_name} should not be set for jump command")
+
+        return v
+
+
+@function_tool
+@log_tool_execution
+async def execute_movement_sequence(
+    ctx: RunContextWrapper[CompleteStoryResult],
+    commands: List[MovementCommand]
+) -> str:
+    """Executes a sequence of movement commands.
+
+    Args:
+        ctx: The RunContext containing the game state.
+        commands: List of movement commands to execute. Each command must specify:
+            - command_type: "move" or "jump"
+            For move commands:
+            - direction: "up", "down", "left", or "right"
+            - is_running: whether to run
+            - continuous: whether to move continuously
+            - steps: number of steps to take
+            For jump commands:
+            - target_x: destination X coordinate
+            - target_y: destination Y coordinate
+
+    Returns:
+        str: Description of the movement execution results.
+    """
+    results = []
+
+    for i, command in enumerate(commands, 1):
+        try:
+            if command.command_type == "move":
+                if not all(
+    x is not None for x in [
+        command.direction,
+        command.is_running,
+        command.continuous,
+         command.steps]):
+                    results.append(
+                        f"Step {i}: Invalid move command - missing required parameters")
+                    continue
+
+                # Validate steps is a positive number
+                if command.steps <= 0:
+                    results.append(
+                        f"Step {i}: Invalid move command - steps must be a positive number")
+                    continue
+
+                try:
+                    result = await _internal_move(
+                        ctx,
+                        direction=command.direction,
+                        is_running=command.is_running,
+                        continuous=command.continuous,
+                        steps=command.steps
+                    )
+
+                    # Ensure result is not None
+                    if result is None:
+                        results.append(
+                            f"Step {i}: Move command failed - no result returned")
+                    else:
+                        results.append(f"Step {i}: {result}")
+                except Exception as move_error:
+                    logger.error(f"Error during move command: {move_error}")
+                    results.append(f"Step {i}: Move error - {str(move_error)}")
+
+            elif command.command_type == "jump":
+                if command.target_x is None or command.target_y is None:
+                    results.append(
+                        f"Step {i}: Invalid jump command - missing coordinates")
+                    continue
+
+                try:
+                    result = await _internal_jump(
+                        ctx,
+                        target_x=command.target_x,
+                        target_y=command.target_y
+                    )
+
+                    # Ensure result is not None
+                    if result is None:
+                        results.append(
+                            f"Step {i}: Jump command failed - no result returned")
+                    else:
+                        results.append(f"Step {i}: {result}")
+                except Exception as jump_error:
+                    logger.error(f"Error during jump command: {jump_error}")
+                    results.append(f"Step {i}: Jump error - {str(jump_error)}")
+
+            else:
+                results.append(
+                    f"Step {i}: Unknown command type '{command.command_type}'")
+
+        except Exception as e:
+            logger.error(f"Error executing movement step {i}: {e}")
+            results.append(f"Step {i}: Error - {str(e)}")
+            break
+
+    return "\n".join(results)
+
+
+# --- End Movement Command Models ---
+
+
 class Answer(BaseModel):
     """Represents a single piece of dialogue or interaction option."""
     type: str = Field(..., description="The type of answer, MUST be 'text'.")
@@ -70,39 +248,40 @@ class Answer(BaseModel):
         default_factory=list,
         description="List of options, each with a maximum of 5 words."
     )
-    isThinking: Optional[bool] = Field(None, description="Indicates if the agent is processing in the background.")
-
 
 class AnswerSet(BaseModel):
     """The required JSON structure for all storyteller responses."""
     answers: List[Answer]
 
-# --- Helper Code Copied from agent_puppet_master.py ---
 
 class DirectionHelper:
     """Helper class for handling relative directions and movement.
-    
+
     Coordinate system:
     - X-axis: Positive values go right, negative values go left
-    - Y-axis: Positive values go down, negative values go up 
+    - Y-axis: Positive values go down, negative values go up
               (inverted compared to traditional Cartesian coordinates to match frontend)
-    
+
     This matches the frontend Three.js coordinate system and browser coordinate system
     where (0,0) is at the top-left corner.
     """
+
     @staticmethod
-    def get_relative_position(current_pos: Tuple[int, int], direction: str) -> Tuple[int, int]:
+    def get_relative_position(
+        current_pos: Tuple[int, int], direction: str) -> Tuple[int, int]:
         x, y = current_pos
         direction = direction.lower()
         if direction == "left": return (x - 1, y)
         if direction == "right": return (x + 1, y)
-        # Invert Y-axis movement to match frontend coordinate system
-        if direction == "up": return (x, y + 1)
-        if direction == "down": return (x, y - 1)
+        # FIXED: Direction mapping was inverted. "up" should decrease y, "down"
+        # should increase y
+        if direction == "up": return (x, y - 1)
+        if direction == "down": return (x, y + 1)
         return current_pos
 
     @staticmethod
-    def get_direction_vector(from_pos: Tuple[int, int], to_pos: Tuple[int, int]) -> Tuple[int, int]:
+    def get_direction_vector(
+        from_pos: Tuple[int, int], to_pos: Tuple[int, int]) -> Tuple[int, int]:
         fx, fy = from_pos
         tx, ty = to_pos
         return (tx - fx, ty - fy)
@@ -112,175 +291,423 @@ class DirectionHelper:
         dx, dy = direction
         if dx == -1 and dy == 0: return "left"
         if dx == 1 and dy == 0: return "right"
-        # Invert Y-axis direction naming to match frontend coordinate system
-        if dx == 0 and dy == -1: return "up"    # Changed from dy==-1 to dy==-1 (no change, already correct)
-        if dx == 0 and dy == 1: return "down"   # Changed from dy==1 to dy==1 (no change, already correct)
+        # FIXED: Direction mapping to match updated get_relative_position
+        if dx == 0 and dy == -1: return "up"
+        if dx == 0 and dy == 1: return "down"
         return "unknown"
 
     @staticmethod
-    async def move_continuously(story_result: CompleteStoryResult, direction: str) -> str:
-        logger.info(f"🔄 Starting continuous movement: {direction} from {story_result.person.position}")
+    async def move_continuously(
+    story_result: CompleteStoryResult,
+     direction: str) -> str:
+        """Move continuously in the specified direction until hitting an obstacle or edge.
+
+        This method implements continuous movement manually by executing
+        individual move steps.
+        """
+        logger.info(
+            f"🔄 Starting continuous movement: {direction} from {story_result.person.position}")
+
+        if hasattr(
+    story_result.person,
+    'move_continuously') and callable(
+        story_result.person.move_continuously):
+            # If person has the move_continuously method, use it directly
+            logger.info("Using person.move_continuously method")
+            result_msg = story_result.person.move_continuously(
+                direction, story_result.environment)
+            return f"✅ Continuous move {direction}: {result_msg}. Now at {story_result.person.position}."
+
+        # Otherwise, implement continuous movement manually with individual
+        # steps
         moves = 0
         max_moves = 50
-        
+
         storyteller = getattr(story_result, '_storyteller_agent', None)
-        can_send_websocket = storyteller and hasattr(storyteller, 'send_command_to_frontend')
-        
+        can_send_websocket = storyteller and hasattr(
+            storyteller, 'send_command_to_frontend')
+
         final_message = ""
 
         while moves < max_moves:
             current_pos = story_result.person.position
-            # Ensure current_pos is a tuple for DirectionHelper
             current_pos_tuple = None
             if hasattr(current_pos, 'x') and hasattr(current_pos, 'y'):
                 current_pos_tuple = (current_pos.x, current_pos.y)
             elif isinstance(current_pos, (tuple, list)) and len(current_pos) >= 2:
                 current_pos_tuple = (current_pos[0], current_pos[1])
             else:
-                logger.error(f"❌ Invalid current_pos format in move_continuously: {current_pos}")
+                logger.error(
+                    f"❌ Invalid current_pos format in move_continuously: {current_pos}")
                 final_message = "Error: Could not determine starting position."
-                break # Exit loop on error
-                
-            target_pos_tuple = DirectionHelper.get_relative_position(current_pos_tuple, direction)
-            logger.debug(f"  Continuous move attempt #{moves + 1}: {current_pos_tuple} -> {target_pos_tuple}")
-            
-            # Pass tuple to person.move if it expects it, otherwise pass original object if needed
-            # Assuming person.move internally handles tuple or object position based on its implementation
-            result = story_result.person.move(story_result.environment, target_pos_tuple, False)
-            
+                break  # Exit loop on error
+
+            target_pos_tuple = DirectionHelper.get_relative_position(
+                current_pos_tuple, direction)
+            logger.debug(
+                f"  Continuous move attempt #{moves + 1}: {current_pos_tuple} -> {target_pos_tuple}")
+
+            # FIXED: Previously tried to use direction string instead of target position
+            # Now correctly create a target position object and pass it to
+            # person.move
+            result = None
+            try:
+                # Create Position object from target_pos_tuple
+                target_position = Position(
+    x=target_pos_tuple[0], y=target_pos_tuple[1])
+                # Call person.move with environment, target position, and
+                # is_running
+                result = story_result.person.move(
+    story_result.environment, target_position, False)
+            except Exception as e:
+                logger.error(f"Error during move: {e}")
+                result = {"success": False, "message": f"Move error: {e}"}
+
+            if not result or not isinstance(result, dict):
+                result = {
+    "success": False,
+     "message": "Unknown move error (no result)"}
+
             if not result["success"]:
-                logger.info(f"🛑 Continuous movement stopped: {result['message']}")
+                logger.info(
+                    f"🛑 Continuous movement stopped: {result['message']}")
                 stop_reason = f"stopped: {result['message']}"
                 final_message = f"Moved {moves} steps {direction} and {stop_reason}"
-                break # Exit loop
-                
-            # sync_story_state(story_result) # Syncing after every step might be slow, sync at end?
+                break  # Exit loop
+
             moves += 1
-            
-            # --- REMOVED: Don't send move_step for each step --- 
-            # if can_send_websocket:
-            #     try:
-            #         command_params = {"direction": direction, "is_running": False, "continuous": False}
-            #         await storyteller.send_command_to_frontend("move_step", command_params, None)
-            #         await asyncio.sleep(0.1)
-            #     except Exception as e:
-            #         logger.error(f"❌ CONTINUOUS: Error sending WebSocket command: {e}")
-            # --------
-            
-            # Check for edge or next obstacle *before* next loop
-            next_pos_check_tuple = DirectionHelper.get_relative_position(story_result.person.position, direction)
-            if not story_result.environment.is_valid_position(next_pos_check_tuple):
-                logger.info(f"🌍 Reached board edge at {story_result.person.position}")
+
+            next_pos_check_tuple = DirectionHelper.get_relative_position(
+                # Get current position after move
+                (story_result.person.position.x, story_result.person.position.y)
+                if hasattr(story_result.person.position, 'x') and hasattr(story_result.person.position, 'y')
+                else story_result.person.position[:2] if isinstance(story_result.person.position, (tuple, list))
+                else (0, 0),  # Fallback
+                direction
+            )
+
+            if not story_result.environment.is_valid_position(
+                next_pos_check_tuple):
+                logger.info(
+                    f"🌍 [Continuous Loop] Reached board edge at {story_result.person.position}. Next step {next_pos_check_tuple} is invalid.")
                 final_message = f"Moved {moves} steps {direction} and reached the edge."
-                break # Exit loop
-            elif not story_result.environment.can_move_to(next_pos_check_tuple):
-                 obstacle = story_result.environment.get_object_at(next_pos_check_tuple)
-                 obstacle_name = obstacle.name if obstacle else "an obstacle"
-                 logger.info(f"🚧 Reached {obstacle_name} at {next_pos_check_tuple}")
-                 final_message = f"Moved {moves} steps {direction} and reached {obstacle_name}."
-                 break # Exit loop
-                 
-        if not final_message: # If loop finished due to max_moves
-            logger.warning(f"⚠️ Hit move limit ({max_moves}) moving {direction}")
+                break  # Exit loop
+            else:
+                logger.debug(
+                    f"🕵️ [Continuous Loop] Pre-check: NextPos={next_pos_check_tuple}, EnvType={type(story_result.environment)}")  # Log Env Type
+                can_move_next_result = story_result.environment.can_move_to(
+                    next_pos_check_tuple)
+                logger.debug(
+                    f"🕵️ [Continuous Loop] Result of environment.can_move_to({next_pos_check_tuple}): {can_move_next_result}")  # Log Check Result
+
+                if not can_move_next_result:
+                    obstacle = story_result.environment.get_object_at(
+                        next_pos_check_tuple)
+                    obstacle_name = obstacle.name if obstacle else "an obstacle"
+                    logger.info(
+                        f"🚧 [Continuous Loop] Reached {obstacle_name} at {next_pos_check_tuple}. Stopping continuous move.")
+                    final_message = f"Moved {moves} steps {direction} and reached {obstacle_name}."
+                    break  # Exit loop
+
+        if not final_message:  # If loop finished due to max_moves
+            logger.warning(
+                f"⚠️ Hit move limit ({max_moves}) moving {direction}")
             final_message = f"Moved {moves} steps {direction} and stopped (max distance)."
 
-        # Sync state once at the end of the movement sequence
         sync_story_state(story_result)
-        
-        # --- ADDED: Send ONE move command if steps were taken --- 
+
         if moves > 0 and can_send_websocket:
             try:
                 command_params = {
                     "direction": direction,
-                    "steps": moves, # Add the number of steps
-                    "is_running": False
-                    # No need for "continuous" flag in frontend command anymore
+                    "steps": moves,  # Add the number of steps
+                    "is_running": False,
+                    "continuous": True
                 }
-                logger.info(f"🚀 Sending final multi-step move command to frontend: direction={direction}, steps={moves}")
-                # Send command as 'move' type, let frontend handle multi-step animation
-                await storyteller.send_command_to_frontend("move", command_params, None) # Result sent separately by agent
+                logger.info(
+                    f"🚀 Sending final multi-step move command to frontend: direction={direction}, steps={moves}")
+                await storyteller.send_command_to_frontend("move", command_params, final_message)
             except Exception as e:
-                logger.error(f"❌ Error sending final multi-step WebSocket command: {e}")
-        # --------
-                 
+                logger.error(
+                    f"❌ Error sending final multi-step WebSocket command: {e}")
+
         return final_message
 
+
 def sync_story_state(story_result: CompleteStoryResult):
-    """Synchronize the story state (nearby objects, entity maps)."""
-    logger.debug("🔄 Syncing story state...")
-    if not hasattr(story_result, 'person') or not story_result.person:
-        logger.warning("❌ Cannot sync: No person in story_result.")
-        return
-    if not hasattr(story_result, 'environment') or not story_result.environment:
-        logger.warning("❌ Cannot sync: No environment in story_result.")
-        return
-    if not hasattr(story_result, 'entities') or story_result.entities is None: # Check for None too
-        logger.warning("❌ Cannot sync: No entities list in story_result.")
-        story_result.entities = [] # Initialize if missing
+    """Synchronize the story state (environment maps, nearby objects) using Environment methods.
 
-    # Ensure environment has necessary attributes
-    if not hasattr(story_result.environment, '_position_map'):
-        story_result.environment._position_map = {}
-    if not hasattr(story_result.environment, '_entity_map'):
-        story_result.environment._entity_map = {}
+    Returns:
+        bool: True if synchronization was successful, False otherwise
+    """
+    try:
+        if not story_result:
+            logger.error("❌ Cannot sync: story_result is None")
+            return False
 
-    story_result.environment._position_map.clear()
-    story_result.environment._entity_map.clear()
+        if not isinstance(story_result, CompleteStoryResult):
+            logger.error(
+                f"❌ Cannot sync: story_result is not a CompleteStoryResult but {type(story_result)}")
+            return False
 
-    # Populate maps
-    for entity in story_result.entities:
-        entity_id = getattr(entity, 'id', None)
-        if entity_id:
-             story_result.environment._entity_map[entity_id] = entity
+        logger.debug("🔄 Syncing story state...")
+        if not hasattr(story_result, 'person') or not story_result.person:
+            logger.warning("❌ Cannot sync: No person in story_result.")
+            return False
 
-        position = None
-        pos_attr = getattr(entity, 'position', None)
-        if pos_attr:
-            if hasattr(pos_attr, 'x') and hasattr(pos_attr, 'y'):
-                position = (pos_attr.x, pos_attr.y)
-            elif isinstance(pos_attr, (tuple, list)) and len(pos_attr) >= 2:
-                position = (pos_attr[0], pos_attr[1])
+        if not hasattr(
+    story_result,
+     'environment') or not story_result.environment:
+            logger.warning("❌ Cannot sync: No environment in story_result.")
+            return False
 
-        if position:
-            if position not in story_result.environment._position_map:
-                story_result.environment._position_map[position] = []
-            story_result.environment._position_map[position].append(entity)
+        if not hasattr(
+    story_result,
+     'entities') or story_result.entities is None:
+            logger.warning("❌ Cannot sync: No entities list in story_result.")
+            story_result.entities = []  # Initialize if missing
+            logger.info("✅ Created new empty entities list")
 
-    # Patch environment methods if they don't exist (idempotent)
-    if not hasattr(story_result.environment.__class__, '_get_entities_at_patched'):
-        def get_entities_at_patched(self, position):
-            if hasattr(position, 'x') and hasattr(position, 'y'): pos_tuple = (position.x, position.y)
-            elif isinstance(position, (tuple, list)) and len(position) >= 2: pos_tuple = (position[0], position[1])
-            else: pos_tuple = position # Assume tuple if not object/list
-            return self._position_map.get(pos_tuple, [])
-        story_result.environment.__class__.get_entities_at = get_entities_at_patched
-        story_result.environment.__class__._get_entities_at_patched = True
+        # DEDENTING THE FOLLOWING BLOCK
+        environment = story_result.environment
+        person = story_result.person
 
-    if not hasattr(story_result.environment.__class__, '_get_object_at_patched'):
-        def get_object_at_patched(self, position):
-            entities = self.get_entities_at(position)
-            # Prioritize GameObjects (movable, etc.) over basic Entities
-            for entity in entities:
-                if isinstance(entity, GameObject): return entity
-            # Fallback: return first entity if no GameObject found
-            return entities[0] if entities else None
-        story_result.environment.__class__.get_object_at = get_object_at_patched
-        story_result.environment.__class__._get_object_at_patched = True
+        # Debug person and environment
+        logger.debug(f"👤 Person: id={getattr(person, 'id', 'missing')},"
+                    f" position={getattr(person, 'position', 'missing')}")
+        logger.debug(f"🌍 Environment: width={getattr(environment, 'width', 'missing')},"
+                   f" height={getattr(environment, 'height', 'missing')}")
 
-    # Update nearby_objects using person's look() method
-    if hasattr(story_result.person, 'look') and callable(story_result.person.look):
-         look_result = story_result.person.look(story_result.environment)
-         if look_result.get("success", False):
-             story_result.nearby_objects = {obj.id: obj for obj in look_result.get("objects", []) if hasattr(obj, 'id')}
-             logger.debug(f"👀 Found {len(story_result.nearby_objects)} nearby objects after sync.")
-         else:
-             logger.warning(f"⚠️ Person look failed during sync: {look_result.get('message')}")
-             story_result.nearby_objects = {} # Clear if look fails
-    else:
-         logger.warning("🤷 Person object missing 'look' method, cannot update nearby_objects.")
-         story_result.nearby_objects = {} # Ensure it exists
+        # Safeguard against crucial missing methods on environment
+        if not hasattr(
+    environment,
+    'add_entity') or not callable(
+        environment.add_entity):
+            logger.error(
+                "❌ Environment is missing add_entity method - cannot properly sync")
+            # Try to add a minimal implementation
 
-    logger.debug("✅ Story state sync complete.")
+            def simple_add_entity(self, entity, position=None):
+                """Simple add_entity method when missing from Environment."""
+                if not hasattr(self, 'entity_map'):
+                    self.entity_map = {}
+                if hasattr(entity, 'id'):
+                    self.entity_map[entity.id] = entity
+                    # IMPROVED: Also update entity position if provided
+                    if position is not None and hasattr(
+                        entity, 'position'):
+                        entity.position = position
+                    return True
+                return False
+
+            import types
+            environment.add_entity = types.MethodType(
+                simple_add_entity, environment)
+            logger.info("✅ Added simple add_entity method to Environment")
+
+        all_entities_to_sync = list(
+    story_result.entities)  # Make a mutable copy
+
+        # ---> ADD DETAILED LOGGING FOR PERSON CHECK <---
+        person_id_to_check = getattr(person, 'id', 'PERSON_HAS_NO_ID')
+        ids_in_initial_list = [getattr(e, 'id', 'NO_ID') for e in all_entities_to_sync]
+        logger.info(f"SYNC: Checking Person ID '{person_id_to_check}' against initial entity IDs: {ids_in_initial_list}")
+        person_object_in_list = person in all_entities_to_sync
+        person_id_in_list = person_id_to_check in ids_in_initial_list
+        logger.info(f"SYNC: Is Person object in initial list? {person_object_in_list}. Is Person ID in initial list? {person_id_in_list}.")
+
+        # Ensure the person is included for syncing, avoid duplicates if
+        # already in entities list
+        if not person_object_in_list and not person_id_in_list:
+            logger.info(f"🔄 SYNC: Adding person '{person_id_to_check}' to sync list.") # Changed level to INFO
+            all_entities_to_sync.append(person)
+        elif person_object_in_list:
+            logger.info(f"🔄 SYNC: Person '{person_id_to_check}' object already in entities list.") # Changed level to INFO
+        elif person_id_in_list:
+             logger.info(f"🔄 SYNC: Person ID '{person_id_to_check}' already found in entities list.") # Changed level to INFO
+
+        # Clear existing entities from the environment maps using remove_entity if possible
+        # This is safer than directly clearing internal maps
+        if hasattr(
+    environment,
+    'entity_map') and isinstance(
+        environment.entity_map,
+         dict):
+            current_entity_ids = list(environment.entity_map.keys())
+            logger.debug(
+                f"Clearing {len(current_entity_ids)} existing entities from environment map...")
+            cleared_count = 0
+            failed_clear_count = 0
+            for entity_id in current_entity_ids:
+                entity_to_remove = environment.entity_map.get(entity_id)
+                if entity_to_remove:
+                    if hasattr(
+    environment, 'remove_entity') and callable(
+        environment.remove_entity):
+                        if environment.remove_entity(entity_to_remove):
+                            cleared_count += 1
+                        else:
+                            logger.warning(
+                                f"  Failed to remove entity {entity_id} during sync clear.")
+                            failed_clear_count += 1
+                    else:
+                        # If remove_entity doesn't exist, do a direct
+                        # dictionary update
+                        if entity_id in environment.entity_map:
+                            del environment.entity_map[entity_id]
+                            cleared_count += 1
+                else:
+                    logger.warning(
+                        f"  Entity ID {entity_id} was in map keys but not retrievable.")
+            logger.debug(
+                f"  Clear complete: {cleared_count} removed, {failed_clear_count} failed.")
+        else:
+            logger.warning(
+                "Environment entity_map not found or not a dict, cannot reliably clear entities.")
+            # Create a new entity_map if it doesn't exist
+            if not hasattr(environment, 'entity_map'):
+                environment.entity_map = {}
+                logger.info("✅ Created new entity_map on Environment")
+
+        # Add all entities (including the person) using add_entity
+        added_count = 0
+        failed_add_count = 0
+        logger.debug(
+            f"Adding {len(all_entities_to_sync)} entities to environment...")
+        for entity in all_entities_to_sync:
+            # ---> ADD LOGGING HERE <---
+            is_person = hasattr(entity, 'id') and entity.id == person.id
+            if is_person:
+                logger.info(f"🔄 SYNC: Processing PERSON entity: ID={entity.id}, Pos={getattr(entity, 'position', 'None')}")
+
+            pos = getattr(entity, 'position', None)
+            # Use the entity's position if available
+            if hasattr(
+    environment,
+    'add_entity') and callable(
+        environment.add_entity):
+
+                # ---> ADD LOGGING HERE <---
+                if is_person:
+                    logger.info(f"🔄 SYNC: Calling environment.add_entity for PERSON (ID={entity.id}) at Pos={pos}")
+
+                add_success = environment.add_entity(entity, pos)
+
+                # ---> ADD LOGGING HERE <---
+                if is_person:
+                     logger.info(f"🔄 SYNC: environment.add_entity result for PERSON: {'Success' if add_success else 'Failed'}")
+
+                if add_success:
+                    added_count += 1
+                else:
+                    logger.warning(
+                        f"  Failed to add entity {getattr(entity, 'id', 'UNKNOWN_ID')} during sync.")
+                    # Try direct mapping as a fallback
+                    if hasattr(
+    entity, 'id') and hasattr(
+        environment, 'entity_map'):
+                        environment.entity_map[entity.id] = entity
+                        added_count += 1
+                        logger.info(
+                            f"  Recovered by directly adding entity {entity.id} to map")
+                    else:
+                        failed_add_count += 1
+            else:
+                # Direct dictionary update if add_entity isn't available
+                if hasattr(
+    entity, 'id') and hasattr(
+        environment, 'entity_map'):
+
+                    # ---> ADD LOGGING HERE <---
+                    if is_person:
+                         logger.info(f"🔄 SYNC: Directly adding PERSON (ID={entity.id}) to entity_map (add_entity missing)")
+
+                    environment.entity_map[entity.id] = entity
+                    added_count += 1
+                else:
+                    failed_add_count += 1
+                    logger.warning(
+                        f"  Cannot add entity - missing id or entity_map")
+
+        logger.debug(
+            f"  Add complete: {added_count} added, {failed_add_count} failed.")
+        # END OF DEDENTED BLOCK
+
+        # Update nearby objects using the person's look method
+        if hasattr(
+    story_result.person,
+    'look') and callable(
+        story_result.person.look):
+            # Ensure the environment passed to look is the updated one
+            try:
+                # Pass environment directly from story_result to avoid potential local variable issues
+                look_result = story_result.person.look(story_result.environment)
+                if look_result.get("success", False):
+                        # Make sure nearby_objects is initialized
+                        if not hasattr(
+    story_result,
+     'nearby_objects') or story_result.nearby_objects is None:
+                            story_result.nearby_objects = {}
+
+                        # IMPROVED: Update with complete objects including position information
+                        # First clear the dictionary to remove any stale
+                        # references
+                        story_result.nearby_objects.clear()
+
+                        # Add objects with full details
+                        nearby_objs_from_look = look_result.get(
+                            "nearby_objects", {})
+                        nearby_ents_from_look = look_result.get(
+                            "nearby_entities", {})
+
+                        # Add objects with full details
+                        for obj_id, obj in nearby_objs_from_look.items():
+                            # Only store actual objects, not just IDs
+                            if hasattr(obj, 'id'):
+                                story_result.nearby_objects[obj_id] = obj
+                                logger.debug(
+                                    f"Added object to nearby_objects: {obj_id}, pos={getattr(obj, 'position', 'unknown')}")
+
+                        # Add entities with full details
+                        for ent_id, ent in nearby_ents_from_look.items():
+                            # Only store actual objects, not just IDs
+                            if hasattr(ent, 'id'):
+                                story_result.nearby_objects[ent_id] = ent
+                                logger.debug(
+                                    f"Added entity to nearby_objects: {ent_id}, pos={getattr(ent, 'position', 'unknown')}")
+
+                        # Log the count of objects stored
+                        logger.info(
+                            f"✅ Updated nearby_objects with {len(story_result.nearby_objects)} items")
+                else:
+                 logger.warning(
+                     f"⚠️ Person look failed during sync: {look_result.get('message')}")
+                story_result.nearby_objects = {}  # Clear if look fails
+            except Exception as e:
+                logger.error(f"❌ Error during look operation in sync: {e}")
+                story_result.nearby_objects = {}  # Ensure it exists
+        else:
+            logger.warning(
+                "🤷 Person object missing 'look' method, cannot update nearby_objects.")
+            story_result.nearby_objects = {}  # Ensure it exists
+
+            # Store entity counts in the story_result for easier access
+            if hasattr(environment, 'entity_map'):
+                entity_count = len(environment.entity_map)
+                logger.info(
+                    f"📊 Synchronized with {entity_count} entities in map")
+                story_result._entity_count = entity_count
+
+            # Also store a reference to the timestamp of last successful sync
+            story_result._last_sync = time.time()
+
+        logger.debug("✅ Story state sync complete.")
+        return True
+    except Exception as e:
+        logger.error(
+    f"❌ Unexpected error during story sync: {e}",
+     exc_info=True)
+        return False
 
 
 def get_weight_description(weight: int) -> str:
@@ -291,10 +718,10 @@ def get_weight_description(weight: int) -> str:
     if weight <= 8: return "heavy"
     return "extremely heavy"
 
-# --- Pathfinding Helper Code (Copied and Adapted from agent_path_researcher.py) ---
 
 class PathNode:
     """Node used in the A* path-finding algorithm."""
+
     def __init__(self, position, parent=None):
         self.position: Tuple[int, int] = position  # (x, y) tuple
         self.parent: Optional[PathNode] = parent  # parent PathNode
@@ -310,7 +737,6 @@ class PathNode:
     def __lt__(self, other):
         if not isinstance(other, PathNode):
             return NotImplemented
-        # Prioritize lower f cost, then lower h cost as tie-breaker
         if self.f != other.f:
             return self.f < other.f
         return self.h < other.h
@@ -318,18 +744,21 @@ class PathNode:
     def __hash__(self):
         return hash(self.position)
 
+
 class PathFinder:
     """Class implementing A* path-finding algorithm with jump support for Storyteller context."""
 
     @staticmethod
-    def manhattan_distance(pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
+    def manhattan_distance(
+        pos1: Tuple[int, int], pos2: Tuple[int, int]) -> int:
         """Calculate Manhattan distance between two positions."""
         return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
     @staticmethod
-    def get_neighbors(position: Tuple[int, int], environment: Environment) -> List[Tuple[int, int]]:
+    def get_neighbors(
+        position: Tuple[int, int], environment: Environment) -> List[Tuple[int, int]]:
         """Get valid, movable neighboring positions (cardinal directions only).
-        
+
         Uses coordinate system where:
         - (0, -1): Up (decrease Y)
         - (1, 0): Right (increase X)
@@ -338,58 +767,61 @@ class PathFinder:
         """
         x, y = position
         neighbors = []
-        # Order: Up, Right, Down, Left
         for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
             new_pos = (x + dx, y + dy)
-            # Use environment methods for validation
-            if environment.is_valid_position(new_pos) and environment.can_move_to(new_pos):
+            if environment.is_valid_position(
+                new_pos) and environment.can_move_to(new_pos):
                 neighbors.append(new_pos)
         return neighbors
 
     @staticmethod
-    def get_jump_neighbors(position: Tuple[int, int], environment: Environment) -> List[Tuple[int, int]]:
+    def get_jump_neighbors(
+        position: Tuple[int, int], environment: Environment) -> List[Tuple[int, int]]:
         """Get positions reachable by jumping from the current position.
-        
+
         Uses coordinate system where:
-        - (0, -1): Up (decrease Y) 
+        - (0, -1): Up (decrease Y)
         - (1, 0): Right (increase X)
         - (0, 1): Down (increase Y)
         - (-1, 0): Left (decrease X)
         """
         x, y = position
         jump_neighbors = []
-        # Order: Up, Right, Down, Left
         for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:
             middle_pos = (x + dx, y + dy)
-            landing_pos = (x + 2*dx, y + 2*dy)
+            landing_pos = (x + 2 * dx, y + 2 * dy)
 
-            if environment.is_valid_position(middle_pos) and environment.is_valid_position(landing_pos):
+            if environment.is_valid_position(
+                middle_pos) and environment.is_valid_position(landing_pos):
                 middle_obj = environment.get_object_at(middle_pos)
-                # Check if middle object exists, is jumpable, and landing spot is clear
-                if middle_obj and getattr(middle_obj, 'is_jumpable', False) and environment.can_move_to(landing_pos):
+                if middle_obj and getattr(
+    middle_obj,
+    'is_jumpable',
+     False) and environment.can_move_to(landing_pos):
                     jump_neighbors.append(landing_pos)
         return jump_neighbors
 
     @staticmethod
-    def find_path(environment: Environment, start_pos: Tuple[int, int], end_pos: Tuple[int, int]) -> List[Tuple[int, int]]:
+    def find_path(environment: Environment, start_pos: Tuple[int, int], end_pos: Tuple[int, int]) -> List[
+        Tuple[int, int]]:
         """Find the shortest path using A*.
 
         Returns:
             List of positions (tuples) from start to end, or empty list if no path.
         """
         logger.debug(f"PATHFINDER: Finding path from {start_pos} to {end_pos}")
-        if not environment.is_valid_position(start_pos) or not environment.is_valid_position(end_pos):
+        if not environment.is_valid_position(
+            start_pos) or not environment.is_valid_position(end_pos):
             logger.warning("PATHFINDER: Start or end position invalid.")
             return []
-        # Optimization: If start and end are the same
         if start_pos == end_pos:
              return [start_pos]
 
         start_node = PathNode(start_pos)
         end_node = PathNode(end_pos)
 
-        open_list = [] # Priority queue (min-heap)
-        closed_set = set() # Set of visited positions
+        open_list = []  # Priority queue (min-heap)
+        closed_set = set()  # Set of visited positions
 
         heapq.heappush(open_list, start_node)
 
@@ -397,62 +829,582 @@ class PathFinder:
             current_node = heapq.heappop(open_list)
 
             if current_node.position in closed_set:
-                continue # Already processed this position via a better path
+                continue  # Already processed this position via a better path
             closed_set.add(current_node.position)
 
-            # Goal check
             if current_node.position == end_node.position:
                 path = []
                 temp = current_node
                 while temp:
                     path.append(temp.position)
                     temp = temp.parent
-                logger.debug(f"PATHFINDER: Path found with {len(path)-1} steps.")
-                return path[::-1] # Return reversed path
+                logger.debug(
+                    f"PATHFINDER: Path found with {len(path) - 1} steps.")
+                return path[::-1]  # Return reversed path
 
-            # Explore neighbors (Move + Jump)
-            neighbors_pos = PathFinder.get_neighbors(current_node.position, environment)
-            jump_neighbors_pos = PathFinder.get_jump_neighbors(current_node.position, environment)
+            neighbors_pos = PathFinder.get_neighbors(
+                current_node.position, environment)
+            jump_neighbors_pos = PathFinder.get_jump_neighbors(
+                current_node.position, environment)
 
             for neighbor_pos in neighbors_pos + jump_neighbors_pos:
                 if neighbor_pos in closed_set:
                     continue
 
-                # Determine cost (g value)
-                move_cost = 5 if neighbor_pos in jump_neighbors_pos else 1 # Jump costs 5, move costs 1
+                # Jump costs 5, move costs 1
+                move_cost = 5 if neighbor_pos in jump_neighbors_pos else 1
                 new_g = current_node.g + move_cost
 
-                # Check if neighbor is already in open_list and if this path is better
-                existing_node = next((node for node in open_list if node.position == neighbor_pos), None)
+                existing_node = next(
+    (node for node in open_list if node.position == neighbor_pos), None)
 
                 if existing_node and new_g >= existing_node.g:
-                    continue # Found a better or equal path already
+                    continue  # Found a better or equal path already
 
-                # Create or update neighbor node
                 neighbor_node = PathNode(neighbor_pos, current_node)
                 neighbor_node.g = new_g
-                neighbor_node.h = PathFinder.manhattan_distance(neighbor_pos, end_pos)
+                neighbor_node.h = PathFinder.manhattan_distance(
+                    neighbor_pos, end_pos)
                 neighbor_node.f = neighbor_node.g + neighbor_node.h
 
-                # Add to open list (or update priority if already exists)
-                # heapq handles priority updates implicitly if node is re-inserted
                 heapq.heappush(open_list, neighbor_node)
 
         logger.warning("PATHFINDER: No path found.")
-        return [] # No path found
-
-# --- END Pathfinding Helper Code ---
+        return []  # No path found
 
 
-# --- Tool Definitions Copied from agent_puppet_master.py --- 
+async def _internal_move(ctx: RunContextWrapper[CompleteStoryResult], direction: str, is_running: bool,
+                         continuous: bool, steps: int) -> str:
+    """Internal logic for moving the player character. DOES NOT send commands to frontend."""
+    # Safety check for ctx and context
+    if ctx is None:
+        logger.error("💥 INTERNAL: Critical error - ctx parameter is None")
+        return "Error: Game context is missing. Please try setting the theme again."
 
-# NOTE: These tools now operate directly on the ctx.context (CompleteStoryResult)
-# They need access to story_result.person, story_result.environment, etc.
+    # Get the context object and check if it's valid
+    story_result = getattr(ctx, "context", None)
+    if story_result is None:
+        logger.error("💥 INTERNAL: Critical error - ctx.context is None")
+        return "Error: Game state is not properly initialized. Please try setting the theme again."
 
-# --- ADDED NEW TOOL: moveToObject ---
+    # Check if person exists
+    if not hasattr(story_result, 'person') or story_result.person is None:
+        logger.error(
+            "💥 INTERNAL: Critical error - story_result.person is missing or None")
+        return "Error: Player character not found in game. Please try setting the theme again."
+
+    # Check if environment exists
+    if not hasattr(story_result, 'environment') or story_result.environment is None:
+        logger.error(
+            "💥 INTERNAL: Critical error - story_result.environment is missing or None")
+        return "Error: Game environment not found. Please try setting the theme again."
+    else:
+        # CORRECT: Assign environment here, since we know it exists
+        environment = story_result.environment
+        # ---> LOG ENV ID <---
+        logger.info(f"SYNC CHECK: Environment ID in _internal_move: {id(environment)}")
+        logger.debug(
+            f"🕵️ Type of environment at start of _internal_move: {type(environment)}")
+        # Optionally keep the check for valid methods if useful
+        if not isinstance(environment, str):
+            logger.debug(
+                f"  environment.is_valid_position exists: {hasattr(environment, 'is_valid_position')}")
+
+    if not environment or isinstance(environment, str):
+        logger.error(
+            f"❌ Environment is invalid (type: {type(environment)}) in _internal_move!")
+        return f"❌ Error: Game environment is invalid (Type: {type(environment)})."
+
+    person = story_result.person
+    logger.info(
+        f"Executing internal move logic: Dir={direction}, Steps={steps}, Running={is_running}, Cont={continuous}")
+
+    direction_map = {
+        "north": "up", "south": "down", "east": "right", "west": "left",
+        "up": "up", "down": "down", "left": "left", "right": "right"
+    }
+    direction_label = direction.lower()
+    if direction_label not in direction_map:
+        return f"❌ Unknown direction: '{direction}'. Use north, south, east, west, up, down, left, or right."
+    direction_internal = direction_map[direction_label]
+
+    if continuous:
+        logger.info(f"  Calculating continuous move {direction_label}...")
+        # FIXED: Use DirectionHelper.move_continuously that we already fixed above
+        # instead of directly calling a non-existent method on person
+        result_msg = await DirectionHelper.move_continuously(story_result, direction_internal)
+        return result_msg
+    else:
+        actual_steps_taken = 0
+        start_pos = person.position  # Record position before steps
+        step_result_msg = "Blocked"  # Default message if loop doesn't run
+
+        for i in range(steps):
+            current_pos_tuple_debug = None
+            if hasattr(person.position, 'x') and hasattr(person.position, 'y'):
+                current_pos_tuple_debug = (
+    person.position.x, person.position.y)
+            elif isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
+                current_pos_tuple_debug = (
+    person.position[0], person.position[1])
+
+            if current_pos_tuple_debug:
+                target_pos_tuple = DirectionHelper.get_relative_position(
+                    current_pos_tuple_debug, direction_internal)
+                is_valid = environment.is_valid_position(target_pos_tuple)
+                can_move = environment.can_move_to(
+                    target_pos_tuple) if is_valid else False
+                logger.debug(
+                    f"  [Check BEFORE person.move] Step {i + 1}/{steps}: Current={current_pos_tuple_debug}, Target={target_pos_tuple}, IsValid={is_valid}, CanMoveTo={can_move}")
+            else:
+                logger.error(
+                    f"  [Check BEFORE person.move] Step {i + 1}/{steps}: Could not determine current position: {person.position}")
+                target_pos_tuple = None
+
+            # FIXED: Check the Person.move method's parameter order
+            # Now correctly create a Position object and pass it to move
+            try:
+                if target_pos_tuple:
+                    # Create Position object from target_pos_tuple
+                    target_position = Position(
+    x=target_pos_tuple[0], y=target_pos_tuple[1])
+                    # Call person.move with correct parameters
+                    step_result = person.move(
+    story_result.environment, target_position, is_running)
+                else:
+                    # Cannot determine target position
+                    step_result = {
+    "success": False,
+     "message": "Could not determine target position for movement"}
+            except Exception as e:
+                logger.error(f"Failed to call move: {e}")
+                return f"❌ Error executing move command: {str(e)}"
+
+            # Ensure step_result is not None before accessing properties
+            if step_result is None:
+                logger.error(
+                    "Move method returned None instead of a result dictionary")
+                step_result_msg = "Move method returned None"
+                break  # Stop trying to move
+            else:
+                step_result_msg = step_result.get('message', 'Unknown reason')
+                if step_result.get("success", False):
+                    actual_steps_taken += 1
+                else:
+                    logger.info(
+                        f"    Step {i + 1}/{steps} failed (reported by person.move): {step_result_msg}. Stopping.")  # Clarified log source
+                    break  # Stop moving if a step fails
+
+        if actual_steps_taken > 0:
+            action_verb = "ran" if is_running else "walked"
+            return f"✅ Successfully {action_verb} {direction_label} {actual_steps_taken} step{'s' if actual_steps_taken != 1 else ''}. Now at {person.position}."
+        else:
+            return f"❌ Could not move {direction_label} from {start_pos}. Reason: {step_result_msg}"
+
+
+async def _internal_jump(
+    ctx: RunContextWrapper[CompleteStoryResult],
+    target_x: int,
+     target_y: int) -> str:
+    """Internal logic for making the player character jump. DOES NOT send commands to frontend."""
+    # Safety check for ctx and context
+    if ctx is None:
+        logger.error("💥 INTERNAL: Critical error - ctx parameter is None")
+        return "Error: Game context is missing. Please try setting the theme again."
+
+    # Get the context object and check if it's valid
+    story_result = getattr(ctx, "context", None)
+    if story_result is None:
+        logger.error("💥 INTERNAL: Critical error - ctx.context is None")
+        return "Error: Game state is not properly initialized. Please try setting the theme again."
+
+    # Check if person exists
+    if not hasattr(story_result, 'person') or story_result.person is None:
+        logger.error(
+            "💥 INTERNAL: Critical error - story_result.person is missing or None")
+        return "Error: Player character not found in game. Please try setting the theme again."
+
+    # Check if environment exists
+    if not hasattr(
+    story_result,
+     'environment') or story_result.environment is None:
+        logger.error(
+            "💥 INTERNAL: Critical error - story_result.environment is missing or None")
+        return "Error: Game environment not found. Please try setting the theme again."
+
+    person = story_result.person
+    environment = story_result.environment
+    logger.info(f"Executing internal jump logic to: ({target_x}, {target_y})")
+
+    target_pos = Position(x=target_x, y=target_y)
+    result = person.jump(target_pos, environment)
+
+    if result.get("success", False):
+         return f"✅ {result.get('message', 'Jump successful')}. Now at {person.position}."
+    else:
+         return f"❌ {result.get('message', 'Jump failed')}"
+
+
+# --- Reconstructed Tool Definitions ---
+
 @function_tool
-async def move_to_object(ctx: RunContextWrapper[CompleteStoryResult], target_x: int, target_y: int) -> str:
-    """Moves the player character to a valid, empty space adjacent to the target coordinates.
+@log_tool_execution
+async def look_around(
+    ctx: RunContextWrapper[CompleteStoryResult],
+     radius: int) -> str:
+    """Looks around the player's current position within a given radius to identify nearby objects and entities.
+
+    Args:
+        ctx: The RunContext containing the game state.
+        radius: How far to look (number of squares, between 1 and 10).
+
+    Returns:
+        str: A description of what the player sees nearby.
+    """
+    # Enhanced logging to track context issues
+    logger.info(f"🔍 look_around called with radius={radius}")
+
+    # Handle missing context gracefully
+    if ctx is None:
+        logger.error("❌ ctx is None in look_around!")
+        return "Error: Context is missing. Please try reloading the theme."
+
+    # Get story_result from context with a fallback for direct access
+    story_result = getattr(ctx, "context", None)
+
+    # If context is still None, try to get it from global sources
+    if story_result is None:
+        logger.error(
+            "❌ ctx.context is None in look_around! Attempting to recover context...")
+        # We need to get the context from global sources, like active_connections in main.py
+        # For now, just return an error asking the user to reload
+        return "Error: Game state is missing. Please try reloading the theme and making a new command."
+
+    # Check if story_result has required attributes
+    if not story_result or not hasattr(
+    story_result,
+     'person') or not story_result.person:
+        logger.error(
+            f"❌ Missing person object in story_result: {getattr(story_result, 'person', None)}")
+        return "Cannot look around - the player character is missing."
+
+    if not hasattr(
+    story_result,
+     'environment') or not story_result.environment:
+        logger.error(
+            f"❌ Missing environment object in story_result: {getattr(story_result, 'environment', None)}")
+        return "Cannot look around - the game environment is missing."
+
+    # Validate radius internally (don't use default parameter)
+    if radius <= 0:
+        logger.warning(
+            f"Invalid radius value {radius} provided, using minimum value 1 instead")
+        radius = 1
+    elif radius > 10:
+        logger.warning(
+            f"Radius value {radius} exceeds maximum, clamping to 10")
+        radius = 10
+
+    person = story_result.person
+    environment = story_result.environment
+
+    # Ensure position exists
+    if not person.position:
+        logger.error("❌ Person position is None in look_around")
+        return "You don't seem to be anywhere specific to look around from."
+
+    # Debug position information
+    if hasattr(person.position, 'x') and hasattr(person.position, 'y'):
+        logger.info(
+            f"👤 Player position: ({person.position.x}, {person.position.y})")
+    elif isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
+        logger.info(
+            f"👤 Player position: ({person.position[0]}, {person.position[1]})")
+    else:
+        logger.warning(f"⚠️ Unusual position format: {person.position}")
+
+    try:
+        # Enhanced error checking for look method
+        if not hasattr(person, 'look') or not callable(person.look):
+            logger.error("❌ Person object is missing the 'look' method!")
+            # Create a basic description of surroundings
+            return "You look around but can't focus. (Error: Character functionality is limited)"
+
+        # Ensure the environment is properly set up for looking
+        if not hasattr(
+    environment,
+    'is_valid_position') or not callable(
+        environment.is_valid_position):
+            logger.error("❌ Environment is missing is_valid_position method!")
+            return "You scan the area but can't make sense of your surroundings. (Error: Map functionality is limited)"
+
+        # Call the look method with extra error handling
+        look_result = person.look(environment=environment, radius=radius)
+
+        if not look_result.get("success"):
+            logger.warning(
+                f"⚠️ look failed: {look_result.get('message', 'Unknown reason')}")
+            return f"Failed to look around: {look_result.get('message', 'Unknown reason')}"
+
+        nearby_objects = look_result.get("nearby_objects", {})
+        nearby_entities = look_result.get("nearby_entities", {})
+
+        if not nearby_objects and not nearby_entities:
+            return "You look around but see nothing of interest nearby."
+
+        descriptions = []
+        if nearby_objects:
+            obj_names = [
+    obj.name for obj in nearby_objects.values() if hasattr(
+        obj, 'name')]
+            if obj_names:
+                descriptions.append(f"Nearby objects: {', '.join(obj_names)}")
+        if nearby_entities:
+            ent_names = [
+    ent.name for ent in nearby_entities.values() if hasattr(
+        ent, 'name')]
+            if ent_names:
+                descriptions.append(f"Nearby entities: {', '.join(ent_names)}")
+
+        # Store nearby objects in story_result for future reference
+        # IMPORTANT: Always create a fresh dictionary to prevent stale
+        # references
+        if not hasattr(
+    story_result,
+     'nearby_objects') or story_result.nearby_objects is None:
+            story_result.nearby_objects = {}
+
+        # IMPROVED: Update with complete objects including position information
+        # First clear the dictionary to remove any stale references
+        story_result.nearby_objects.clear()
+
+        # Add objects with full details
+        for obj_id, obj in nearby_objects.items():
+            # Only store actual objects, not just IDs
+            if hasattr(obj, 'id'):
+                story_result.nearby_objects[obj_id] = obj
+                logger.debug(
+                    f"Added object to nearby_objects: {obj_id}, pos={getattr(obj, 'position', 'unknown')}")
+
+        # Add entities with full details
+        for ent_id, ent in nearby_entities.items():
+            # Only store actual objects, not just IDs
+            if hasattr(ent, 'id'):
+                story_result.nearby_objects[ent_id] = ent
+                logger.debug(
+                    f"Added entity to nearby_objects: {ent_id}, pos={getattr(ent, 'position', 'unknown')}")
+
+        # Log the count of objects stored
+        logger.info(
+            f"✅ Updated nearby_objects with {len(story_result.nearby_objects)} items")
+
+        return "You look around. " + ". ".join(descriptions) + "."
+
+    except Exception as e:
+        logger.error(
+    f"❌ Error during look_around execution: {e}",
+     exc_info=True)
+        return f"An unexpected error occurred while trying to look around: {e}"
+
+
+@function_tool
+@log_tool_execution
+async def get_inventory(ctx: RunContextWrapper[CompleteStoryResult]) -> str:
+    """Checks the player's inventory and lists the items being carried.
+
+    Args:
+        ctx: The RunContext containing the game state.
+
+    Returns:
+        str: A list of items in the inventory or a message saying it's empty.
+    """
+    story_result = ctx.context
+    if not story_result or not story_result.person:
+        return "❌ Error: Cannot check inventory. Player not found."
+
+    person = story_result.person
+    if not hasattr(person, 'inventory') or not person.inventory:
+        return "❌ Error: Player inventory is missing or invalid."
+
+    if not hasattr(
+    person.inventory,
+     'contents') or not person.inventory.contents:
+        return "Your inventory is empty."
+
+    item_names = [
+    item.name for item in person.inventory.contents if hasattr(
+        item, 'name')]
+    if not item_names:
+        return "You have some items, but they are indescribable."  # Should ideally not happen
+
+    return f"You check your inventory. You are carrying: {', '.join(item_names)}."
+
+
+@function_tool
+@log_tool_execution
+async def get_object_details(
+    ctx: RunContextWrapper[CompleteStoryResult],
+     object_id: str) -> str:
+    """Examines a specific nearby object or an item in the inventory to get more details about it.
+
+    Args:
+        ctx: The RunContext containing the game state.
+        object_id: The unique ID of the object or item to examine.
+
+    Returns:
+        str: A description of the object/item, or an error message if not found.
+    """
+    story_result = ctx.context
+    if not story_result or not story_result.person or not story_result.environment:
+        return "❌ Error: Game state not ready to examine objects."
+
+    person = story_result.person
+    target_object = None
+
+    # 1. Check inventory
+    if hasattr(
+    person,
+    'inventory') and person.inventory and hasattr(
+        person.inventory,
+         'contents'):
+        for item in person.inventory.contents:
+            if hasattr(item, 'id') and item.id == object_id:
+                target_object = item
+                break
+
+    # 2. Check nearby objects (if not found in inventory)
+    if not target_object:
+        # Ensure nearby_objects exists and is updated
+        if not hasattr(story_result, 'nearby_objects'):
+            logger.warning(
+                "⚠️ nearby_objects not found in context for get_object_details. Attempting look.")
+            await look_around(ctx)  # Try to update nearby objects
+
+        if hasattr(
+    story_result,
+     'nearby_objects') and story_result.nearby_objects:
+            target_object = story_result.nearby_objects.get(object_id)
+
+    # 3. Check environment map as a last resort (less reliable)
+    if not target_object and hasattr(story_result.environment, 'entity_map'):
+        target_object = story_result.environment.entity_map.get(object_id)
+
+    if not target_object:
+        return f"❌ You look for '{object_id}', but can't find anything with that ID nearby or in your inventory."
+
+    # Construct description
+    description = getattr(target_object, 'description', None)
+    name = getattr(target_object, 'name', 'an object')
+    details = [f"You examine the {name}."]
+
+    if description:
+        details.append(description)
+    else:  # Fallback details if no description attribute
+        obj_type = getattr(target_object, 'type', 'unknown type')
+        details.append(f"It appears to be a {obj_type}.")
+        if hasattr(target_object, 'weight'):
+            details.append(
+                f"It feels {get_weight_description(target_object.weight)}.")
+        if getattr(target_object, 'is_movable', False):
+            details.append("It looks like it could be moved.")
+        if getattr(target_object, 'is_container', False):
+            details.append("It could hold other items.")
+        if getattr(target_object, 'is_collectable', False):
+            details.append("You could probably pick it up.")
+
+    # Add container contents if applicable
+    if isinstance(
+    target_object,
+    Container) and hasattr(
+        target_object,
+         'contents'):
+        if target_object.contents:
+            item_names = [
+    item.name for item in target_object.contents if hasattr(
+        item, 'name')]
+            details.append(f"Inside, you see: {', '.join(item_names)}.")
+        else:
+            details.append("It's empty inside.")
+
+    return " ".join(details)
+
+
+@function_tool
+@log_tool_execution
+async def use_object_with(
+    ctx: RunContextWrapper[CompleteStoryResult],
+    item1_id: str,
+     item2_id: str) -> str:
+    """Uses one item (item1_id from inventory) with another item or object (item2_id from inventory or nearby).
+
+    Args:
+        ctx: The RunContext containing the game state.
+        item1_id: The ID of the item from inventory to use.
+        item2_id: The ID of the target item/object (in inventory or nearby).
+
+    Returns:
+        str: A message describing the result of the action (success or failure).
+    """
+    story_result = ctx.context
+    if not story_result or not story_result.person or not story_result.environment:
+        return "❌ Error: Game state not ready for item interaction."
+
+    person = story_result.person
+    # Pass environment if needed by use_with
+    environment = story_result.environment
+
+    # Ensure nearby_objects is populated for the Person method to use
+    if not hasattr(story_result, 'nearby_objects'):
+        logger.warning(
+            "⚠️ nearby_objects not found in context for use_object_with. Attempting look.")
+        await look_around(ctx)  # Try to update nearby objects
+
+    nearby_objects_dict = getattr(story_result, 'nearby_objects', {})
+
+    if not hasattr(
+    person,
+    'use_object_with') or not callable(
+        person.use_object_with):
+        logger.error(
+            "❌ Person object is missing the 'use_object_with' method!")
+        return "❌ Error: Interaction logic is missing for the character."
+
+    try:
+        # Call the method on the Person instance, passing necessary context
+        result = person.use_object_with(
+            item1_id=item1_id,
+            item2_id=item2_id,
+            environment=environment,  # Pass environment
+            nearby_objects=nearby_objects_dict  # Pass nearby objects dict
+        )
+
+        if isinstance(result, dict):
+            return result.get(
+    "message", "❓ Interaction occurred, but result unclear.")
+        else:
+            # Handle cases where the underlying method might not return a dict
+            logger.warning(
+                f"⚠️ Unexpected return type from person.use_object_with: {type(result)}. Result: {result}")
+            # Return raw result if not dict
+            return f"❓ Interaction result: {result}"
+
+    except Exception as e:
+        logger.error(
+    f"❌ Error during use_object_with execution: {e}",
+     exc_info=True)
+        return f"❌ An unexpected error occurred while trying to use '{item1_id}' with '{item2_id}': {e}"
+
+
+# --- End Reconstructed Tool Definitions ---
+
+
+@function_tool
+@log_tool_execution
+async def move_to_object(
+    ctx: RunContextWrapper[CompleteStoryResult],
+    target_x: int,
+     target_y: int) -> str:
+    """Moves the player towards an object by finding an adjacent path and executing the steps.
     This is useful for approaching objects or locations without needing to land exactly on them.
     The tool calculates the path and executes the necessary move/jump steps.
 
@@ -464,15 +1416,29 @@ async def move_to_object(ctx: RunContextWrapper[CompleteStoryResult], target_x: 
     Returns:
         str: Description of the movement result (success, failure, path taken) or an error message.
     """
-    logger.info(f"🚶‍♂️ Tool: move_to_object(target_x={target_x}, target_y={target_y})")
+    logger.info(
+        f"🚶‍♂️ Tool: move_to_object(target_x={target_x}, target_y={target_y})")
+
+    # Safety check for context and other required objects
+    if ctx is None or not hasattr(ctx, 'context'):
+        return "❌ Error: Game context not available"
+
     story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    if not story_result.environment: return "❌ Error: Game environment not found."
+    if not story_result:
+        return "❌ Error: Game state is missing"
+
+    if not hasattr(story_result, 'person') or not story_result.person:
+        return "❌ Error: Player character not found."
+
+    if not hasattr(
+    story_result,
+     'environment') or not story_result.environment:
+        return "❌ Error: Game environment not found."
 
     person = story_result.person
     environment = story_result.environment
 
-    # --- Get and Validate Player Position --- 
+    # Ensure we have a valid current position
     current_pos_tuple = None
     if person.position:
         if hasattr(person.position, 'x') and hasattr(person.position, 'y'):
@@ -480,42 +1446,54 @@ async def move_to_object(ctx: RunContextWrapper[CompleteStoryResult], target_x: 
         elif isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
              current_pos_tuple = (person.position[0], person.position[1])
 
-    if not current_pos_tuple or not environment.is_valid_position(current_pos_tuple):
-        logger.error(f"💥 TOOL moveToObject: Invalid or missing player start position: {person.position}")
-        sync_story_state(story_result) # Attempt to sync state to fix position
-        # Re-check position after sync
-        if person.position and isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
+    if not current_pos_tuple:
+        logger.error(
+            f"💥 TOOL moveToObject: Invalid or missing player start position: {person.position}")
+        sync_story_state(story_result)  # Attempt to sync state to fix position
+        if person.position and isinstance(
+    person.position, (tuple, list)) and len(
+        person.position) >= 2:
             current_pos_tuple = (person.position[0], person.position[1])
             if not environment.is_valid_position(current_pos_tuple):
                  return "Error: Cannot determine player's valid starting position even after sync."
         else:
              return "Error: Cannot determine player's starting position."
 
+    # Validate target position
     target_pos = (target_x, target_y)
-    logger.debug(f"  Player at {current_pos_tuple}, Target location {target_pos}")
+    if not environment.is_valid_position(target_pos):
+        return f"Error: Target location ({target_x},{target_y}) is outside the valid map area."
 
-    # If already adjacent, no need to move
-    if PathFinder.manhattan_distance(current_pos_tuple, target_pos) == 1 and environment.can_move_to(current_pos_tuple):
+    logger.debug(
+        f"  Player at {current_pos_tuple}, Target location {target_pos}")
+
+    # Check if already adjacent to target
+    if PathFinder.manhattan_distance(current_pos_tuple, target_pos) == 1:
         logger.info("  Player is already adjacent to the target location.")
         return f"You are already standing next to the location ({target_x},{target_y})."
 
-    # --- Find Valid, Empty Adjacent Target Positions --- 
+    # Find adjacent positions where player can stand
     adjacent_candidates = []
-    for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]: # Up, Right, Down, Left
+    for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:  # Up, Right, Down, Left
         adj_pos = (target_pos[0] + dx, target_pos[1] + dy)
-        # Check validity and if player can stand there
-        if environment.is_valid_position(adj_pos) and environment.can_move_to(adj_pos):
+        if environment.is_valid_position(
+            adj_pos) and environment.can_move_to(adj_pos):
             adjacent_candidates.append(adj_pos)
 
     if not adjacent_candidates:
-        logger.warning(f"  No valid, empty adjacent spaces found around target {target_pos}")
+        logger.warning(
+            f"  No valid, empty adjacent spaces found around target {target_pos}")
         obj_at_target = environment.get_object_at(target_pos)
-        obj_name = getattr(obj_at_target, 'name', 'the target location') if obj_at_target else 'the target location'
+        obj_name = getattr(
+    obj_at_target,
+    'name',
+     'the target location') if obj_at_target else 'the target location'
         return f"There are no free spaces to stand next to {obj_name} at ({target_x},{target_y})."
 
-    logger.debug(f"  Found {len(adjacent_candidates)} potential adjacent spots: {adjacent_candidates}")
+    logger.debug(
+        f"  Found {len(adjacent_candidates)} potential adjacent spots: {adjacent_candidates}")
 
-    # --- Select Best Adjacent Spot (Closest to Player) --- 
+    # Find the best adjacent position (closest to player)
     best_destination = None
     min_dist = float('inf')
     for dest_pos in adjacent_candidates:
@@ -523,1302 +1501,1481 @@ async def move_to_object(ctx: RunContextWrapper[CompleteStoryResult], target_x: 
         if dist < min_dist:
             min_dist = dist
             best_destination = dest_pos
-        # Tie-breaking: If distances are equal, prefer one with path? (More complex) - Simple closest for now.
 
     if not best_destination:
-         # This should theoretically not happen if adjacent_candidates is not empty
-         logger.error("  Failed to select a best destination despite having candidates.")
+         logger.error(
+             "  Failed to select a best destination despite having candidates.")
          return "Error: Could not determine the best adjacent spot to move to."
 
     logger.info(f"  Selected best adjacent destination: {best_destination}")
 
-    # --- Find Path to Best Adjacent Spot --- 
-    path = PathFinder.find_path(environment, current_pos_tuple, best_destination)
+    # Find path to best destination
+    path = PathFinder.find_path(
+    environment,
+    current_pos_tuple,
+     best_destination)
 
-    if not path or len(path) < 2: # Need at least start and end points
-        logger.warning(f"  No path found from {current_pos_tuple} to {best_destination}")
+    if not path:
+        logger.warning(
+            f"  No path found from {current_pos_tuple} to {best_destination}")
         return f"Cannot find a path to reach the space next to ({target_x},{target_y})."
+
+    if len(path) < 2:  # Need at least start and end points
+        logger.warning(
+            f"  Invalid path (too short) from {current_pos_tuple} to {best_destination}")
+        return f"Already at or too close to target location ({target_x},{target_y})."
 
     logger.info(f"  Path found with {len(path) - 1} steps: {path}")
 
-    # --- Generate Movement Commands from Path --- 
-    movement_commands = []
-    results_log = [f"Starting path to ({target_x},{target_y})..."]
-    for i in range(len(path) - 1):
-        start_step = path[i]
-        end_step = path[i+1]
-        dx = end_step[0] - start_step[0]
-        dy = end_step[1] - start_step[1]
+    # Generate movement commands for the path
+    movement_commands_models: List[MovementCommand] = []
+    try:
+        for i in range(len(path) - 1):
+            start_step = path[i]
+            end_step = path[i + 1]
+            dx = end_step[0] - start_step[0]
+            dy = end_step[1] - start_step[1]
 
-        tool_name = None
-        params = {}
+            tool_name: Literal['move', 'jump'] | None = None
+            params_dict: Dict[str, Any] = {}
 
-        if abs(dx) + abs(dy) == 1: # Cardinal move
-            tool_name = "move"
-            if dx == 1: direction = "right"
-            elif dx == -1: direction = "left"
-            elif dy == 1: direction = "down"
-            else: direction = "up"
-            params = {"direction": direction, "is_running": False, "continuous": False}
-        elif abs(dx) + abs(dy) == 2: # Jump move
-            tool_name = "jump"
-            params = {"target_x": end_step[0], "target_y": end_step[1]}
-        else:
-            logger.error(f"  Invalid step in path: {start_step} -> {end_step}. Skipping.")
-            results_log.append(f"Step {i+1}: Invalid movement detected, stopping.")
-            break # Stop if path contains invalid step
-
-        movement_commands.append({"tool": tool_name, "parameters": params})
-
-    # --- Execute Movement Commands Sequentially --- 
-    logger.info(f"  Executing {len(movement_commands)} movement commands...")
-    final_outcome = f"Failed to reach the destination near ({target_x},{target_y})."
-
-    for i, cmd in enumerate(movement_commands):
-        tool_name = cmd['tool']
-        params = cmd['parameters']
-        logger.debug(f"    Executing Step {i+1}: {tool_name} with {params}")
-        step_result = ""
-        success = False
-        try:
-            if tool_name == 'move':
-                step_result = await move(ctx, **params)
-                # Check success (crude check, relies on move tool's return string)
-                if "Successfully moved" in step_result or "Successfully walked" in step_result or "already there" in step_result.lower():
-                    success = True
-            elif tool_name == 'jump':
-                step_result = await jump(ctx, **params)
-                if "Successfully jumped" in step_result or "jumped" in step_result.lower():
-                    success = True
-
-            results_log.append(f"Step {i+1} ({tool_name}): {step_result}")
-            if not success:
-                logger.warning(f"  Movement failed at step {i+1}: {step_result}")
-                final_outcome = f"Stopped moving towards ({target_x},{target_y}) after step {i+1}: {step_result}"
-                break # Stop sequence on failure
+            if abs(dx) + abs(dy) == 1:  # Cardinal move
+                tool_name = "move"
+                if dx == 1:
+                    direction = "right"
+                elif dx == -1:
+                    direction = "left"
+                elif dy == 1:
+                    direction = "down"  # Assuming Y+ is down
+                else:
+                    direction = "up"  # Assuming Y- is up
+                params_dict = {
+    "direction": direction,
+    "is_running": False,
+    "continuous": False,
+     "steps": 1}
+            elif abs(dx) + abs(dy) == 2:  # Jump move
+                tool_name = "jump"
+                params_dict = {
+    "target_x": end_step[0],
+     "target_y": end_step[1]}
             else:
-                 # If this is the last command, set success message
-                 if i == len(movement_commands) - 1:
-                     final_outcome = f"Successfully moved next to the location ({target_x},{target_y}). Now at {person.position}."
+                logger.error(
+                    f"  Invalid step in path: {start_step} -> {end_step}. Stopping command generation.")
+                return f"Internal error: Invalid step found in generated path near {start_step}."
 
-        except Exception as e:
-            logger.error(f"  Error executing step {i+1} ({tool_name}): {e}", exc_info=True)
-            results_log.append(f"Step {i+1} ({tool_name}): Error - {e}")
-            final_outcome = f"An error occurred during movement towards ({target_x},{target_y})."
-            break
+            if tool_name:
+                try:
+                    if tool_name == 'move':
+                        validated_params = MovementCommand(
+                            command_type=tool_name, **params_dict)
+                    elif tool_name == 'jump':
+                        validated_params = MovementCommand(
+                            command_type=tool_name, **params_dict)
+                    else:
+                        raise ValueError("Invalid tool name")
+                    movement_commands_models.append(validated_params)
+                except ValidationError as e:
+                    logger.error(
+                        f"  Pydantic validation error generating command for step {i + 1}: {e}")
+                    return f"Internal error: Failed to create valid command for step {i + 1}. Details: {e}"
+    except Exception as path_error:
+        logger.error(f"Error processing path: {path_error}")
+        return f"Error calculating movement commands: {str(path_error)}"
 
-    logger.info(f"🏁 moveToObject finished: {final_outcome}")
-    # Optionally return results_log as well for more detail, but final_outcome is usually sufficient
-    return final_outcome
+    if not movement_commands_models:
+        logger.warning(
+            f"  No movement commands generated for path from {current_pos_tuple} to {best_destination}")
+        return "No movement required or path was invalid."
 
-# --- END ADDED TOOL ---
+    logger.info(
+        f"  Generated {len(movement_commands_models)} step commands for sequence.")
+
+    try:
+        logger.info(
+            f"  Calling execute_movement_sequence to run generated steps...")
+        execution_result = await execute_movement_sequence(ctx, movement_commands_models)
+        logger.info(
+            f"  execute_movement_sequence call finished: {execution_result}")
+        return execution_result
+    except Exception as e:
+        logger.error(
+    f"  Error calling execute_movement_sequence: {e}",
+     exc_info=True)
+        return f"An error occurred while trying to execute the movement sequence: {e}"
+
 
 @function_tool
-async def move(ctx: RunContextWrapper[CompleteStoryResult], direction: str, is_running: bool, continuous: bool) -> str:
-    """Move the player character one step in a given cardinal direction (up, down, left, right).
-    Diagonal movement is not supported.
+@log_tool_execution
+async def move(
+    ctx: RunContextWrapper[CompleteStoryResult],
+    direction: Literal["up", "down", "left", "right"],
+    is_running: bool,
+    continuous: bool,
+    steps: int
+) -> str:
+    """Move the player character step-by-step or continuously in a given cardinal direction.
 
     Args:
         ctx: The RunContext containing the game state.
-        direction: Cardinal direction to move (up, down, left, right, or north, south, east, west).
-        is_running: Whether to run (move faster) or walk. Not applicable for continuous movement.
-        continuous: Whether to keep moving in the specified cardinal direction until hitting an obstacle or edge.
+        direction: Cardinal direction (up, down, left, right).
+        is_running: Whether to run (move faster).
+        continuous: If True, keeps moving until hitting an obstacle or edge.
+        steps: The number of steps to take if continuous is False.
 
     Returns:
         str: Description of the movement result or an error message.
     """
     try:
+        # Safety check for ctx and context
+        if ctx is None:
+            logger.error("💥 TOOL: Critical error - ctx parameter is None")
+            return "Error: Game context is missing. Please try setting the theme again."
+
+        # Get the context object and check if it's valid
+        story_result = getattr(ctx, "context", None)
+        if story_result is None:
+            logger.error("💥 TOOL: Critical error - ctx.context is None")
+            return "Error: Game state is not properly initialized. Please try setting the theme again."
+
         # Normalize direction parameter
         direction = direction.lower()
-        if direction == "north": direction = "up"
-        elif direction == "south": direction = "down"
-        elif direction == "east": direction = "right"
-        elif direction == "west": direction = "left"
 
-        # --- ADDED: Explicitly check for allowed cardinal directions --- 
-        allowed_directions = ["up", "down", "left", "right"]
-        if direction not in allowed_directions:
-            logger.warning(f"🚫 TOOL: Invalid move direction received: '{direction}'. Only cardinal directions are allowed.")
-            return f"Cannot move '{direction}'. Movement is only possible in cardinal directions (up, down, left, right)."
-        # --- END ADDED CHECK --- 
+        # Set default value for steps internally if needed
+        if steps <= 0:
+            steps = 1
+            logger.warning(
+                f"Invalid steps value {steps} provided, using default value 1 instead")
 
-        story_result = ctx.context
+        # Check if person exists
+        if not hasattr(story_result, 'person') or story_result.person is None:
+            logger.error(
+                "💥 TOOL: Critical error - story_result.person is missing or None")
+            return "Error: Player character not found in game. Please try setting the theme again."
+
+        # Check if environment exists
+        if not hasattr(
+    story_result,
+     'environment') or story_result.environment is None:
+            logger.error(
+                "💥 TOOL: Critical error - story_result.environment is missing or None")
+            return "Error: Game environment not found. Please try setting the theme again."
+
         person = story_result.person
         environment = story_result.environment
 
+        # Log debug information about objects
+        logger.debug(
+            f"Person object: {type(person)}, Environment object: {type(environment)}")
+
         # Make sure position exists
         if person.position is None:
-            # Try to get position from environment if available, otherwise default
-            default_pos = (environment.width // 2, environment.height // 2) if environment else (20, 20)
+            # Try to get position from environment if available, otherwise
+            # default
+            default_pos = (
+    environment.width //
+    2,
+    environment.height //
+    2) if environment else (
+        20,
+         20)
             person.position = default_pos
-            logger.warning(f"Player position was None, set to default: {person.position}")
+            logger.warning(
+                f"Player position was None, set to default: {person.position}")
 
         # Handle potential None position again after default assignment attempt
         if person.position is None:
-             logger.error("💥 TOOL: Critical error - Player position is still None after attempting default assignment.")
-             return "Error: Cannot determine player's starting position."
+            logger.error(
+                "💥 TOOL: Critical error - Player position is still None after attempting default assignment.")
+            return "Error: Cannot determine player's starting position."
 
-        # Ensure position is usable (convert if needed, though Person class should handle tuples)
+        # Ensure position is usable (convert if needed, though Person class
+        # should handle tuples)
         current_pos_tuple = None
         if hasattr(person.position, 'x') and hasattr(person.position, 'y'):
              current_pos_tuple = (person.position.x, person.position.y)
         elif isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
              current_pos_tuple = (person.position[0], person.position[1])
         else:
-            logger.error(f"💥 TOOL: Invalid current_pos format in move tool: {person.position}")
+            logger.error(
+                f"💥 TOOL: Invalid current_pos format in move tool: {person.position}")
             return "Error: Could not determine valid starting coordinates."
 
-        orig_pos = current_pos_tuple # Use the validated tuple
-        logger.info(f"🏃 Starting {'continuous ' if continuous else ''}movement: {direction} from {orig_pos}")
+        orig_pos = current_pos_tuple  # Use the validated tuple
+        logger.info(
+            f"🏃 Starting {'continuous ' if continuous else ''}movement: {direction} from {orig_pos}")
 
         # Use the DirectionHelper for continuous movement
         if continuous:
             # Pass the validated tuple position to the helper
             return await DirectionHelper.move_continuously(story_result, direction)
 
-        # Single step movement
-        target_pos_tuple = DirectionHelper.get_relative_position(orig_pos, direction)
-        logger.info(f"🎯 Target position for single step: {target_pos_tuple}")
+        # Execute the steps one at a time
+        result = await _internal_move(ctx, direction=direction, is_running=is_running, continuous=continuous, steps=steps)
 
-        # Attempt the move in the backend using the target tuple
-        # The Person.move method should ideally accept a tuple (x, y)
-        result = person.move(environment, target_pos_tuple, is_running)
-
-        # Get speed and result text
-        speed_text = "ran" if is_running else "walked"
-
-        if result["success"]:
-            result_text = f"Successfully {speed_text} {direction}. Now at {person.position}."
-            # Add explicit coordinate logging
-            logger.info(f"🧮 COORDINATES: Backend position after {direction} movement: {person.position}")
-            if direction == "up":
-                logger.info(f"🧮 EXPECTED FRONTEND Y should decrease (-Y direction)")
-            elif direction == "down":
-                logger.info(f"🧮 EXPECTED FRONTEND Y should increase (+Y direction)")
-            
-            # Update state after successful move
-            sync_story_state(story_result)
-
-            # DIRECT WEBSOCKET COMMAND: Send move command to frontend
-            storyteller = getattr(story_result, '_storyteller_agent', None)
-            if storyteller and hasattr(storyteller, 'send_command_to_frontend'):
-                try:
-                    command_params = {
-                        "direction": direction,
-                        "is_running": is_running,
-                        "continuous": False # Single step for frontend command
-                    }
-                    logger.info(f"🚀 TOOL: Sending move command to frontend via websocket: direction={direction}, continuous=False")
-                    # Send the backend result message along with the command
-                    await storyteller.send_command_to_frontend("move", command_params, result_text)
-                    logger.info(f"✅ TOOL: Command sent to frontend")
-                except Exception as e:
-                    logger.error(f"❌ TOOL: Error sending WebSocket command: {e}")
-            else:
-                logger.warning(f"⚠️ TOOL: Could not access storyteller agent to send WebSocket command")
-
-            return result_text
+        # DIRECT WEBSOCKET COMMAND: Send move command to frontend
+        storyteller = getattr(story_result, '_storyteller_agent', None)
+        if storyteller and hasattr(storyteller, 'send_command_to_frontend'):
+            try:
+                command_params = {
+                    "direction": direction,
+                    "is_running": is_running,
+                    "steps": steps,  # Include steps for frontend
+                    "continuous": False  # Use steps instead
+                }
+                logger.info(
+                    f"🚀 TOOL: Sending move command to frontend via websocket: direction={direction}, steps={steps}")
+                # Send the backend result message along with the command
+                await storyteller.send_command_to_frontend("move", command_params, result)
+                logger.info(f"✅ TOOL: Command sent to frontend")
+            except Exception as e:
+                logger.error(f"❌ TOOL: Error sending WebSocket command: {e}")
         else:
-            # If move failed, return the reason from the person.move result
-            return f"Couldn't move {direction}: {result['message']}"
+            logger.warning(
+                f"⚠️ TOOL: Could not access storyteller agent to send WebSocket command")
 
+        return result
     except Exception as e:
-        logger.error(f"💥 TOOL: Unexpected error during movement: {str(e)}", exc_info=True)
+        logger.error(
+    f"💥 TOOL: Unexpected error during movement: {str(e)}",
+     exc_info=True)
         return f"Error during movement: {str(e)}"
 
+
 @function_tool
-async def jump(ctx: RunContextWrapper[CompleteStoryResult], target_x: int, target_y: int) -> str:
-    """Jump the player character over one square to land at the target coordinates (target_x, target_y)."""
+@log_tool_execution
+async def jump(
+    ctx: RunContextWrapper[CompleteStoryResult],
+    target_x: int,
+    target_y: int
+) -> str:
+    """Makes the player character jump two squares horizontally or vertically over an obstacle.
+
+    Args:
+        ctx: The RunContext containing the game state.
+        target_x: The destination X coordinate (must be 2 squares away).
+        target_y: The destination Y coordinate (must be 2 squares away).
+
+    Returns:
+        str: Description of the jump result or an error message.
+    """
     logger.info(f"🤸 Tool: jump(target_x={target_x}, target_y={target_y})")
     try:
-        story_result = ctx.context
-        if not story_result.person: return "❌ Error: Player character not found."
-        current_pos = story_result.person.position
-        logger.debug(f"  Attempting jump: {current_pos} -> ({target_x}, {target_y})")
-        result = story_result.person.jump(story_result.environment, (target_x, target_y))
-        result_msg = result["message"]
-        logger.info(f"  Jump result: {'✅ Success' if result['success'] else '❌ Failed'} - {result_msg}")
-        
-        if result["success"]:
-            sync_story_state(story_result)
-            
-            # Send jump command directly to frontend
-            storyteller = getattr(story_result, '_storyteller_agent', None)
-            
-            if storyteller and hasattr(storyteller, 'send_command_to_frontend'):
-                try:
-                    # Create command params
-                    command_params = {
-                        "target_x": target_x,
-                        "target_y": target_y
-                    }
-                    
-                    # Send command to frontend
-                    logger.info(f"🚀 TOOL: Sending jump command to frontend via websocket")
-                    await storyteller.send_command_to_frontend("jump", command_params, result_msg)
-                    logger.info(f"✅ TOOL: Jump command sent to frontend")
-                except Exception as e:
-                    logger.error(f"❌ TOOL: Error sending jump command: {e}")
-            else:
-                logger.warning(f"⚠️ TOOL: Could not access storyteller agent to send jump command")
-        
-        return result_msg
+        # Safety check for ctx and context
+        if ctx is None:
+            logger.error("💥 TOOL: Critical error - ctx parameter is None")
+            return "Error: Game context is missing. Please try setting the theme again."
+
+        # Get the context object and check if it's valid
+        story_result = getattr(ctx, "context", None)
+        if story_result is None:
+            logger.error("💥 TOOL: Critical error - ctx.context is None")
+            return "Error: Game state is not properly initialized. Please try setting the theme again."
+
+        # Check if person exists
+        if not hasattr(story_result, 'person') or story_result.person is None:
+            logger.error(
+                "💥 TOOL: Critical error - story_result.person is missing or None")
+            return "Error: Player character not found in game. Please try setting the theme again."
+
+        # Check if environment exists
+        if not hasattr(
+    story_result,
+     'environment') or story_result.environment is None:
+            logger.error(
+                "💥 TOOL: Critical error - story_result.environment is missing or None")
+            return "Error: Game environment not found. Please try setting the theme again."
+
+        result = await _internal_jump(ctx, target_x=target_x, target_y=target_y)
+
+        # Send jump command directly to frontend
+        storyteller = getattr(story_result, '_storyteller_agent', None)
+
+        if storyteller and hasattr(storyteller, 'send_command_to_frontend'):
+            try:
+                # Create command params
+                command_params = {
+                    "target_x": target_x,
+                    "target_y": target_y
+                }
+
+                # Send command to frontend
+                logger.info(
+                    f"🚀 TOOL: Sending jump command to frontend via websocket")
+                await storyteller.send_command_to_frontend("jump", command_params, result)
+                logger.info(f"✅ TOOL: Jump command sent to frontend")
+            except Exception as e:
+                logger.error(f"❌ TOOL: Error sending jump command: {e}")
+        else:
+            logger.warning(
+                f"⚠️ TOOL: Could not access storyteller agent to send jump command")
+
+        return result
     except Exception as e:
         logger.error(f"💥 TOOL: Error during jump: {str(e)}", exc_info=True)
         return f"Error during jump: {str(e)}"
 
-@function_tool
-async def push(ctx: RunContextWrapper[CompleteStoryResult], object_id: str, direction: str) -> str:
-    """Push a specified object (by object_id) in a given direction ('left', 'right', 'up', 'down'). Player moves into the object's original space."""
-    logger.info(f"👉 Tool: push(object_id='{object_id}', direction='{direction}')")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    sync_story_state(story_result) # Ensure nearby_objects is up-to-date
-    if object_id not in story_result.nearby_objects:
-        return f"❓ Cannot push '{object_id}'. It's not nearby."
-    obj = story_result.nearby_objects[object_id]
-    obj_pos_attr = getattr(obj, 'position', None)
-    if not obj_pos_attr:
-         return f"❓ Cannot push '{obj.name}' ({object_id}). It has no position."
-         
-    # Ensure position is a tuple for DirectionHelper
-    obj_pos_tuple = None
-    if hasattr(obj_pos_attr, 'x') and hasattr(obj_pos_attr, 'y'):
-        obj_pos_tuple = (obj_pos_attr.x, obj_pos_attr.y)
-    elif isinstance(obj_pos_attr, (tuple, list)) and len(obj_pos_attr) >= 2:
-        obj_pos_tuple = (obj_pos_attr[0], obj_pos_attr[1])
-        
-    if obj_pos_tuple is None:
-        return f"❓ Could not determine valid coordinates for '{obj.name}' ({object_id})."
-
-    logger.debug(f"  Attempting push: Player at {story_result.person.position}, Object '{obj.name}' at {obj_pos_tuple}")
-    
-    # Use tuple position with DirectionHelper
-    target_pos_tuple = DirectionHelper.get_relative_position(obj_pos_tuple, direction)
-    push_vector = DirectionHelper.get_direction_vector(obj_pos_tuple, target_pos_tuple)
-    
-    # Pass the original object position attribute to the person's push method 
-    # (assuming person.push can handle the original format or it gets normalized internally)
-    result = story_result.person.push(story_result.environment, obj_pos_attr, push_vector)
-    
-    result_msg = result["message"]
-    logger.info(f"  Push result: {'✅ Success' if result['success'] else '❌ Failed'} - {result_msg}")
-    if result["success"]:
-        sync_story_state(story_result)
-    return result_msg
 
 @function_tool
-async def pull(ctx: RunContextWrapper[CompleteStoryResult], object_x: int, object_y: int) -> str:
-    """Pull an object located at (object_x, object_y) towards the player. Player moves back one step, object takes player's original space."""
-    logger.info(f"👈 Tool: pull(object_x={object_x}, object_y={object_y})")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    target_obj_pos = (object_x, object_y)
-    logger.debug(f"  Attempting pull: Player at {story_result.person.position}, Object at {target_obj_pos}")
-    result = story_result.person.pull(story_result.environment, target_obj_pos)
-    result_msg = result["message"]
-    logger.info(f"  Pull result: {'✅ Success' if result['success'] else '❌ Failed'} - {result_msg}")
-    if result["success"]:
-        sync_story_state(story_result)
-    return result_msg
-
-@function_tool
-async def get_from_container(ctx: RunContextWrapper[CompleteStoryResult], container_id: str, item_id: str) -> str:
-    """Get an item (by item_id) from a container (by container_id) and add it to player inventory."""
-    logger.info(f"📥 Tool: get_from_container(container_id='{container_id}', item_id='{item_id}')")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    sync_story_state(story_result) # Ensure nearby_objects is up-to-date
-    accessible_containers = {
-        obj_id: obj for obj_id, obj in story_result.nearby_objects.items()
-        if isinstance(obj, Container) # Check type directly
-    }
-    if container_id not in accessible_containers:
-        return f"❓ Cannot find container '{container_id}' nearby."
-    container = accessible_containers[container_id]
-    logger.debug(f"  Attempting get: Item '{item_id}' from Container '{container.name}'")
-    result = story_result.person.get_from_container(container, item_id)
-    result_msg = result["message"]
-    logger.info(f"  Get result: {'✅ Success' if result['success'] else '❌ Failed'} - {result_msg}")
-    # No explicit sync needed here, inventory/container state handled by person method
-    return result_msg
-
-@function_tool
-async def put_in_container(ctx: RunContextWrapper[CompleteStoryResult], container_id: str, item_id: str) -> str:
-    """Put an item (by item_id) from player inventory into a container (by container_id)."""
-    logger.info(f"📤 Tool: put_in_container(container_id='{container_id}', item_id='{item_id}')")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    sync_story_state(story_result) # Ensure nearby_objects is up-to-date
-    accessible_containers = {
-        obj_id: obj for obj_id, obj in story_result.nearby_objects.items()
-        if isinstance(obj, Container)
-    }
-    if container_id not in accessible_containers:
-        return f"❓ Cannot find container '{container_id}' nearby."
-    container = accessible_containers[container_id]
-    logger.debug(f"  Attempting put: Item '{item_id}' into Container '{container.name}'")
-    result = story_result.person.put_in_container(item_id, container)
-    result_msg = result["message"]
-    logger.info(f"  Put result: {'✅ Success' if result['success'] else '❌ Failed'} - {result_msg}")
-    # No explicit sync needed here
-    return result_msg
-
-@function_tool
-async def use_object_with(ctx: RunContextWrapper[CompleteStoryResult], item1_id: str, item2_id: str) -> str:
-    """Use an item from inventory (item1_id) with another object (item2_id, can be in world or inventory)."""
-    logger.info(f"🛠️ Tool: use_object_with(item1_id='{item1_id}', item2_id='{item2_id}')")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    sync_story_state(story_result) # Sync state before use action
-    logger.debug(f"  Attempting use: Item1 '{item1_id}' with Item2 '{item2_id}'")
-    result = story_result.person.use_object_with(item1_id, item2_id, story_result.environment, story_result.nearby_objects)
-    result_msg = result["message"]
-    logger.info(f"  Use result: {'✅ Success' if result['success'] else '❌ Failed'} - {result_msg}")
-    if result["success"]:
-        sync_story_state(story_result) # Sync state after successful use action
-    return result_msg
-
-@function_tool
-async def look_around(ctx: RunContextWrapper[CompleteStoryResult]) -> str:
-    """Look around the player in a 7x7 square area, revealing all objects and terrain features."""
-    logger.info("👀 Tool: look_around()")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    sync_story_state(story_result) # Crucial to update nearby_objects first
-    
-    player_pos_attr = story_result.person.position
-    if not player_pos_attr:
-        logger.error("❌ Player has no position in look_around!")
-        return "Error: Cannot determine your location."
-        
-    # Handle both object and tuple style positions robustly
-    player_x, player_y = None, None
-    if hasattr(player_pos_attr, 'x') and hasattr(player_pos_attr, 'y'):
-        player_x, player_y = player_pos_attr.x, player_pos_attr.y
-    elif isinstance(player_pos_attr, (tuple, list)) and len(player_pos_attr) >= 2:
-        player_x, player_y = player_pos_attr[0], player_pos_attr[1]
-        
-    if player_x is None or player_y is None:
-        logger.error(f"❌ Could not extract player coordinates from position: {player_pos_attr}")
-        return "Error: Cannot determine your exact coordinates."
-        
-    player_pos_tuple = (player_x, player_y) # Use tuple internally now
-    logger.debug(f"  Looking around from position: {player_pos_tuple}")
-    
-    # Define scan radius (3 tiles in each direction for a 7x7 grid)
-    SCAN_RADIUS = 3
-    
-    descriptions = ["You scan the area around you:"]
-    objects_found = []
-    objects_by_distance = {}  # Group objects by Manhattan distance for organized output
-    
-    # Get terrain description for context
-    terrain_desc = getattr(story_result, 'terrain_description', None)
-    if terrain_desc:
-        descriptions.append(f"Terrain: {terrain_desc}")
-    
-    # Scan the entire 7x7 area
-    for dy in range(-SCAN_RADIUS, SCAN_RADIUS + 1):
-        for dx in range(-SCAN_RADIUS, SCAN_RADIUS + 1):
-            # Skip the center (player's position)
-            if dx == 0 and dy == 0:
-                continue
-                
-            # Calculate target position using tuple components
-            check_x = player_pos_tuple[0] + dx
-            check_y = player_pos_tuple[1] + dy
-            check_pos = (check_x, check_y)
-            
-            # Calculate Manhattan distance for sorting
-            manhattan_distance = abs(dx) + abs(dy)
-            
-            # Check if position is valid
-            if not story_result.environment.is_valid_position(check_pos):
-                # Add to appropriate distance group
-                if manhattan_distance not in objects_by_distance:
-                    objects_by_distance[manhattan_distance] = []
-                    
-                # Get compass direction for better context
-                direction = get_direction_label(dx, dy)
-                objects_by_distance[manhattan_distance].append(
-                    f"  • {direction} ({check_x},{check_y}): Edge of the map"
-                )
-                continue
-                
-            # Check what's at this position
-            can_move = story_result.environment.can_move_to(check_pos)
-            entities_at_pos = story_result.environment.get_entities_at(check_pos)
-            
-            # If there are entities or it's impassable terrain, describe it
-            if entities_at_pos or not can_move:
-                if manhattan_distance not in objects_by_distance:
-                    objects_by_distance[manhattan_distance] = []
-                
-                direction = get_direction_label(dx, dy)
-                
-                if entities_at_pos:
-                    for entity in entities_at_pos:
-                        obj_name = getattr(entity, 'name', 'unknown object')
-                        obj_id = getattr(entity, 'id', 'unknown_id')
-                        objects_by_distance[manhattan_distance].append(
-                            f"  • {direction} ({check_x},{check_y}): {obj_name} ({obj_id})"
-                        )
-                        objects_found.append(entity)
-                elif not can_move:
-                    objects_by_distance[manhattan_distance].append(
-                        f"  • {direction} ({check_x},{check_y}): Impassable terrain"
-                    )
-    
-    # Add objects at the player's position
-    entities_at_player = story_result.environment.get_entities_at(player_pos_tuple)
-    if len(entities_at_player) > 1:  # More than just the player
-        descriptions.append("At your position:")
-        for entity in entities_at_player:
-            if entity != story_result.person:  # Don't include the player
-                obj_name = getattr(entity, 'name', 'unknown object')
-                obj_id = getattr(entity, 'id', 'unknown_id')
-                descriptions.append(f"  • {obj_name} ({obj_id})")
-                objects_found.append(entity)
-                
-    # Build description sorted by distance (nearest first)
-    for distance in sorted(objects_by_distance.keys()):
-        descriptions.append(f"Distance {distance} from you:")
-        descriptions.extend(objects_by_distance[distance])
-    
-    # Handle case where nothing was found
-    if len(descriptions) <= 2:  # Just the initial line and maybe terrain
-        descriptions.append("You don't see anything notable around you.")
-    
-    result_msg = "\n".join(descriptions)
-    logger.info(f"  Look result: Found {len(objects_found)} objects in a 7x7 area.")
-    
-    # Update nearby_objects with what we found
-    story_result.nearby_objects.update({obj.id: obj for obj in objects_found if hasattr(obj, 'id')})
-    
-    return result_msg
-
-# Helper function to get a readable direction label
-def get_direction_label(dx: int, dy: int) -> str:
-    """Convert relative coordinates to a readable compass direction.
-    Uses frontend coordinate system where:
-    - Positive Y is South (down on screen)
-    - Negative Y is North (up on screen)
-    - Positive X is East (right on screen)
-    - Negative X is West (left on screen)
-    """
-    if dx == 0:
-        return "North" if dy < 0 else "South"
-    elif dy == 0:
-        return "East" if dx > 0 else "West"
-    else:
-        ns = "North" if dy < 0 else "South"
-        ew = "East" if dx > 0 else "West"
-        return f"{ns}{ew}"
-
-@function_tool
-async def look_at(ctx: RunContextWrapper[CompleteStoryResult], object_id: str) -> str:
-    """Look closely at a specific object (by object_id) either nearby or in inventory to get its description."""
-    logger.info(f"👁️ Tool: look_at(object_id='{object_id}')")
-    # This is essentially the same as examine_object, we can alias it or call examine directly.
-    # Let's call examine_object for consistency.
-    return await examine_object(ctx, object_id)
-
-@function_tool
-async def say(ctx: RunContextWrapper[CompleteStoryResult], message: str) -> str:
-    """Make the player character say a message out loud."""
-    logger.info(f"💬 Tool: say(message='{message[:50]}...')")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    result = story_result.person.say(message)
-    result_msg = result["message"]
-    logger.info(f"  Say result: {result_msg}")
-    # No state change, no sync needed
-    return result_msg
-
-@function_tool
-async def check_inventory(ctx: RunContextWrapper[CompleteStoryResult]) -> str:
-    """Check the player's inventory (legacy). Use 'inventory' instead for better formatting."""
-    logger.info("🎒 Tool: check_inventory() (Legacy)")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    if not hasattr(story_result.person, 'inventory') or not story_result.person.inventory:
-        return f"{story_result.person.name} has no inventory."
-    if not story_result.person.inventory.contents:
-        return f"{story_result.person.name}'s inventory is empty."
-    items = story_result.person.inventory.contents
-    item_descriptions = [f"- {item.id}: {getattr(item, 'name', 'Unknown Item')}" for item in items]
-    result_msg = f"{story_result.person.name}'s inventory contains:\n" + "\n".join(item_descriptions)
-    logger.info("  Checked inventory (legacy format).")
-    return result_msg
-
-@function_tool
-async def inventory(ctx: RunContextWrapper[CompleteStoryResult]) -> str:
-    """Check the player's inventory and list the items contained within."""
-    logger.info("🎒 Tool: inventory()")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    if not hasattr(story_result.person, 'inventory') or not story_result.person.inventory:
-        return f"{story_result.person.name} has no inventory."
-
-    items = story_result.person.inventory.contents
-    if not items:
-        return "Your inventory is empty."
-
-    item_descriptions = []
-    for item in items:
-        desc = getattr(item, 'name', 'Unknown Item')
-        weight = getattr(item, 'weight', None)
-        if weight is not None:
-            desc += f" (Weight: {weight})"
-        item_descriptions.append(f"- {desc}")
-
-    result_msg = "You check your inventory. It contains:\n" + "\n".join(item_descriptions)
-    logger.info(f"  Inventory check result: Found {len(items)} items.")
-    return result_msg
-
-@function_tool
-async def examine_object(ctx: RunContextWrapper[CompleteStoryResult], object_id: str) -> str:
-    """Examine an object (by object_id) nearby or in inventory to get a detailed description including its properties and state."""
-    logger.info(f"🔍 Tool: examine_object(object_id='{object_id}')")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    sync_story_state(story_result) # Ensure lists are up-to-date
-
-    target_obj = None
-    source = None
-
-    # 1. Check nearby objects
-    if hasattr(story_result, 'nearby_objects') and object_id in story_result.nearby_objects:
-        target_obj = story_result.nearby_objects[object_id]
-        source = "nearby"
-        logger.debug(f"  Found '{object_id}' nearby.")
-
-    # 2. Check inventory if not found nearby
-    if not target_obj and hasattr(story_result.person, 'inventory'):
-        for item in story_result.person.inventory.contents:
-            if hasattr(item, 'id') and item.id == object_id:
-                target_obj = item
-                source = "inventory"
-                logger.debug(f"  Found '{object_id}' in inventory.")
-                break
-
-    # 3. Check all entities if still not found (fallback)
-    if not target_obj and hasattr(story_result, 'entities'):
-         if story_result.environment._entity_map and object_id in story_result.environment._entity_map:
-              target_obj = story_result.environment._entity_map[object_id]
-              source = "world"
-              logger.debug(f"  Found '{object_id}' in world entities map.")
-
-    if not target_obj:
-        logger.warning(f"  Object '{object_id}' not found.")
-        return f"You can't find anything called '{object_id}' to examine."
-
-    # Build description
-    name = getattr(target_obj, 'name', 'the object')
-    desc_list = [f"You examine {name} ({object_id}):"]
-
-    base_desc = getattr(target_obj, 'description', None)
-    if base_desc: desc_list.append(f"- Description: {base_desc}")
-
-    position_attr = getattr(target_obj, 'position', None)
-    if position_attr and source != "inventory":
-        # Handle both object and tuple style positions robustly
-        pos_x, pos_y = None, None
-        if hasattr(position_attr, 'x') and hasattr(position_attr, 'y'):
-            pos_x, pos_y = position_attr.x, position_attr.y
-        elif isinstance(position_attr, (tuple, list)) and len(position_attr) >= 2:
-            pos_x, pos_y = position_attr[0], position_attr[1]
-        
-        if pos_x is not None and pos_y is not None:
-            desc_list.append(f"- Location: ({pos_x},{pos_y})")
-        else:
-            logger.warning(f"  Could not determine position coordinates for {object_id}")
-
-    weight = getattr(target_obj, 'weight', None)
-    if weight is not None: desc_list.append(f"- Weight: {weight} ({get_weight_description(weight)})")
-
-    if hasattr(target_obj, 'is_movable'): desc_list.append(f"- Movable: {'Yes' if target_obj.is_movable else 'No'}")
-    if hasattr(target_obj, 'is_jumpable'): desc_list.append(f"- Jumpable: {'Yes' if target_obj.is_jumpable else 'No'}")
-    if hasattr(target_obj, 'is_collectable'): desc_list.append(f"- Collectable: {'Yes' if target_obj.is_collectable else 'No'}")
-
-    usable_with = getattr(target_obj, 'usable_with', None)
-    if usable_with: desc_list.append(f"- Usable with: {', '.join(usable_with)}")
-
-    possible_actions = getattr(target_obj, 'possible_actions', None)
-    if possible_actions: desc_list.append(f"- Actions: {', '.join(possible_actions)}")
-
-    state = getattr(target_obj, 'state', None)
-    if state: desc_list.append(f"- State: {state}")
-
-    # Container specific details
-    if isinstance(target_obj, Container):
-        is_open = getattr(target_obj, 'is_open', False)
-        desc_list.append(f"- Container Status: {'Open' if is_open else 'Closed'}")
-        desc_list.append(f"- Capacity: {getattr(target_obj, 'capacity', 'N/A')}")
-        contents = getattr(target_obj, 'contents', [])
-        if is_open:
-            if contents:
-                item_names = [getattr(item, 'name', 'an item') for item in contents]
-                desc_list.append(f"- Contains: {', '.join(item_names)}")
-            else:
-                desc_list.append("- It's empty.")
-        else:
-             desc_list.append("- You can't see inside while it's closed.")
-
-    result_msg = "\n".join(desc_list)
-    logger.info(f"  Examination complete for '{object_id}'.")
-    return result_msg
-
-# --- ADDED NEW TOOL: changeState --- 
-@function_tool
-async def change_state(ctx: RunContextWrapper[CompleteStoryResult], object_id: str, new_state: str) -> str:
-    """Change the state of a specified object (by object_id) to a new state.
-    Use this as a fallback tool for actions that modify an object's condition when no other specific tool applies.
-    Examples: 'light campfire', 'extinguish torch', 'open box', 'close door', 'unlock chest'.
+@log_tool_execution
+async def find_entity_by_type(
+    ctx: RunContextWrapper[CompleteStoryResult],
+    entity_type: str
+) -> str:
+    """Finds entities of a specific type in the game environment and returns their locations.
 
     Args:
         ctx: The RunContext containing the game state.
-        object_id: The unique ID of the object whose state needs to change.
-        new_state: The desired new state for the object (e.g., 'lit', 'unlit', 'open', 'closed', 'locked', 'unlocked').
+        entity_type: The type of entity to search for (e.g. "log_stool", "campfire", "chest").
 
     Returns:
-        str: Description of the state change result or an error message.
+        str: Information about found entities including their IDs, names, and positions.
     """
-    logger.info(f"⚙️ Tool: changeState(object_id='{object_id}', new_state='{new_state}')")
-    story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    sync_story_state(story_result) # Ensure lists are up-to-date
+    logger.info(f"🔍 Searching for entities of type: {entity_type}")
 
-    target_obj = None
-    source = None
+    # Safety check for ctx and context
+    if ctx is None:
+        logger.error("💥 TOOL: Critical error - ctx parameter is None")
+        return "Error: Game context is missing. Please try setting the theme again."
 
-    # 1. Check nearby objects
-    if hasattr(story_result, 'nearby_objects') and object_id in story_result.nearby_objects:
-        target_obj = story_result.nearby_objects[object_id]
-        source = "nearby"
-        logger.debug(f"  Found '{object_id}' nearby for state change.")
+    # Get the context object and check if it's valid
+    story_result = getattr(ctx, "context", None)
+    if story_result is None:
+        logger.error("💥 TOOL: Critical error - ctx.context is None")
+        return "Error: Game state is not properly initialized. Please try setting the theme again."
 
-    # 2. Check inventory if not found nearby
-    if not target_obj and hasattr(story_result.person, 'inventory'):
-        for item in story_result.person.inventory.contents:
-            if hasattr(item, 'id') and item.id == object_id:
-                target_obj = item
-                source = "inventory"
-                logger.debug(f"  Found '{object_id}' in inventory for state change.")
-                break
+    # Check if environment exists
+    if not hasattr(
+    story_result,
+     'environment') or story_result.environment is None:
+        logger.error(
+            "💥 TOOL: Critical error - story_result.environment is missing or None")
+        return "Error: Game environment not found. Please try setting the theme again."
 
-    # 3. Check environment entity map if still not found
-    if not target_obj and hasattr(story_result.environment, '_entity_map') and object_id in story_result.environment._entity_map:
-        target_obj = story_result.environment._entity_map[object_id]
-        source = "world"
-        logger.debug(f"  Found '{object_id}' in world entities map for state change.")
+    environment = story_result.environment
 
-    if not target_obj:
-        logger.warning(f"  Object '{object_id}' not found for state change.")
-        return f"You can't find anything called '{object_id}' to change its state."
+    # Get all entities from the environment
+    entities = []
 
-    object_name = getattr(target_obj, 'name', object_id)
+    # First try to get entities from the story_result
+    if hasattr(story_result, 'entities') and story_result.entities:
+        entities.extend(story_result.entities)
 
-    # Check if the object has a 'state' attribute
-    if not hasattr(target_obj, 'state'):
-        logger.warning(f"  Object '{object_name}' ({object_id}) does not have a 'state' attribute.")
-        return f"The {object_name} doesn't seem to have a state that can be changed."
+    # Then try to get from environment.entity_map if available
+    if hasattr(environment, 'entity_map') and environment.entity_map:
+        for entity_id, entity in environment.entity_map.items():
+            if entity not in entities:
+                entities.append(entity)
 
-    # Change the state
-    try:
-        old_state = getattr(target_obj, 'state', 'unknown')
-        setattr(target_obj, 'state', new_state)
-        # Optional: Sync state again after modification, though sync was called at start
-        # sync_story_state(story_result)
-        logger.info(f"  ✅ Successfully changed state of '{object_name}' ({object_id}) from '{old_state}' to '{new_state}'.")
-        return f"You changed the state of the {object_name} to '{new_state}'."
-    except Exception as e:
-        logger.error(f"💥 TOOL: Error setting state for '{object_id}': {e}", exc_info=True)
-        return f"An error occurred while trying to change the state of the {object_name}."
+    if not entities:
+        return f"No entities found in the game environment."
 
-# --- END ADDED TOOL --- 
+    # Helper function to normalize entity types for matching
+    def normalize_entity_type(type_str):
+        if not type_str:
+            return ""
+        # Convert to lowercase
+        normalized = type_str.lower()
+        # Handle special cases
+        mapping = {
+            "stool": "log_stool",  # Map stool to log_stool
+            "log": "log_stool",    # Map log to log_stool
+            "fire": "campfire",    # Map fire to campfire
+            "pot": "campfire_pot"  # Map pot to campfire_pot
+        }
+        # Check both the original and for each word in the type
+        words = normalized.split('_')
+        for word in words:
+            if word in mapping:
+                return mapping[word]
+        # Return the original normalized string if no mapping applies
+        return normalized
+
+    # Normalize the search type
+    normalized_search_type = normalize_entity_type(entity_type)
+    logger.debug(
+        f"Normalized search type from '{entity_type}' to '{normalized_search_type}'")
+
+    # Filter entities by type
+    matching_entities = []
+    for entity in entities:
+        entity_type_value = getattr(entity, 'type', None)
+
+        if not entity_type_value:
+            continue
+
+        # Normalize the entity's type
+        normalized_entity_type = normalize_entity_type(entity_type_value)
+
+        # Check for exact match or partial match (with normalized values)
+        if (normalized_entity_type == normalized_search_type or
+            normalized_search_type in normalized_entity_type or
+            normalized_entity_type in normalized_search_type or
+            entity_type.lower() in entity_type_value.lower() or
+            entity_type_value.lower() in entity_type.lower()):
+            matching_entities.append(entity)
+
+    if not matching_entities:
+        # If no matches with normalization, try matching against entity names
+        # too
+        for entity in entities:
+            entity_name = getattr(entity, 'name', '').lower()
+            if entity_name and entity_type.lower() in entity_name:
+                matching_entities.append(entity)
+
+    if not matching_entities:
+        return f"No entities of type '{entity_type}' found in the game environment."
+
+    # Construct response with entity details
+    response_parts = [
+        f"Found {len(matching_entities)} entities of type '{entity_type}':"]
+
+    for entity in matching_entities:
+        entity_id = getattr(entity, 'id', 'unknown_id')
+        entity_name = getattr(entity, 'name', f"Unnamed {entity_type}")
+        entity_type_value = getattr(entity, 'type', 'unknown_type')
+
+        # Get position information
+        position_str = "unknown position"
+        position = getattr(entity, 'position', None)
+
+        if position:
+            if hasattr(position, 'x') and hasattr(position, 'y'):
+                position_str = f"({position.x}, {position.y})"
+            elif isinstance(position, (tuple, list)) and len(position) >= 2:
+                position_str = f"({position[0]}, {position[1]})"
+
+        response_parts.append(
+            f"- {entity_name} (ID: {entity_id}, Type: {entity_type_value}) at {position_str}")
+
+    return "\n".join(response_parts)
+
 
 @function_tool
-async def execute_movement_sequence(ctx: RunContextWrapper[CompleteStoryResult], commands: List[Dict[str, Any]]) -> str:
-    """Execute a sequence of movement commands ('move', 'jump') provided as a list. Stops if any command fails."""
-    logger.info(f"⏯️ Tool: execute_movement_sequence(commands={len(commands)})")
+@log_tool_execution
+async def go_to_entity_type(
+    ctx: RunContextWrapper[CompleteStoryResult],
+    entity_type: str
+) -> str:
+    """A combined tool that finds an entity of the specified type and moves the player to it.
+    This is a convenience tool that handles both finding and navigating to the entity.
+
+    Args:
+        ctx: The RunContext containing the game state.
+        entity_type: The type of entity to find and move to (e.g. "log_stool", "campfire", "chest").
+
+    Returns:
+        str: Description of the result of the find and move operation.
+    """
+    logger.info(f"🚶‍♂️ Moving to entity of type: {entity_type}")
+
+    # Safety check for ctx and context
+    if ctx is None:
+        logger.error("💥 TOOL: Critical error - ctx parameter is None")
+        return "Error: Game context is missing. Please try setting the theme again."
+
+    # Get the context object and check if it's valid
+    story_result = getattr(ctx, "context", None)
+    if story_result is None:
+        logger.error("💥 TOOL: Critical error - ctx.context is None")
+        return "Error: Game state is not properly initialized. Please try setting the theme again."
+
+    # Check if environment exists
+    if not hasattr(
+    story_result,
+     'environment') or story_result.environment is None:
+        logger.error(
+            "💥 TOOL: Critical error - story_result.environment is missing or None")
+        return "Error: Game environment not found. Please try setting the theme again."
+
+    environment = story_result.environment
+
+    # Helper function to normalize entity types for matching
+    def normalize_entity_type(type_str):
+        if not type_str:
+            return ""
+        # Convert to lowercase
+        normalized = type_str.lower()
+        # Handle special cases
+        mapping = {
+            "stool": "log_stool",  # Map stool to log_stool
+            "log": "log_stool",    # Map log to log_stool
+            "fire": "campfire",    # Map fire to campfire
+            "pot": "campfire_pot"  # Map pot to campfire_pot
+        }
+        # Check both the original and for each word in the type
+        words = normalized.split('_')
+        for word in words:
+            if word in mapping:
+                return mapping[word]
+        # Return the original normalized string if no mapping applies
+        return normalized
+
+    # Normalize the search type
+    normalized_search_type = normalize_entity_type(entity_type)
+    logger.debug(
+        f"Normalized search type from '{entity_type}' to '{normalized_search_type}'")
+
+    # IMPROVED: First check nearby_objects for matching entities
+    # This prioritizes objects the player can already see
+    nearby_matching_entities = []
+
+    if hasattr(story_result, 'nearby_objects') and story_result.nearby_objects:
+        logger.info(
+            f"Checking {len(story_result.nearby_objects)} nearby objects first")
+
+        for entity_id, entity in story_result.nearby_objects.items():
+            entity_type_value = getattr(entity, 'type', None)
+            if not entity_type_value:
+                continue
+
+            # Normalize the entity's type
+            normalized_entity_type = normalize_entity_type(entity_type_value)
+
+            # Check for match with normalized types
+            if (normalized_entity_type == normalized_search_type or
+                normalized_search_type in normalized_entity_type or
+                normalized_entity_type in normalized_search_type or
+                entity_type.lower() in entity_type_value.lower() or
+                entity_type_value.lower() in entity_type.lower()):
+                nearby_matching_entities.append(entity)
+
+        # Also check entity names if type didn't match
+        if not nearby_matching_entities:
+            for entity_id, entity in story_result.nearby_objects.items():
+                entity_name = getattr(entity, 'name', '').lower()
+                if entity_name and entity_type.lower() in entity_name:
+                    nearby_matching_entities.append(entity)
+
+    # If we found nearby matches, use those first
+    if nearby_matching_entities:
+        logger.info(
+            f"Found {len(nearby_matching_entities)} matching entities in nearby objects")
+        matching_entities = nearby_matching_entities
+    else:
+        # Otherwise fall back to searching all entities in the environment
+        logger.info(
+            "No matching nearby entities found, searching entire environment")
+
+        # Get all entities from the environment
+        all_entities = []
+
+        # First try to get entities from the story_result
+        if hasattr(story_result, 'entities') and story_result.entities:
+            all_entities.extend(story_result.entities)
+
+        # Then try to get from environment.entity_map if available
+        if hasattr(environment, 'entity_map') and environment.entity_map:
+            for entity_id, entity in environment.entity_map.items():
+                if entity not in all_entities:
+                    all_entities.append(entity)
+
+        if not all_entities:
+            return f"No entities found in the game environment."
+
+        # Filter all entities by type
+        matching_entities = []
+        for entity in all_entities:
+            entity_type_value = getattr(entity, 'type', None)
+
+            if not entity_type_value:
+                continue
+
+            # Normalize the entity's type
+            normalized_entity_type = normalize_entity_type(entity_type_value)
+
+            # Check for match with normalized types
+            if (normalized_entity_type == normalized_search_type or
+                normalized_search_type in normalized_entity_type or
+                normalized_entity_type in normalized_search_type or
+                entity_type.lower() in entity_type_value.lower() or
+                entity_type_value.lower() in entity_type.lower()):
+                matching_entities.append(entity)
+
+        if not matching_entities:
+            # If no matches with normalization, try matching against entity
+            # names too
+            for entity in all_entities:
+                entity_name = getattr(entity, 'name', '').lower()
+                if entity_name and entity_type.lower() in entity_name:
+                    matching_entities.append(entity)
+
+    if not matching_entities:
+        return f"No entities of type '{entity_type}' found in the game environment."
+
+    # Extract entity details for logging and selection
+    entities_found = []
+    for entity in matching_entities:
+        entity_id = getattr(entity, 'id', 'unknown_id')
+        entity_name = getattr(entity, 'name', f"Unnamed {entity_type}")
+        entity_type_value = getattr(entity, 'type', 'unknown_type')
+
+        # Get position information
+        position = getattr(entity, 'position', None)
+
+        if position:
+            if hasattr(position, 'x') and hasattr(position, 'y'):
+                x, y = position.x, position.y
+                entities_found.append(
+    (entity_name, entity_id, entity_type_value, x, y))
+            elif isinstance(position, (tuple, list)) and len(position) >= 2:
+                x, y = position[0], position[1]
+                entities_found.append(
+    (entity_name, entity_id, entity_type_value, x, y))
+
+    if not entities_found:
+        logger.warning(
+            f"⚠️ Found entities of type '{entity_type}' but could not determine their positions")
+        return f"Found entities of type '{entity_type}' but could not determine their locations."
+
+    # Get the first entity from the found list
+    if len(entities_found) > 1:
+        logger.info(
+            f"Found multiple entities ({len(entities_found)}), selecting the first one for movement")
+
+    # Get the first entity (in future could select nearest)
+    selected_entity_name, selected_entity_id, selected_entity_type, target_x, target_y = entities_found[
+        0]
+
+    # Step 3: Move to the entity
+    from_nearby = matching_entities == nearby_matching_entities
+    nearby_message = "nearby visible" if from_nearby else "found in environment"
+    logger.info(
+        f"Moving to {nearby_message} {selected_entity_name} ({selected_entity_type}) at ({target_x}, {target_y})")
+
+    # Since we can't call the move_to_object function tool directly, we need to
+    # implement the core logic here without trying to call it as a function
     story_result = ctx.context
-    if not story_result.person: return "❌ Error: Player character not found."
-    results = []
-    logger.debug(f"  Commands: {json.dumps(commands, indent=2)}")
-    for i, cmd in enumerate(commands):
-        tool_name = cmd.get('tool')
-        params = cmd.get('parameters', {})
-        logger.debug(f"  Executing command #{i+1}: {tool_name} with params {params}")
-        step_result = ""
-        success = False
-        try:
-            if tool_name == 'move':
-                direction = params.get('direction')
-                is_running = params.get('is_running', False)
-                continuous = params.get('continuous', False) # Note: Continuous within sequence might be complex
-                if direction:
-                     step_result = await move(ctx, direction, is_running, continuous)
-                     # Check if move was successful (crude check, depends on message format)
-                     if "moved" in step_result.lower() or "reached" in step_result.lower() or "already there" in step_result.lower():
-                         success = True
-                     else: success = False
-                else:
-                     step_result = "Move command missing direction."
-                     success = False
-            elif tool_name == 'jump':
-                target_x = params.get('target_x')
-                target_y = params.get('target_y')
-                if target_x is not None and target_y is not None:
-                    step_result = await jump(ctx, target_x, target_y)
-                    if "jumped" in step_result.lower(): success = True
-                    else: success = False
-                else:
-                    step_result = "Jump command missing target coordinates."
-                    success = False
-            else:
-                step_result = f"Unknown movement command: {tool_name}"
-                success = False
+    person = story_result.person
+    environment = story_result.environment
 
-            results.append(f"Step {i+1} ({tool_name}): {step_result}")
-            logger.info(f"  Step {i+1} result: {'✅ Success' if success else '❌ Failed'} - {step_result}")
+    # Log starting position
+    start_pos = "unknown"
+    if hasattr(person.position, 'x') and hasattr(person.position, 'y'):
+        start_pos = f"({person.position.x}, {person.position.y})"
+    elif isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
+        start_pos = f"({person.position[0]}, {person.position[1]})"
 
-            if not success:
-                results.append("Sequence stopped due to failure.")
-                logger.warning("  Movement sequence stopped due to failure.")
-                break
-        except Exception as e:
-            logger.error(f"  Error executing step {i+1}: {e}", exc_info=True)
-            results.append(f"Step {i+1} ({tool_name}): Error - {e}")
-            results.append("Sequence stopped due to error.")
-            break
+    # Find adjacent positions to target
+    target_pos = (target_x, target_y)
+    adjacent_candidates = []
+    for dx, dy in [(0, -1), (1, 0), (0, 1), (-1, 0)]:  # Up, Right, Down, Left
+        adj_pos = (target_pos[0] + dx, target_pos[1] + dy)
+        if environment.is_valid_position(
+            adj_pos) and environment.can_move_to(adj_pos):
+            adjacent_candidates.append(adj_pos)
 
-    result_msg = "\n".join(results)
-    logger.info("🏁 Movement sequence finished.")
-    return result_msg
+    # If there are no adjacent spots, report that
+    if not adjacent_candidates:
+        return f"Found {nearby_message} {selected_entity_type} '{selected_entity_name}' at {target_pos}, but there are no free spaces to stand nearby."
 
-# Add the continuous move tool separately if needed (move handles continuous flag now)
-# @function_tool
-# async def move_continuously(ctx: RunContextWrapper[CompleteStoryResult], direction: str) -> str:
-#     """Move continuously in a direction ('left', 'right', 'up', 'down') until an obstacle or edge is reached."""
-#     logger.info(f"↔️ Tool: move_continuously(direction='{direction}')")
-#     story_result = ctx.context
-#     if not story_result.person: return "❌ Error: Player character not found."
-#     # Call the static helper method directly
-#     result_msg = await DirectionHelper.move_continuously(story_result, direction)
-#     logger.info(f"  Continuous move result: {result_msg}")
-#     # Syncing is handled within the helper now
-#     return result_msg
+    # Find the best adjacent position to move to
+    current_pos_tuple = None
+    if hasattr(person.position, 'x') and hasattr(person.position, 'y'):
+        current_pos_tuple = (person.position.x, person.position.y)
+    elif isinstance(person.position, (tuple, list)) and len(person.position) >= 2:
+        current_pos_tuple = (person.position[0], person.position[1])
+    else:
+        return f"Found {selected_entity_type} '{selected_entity_name}' at {target_pos}, but couldn't determine player position."
+
+    # If we're already adjacent, report success
+    for adj_pos in adjacent_candidates:
+        if adj_pos == current_pos_tuple:
+            return f"You're already standing next to the {selected_entity_type} '{selected_entity_name}' at {target_pos}."
+
+    # Find the nearest adjacent position
+    best_adj_pos = min(adjacent_candidates,
+                       key=lambda pos: abs(pos[0] - current_pos_tuple[0]) + abs(pos[1] - current_pos_tuple[1]))
+
+    # Move to that position - use a simple approach for now
+    direction_x = best_adj_pos[0] - current_pos_tuple[0]
+    direction_y = best_adj_pos[1] - current_pos_tuple[1]
+
+    # Determine direction based on the largest component
+    move_direction = ""
+    if abs(direction_x) > abs(direction_y):
+        # FIXED: Proper direction mapping for x-axis
+        move_direction = "right" if direction_x > 0 else "left"
+    else:
+        # FIXED: Proper direction mapping for y-axis (up decreases y, down
+        # increases y)
+        move_direction = "down" if direction_y > 0 else "up"
+
+    # Execute the move
+    steps_required = max(abs(direction_x), abs(direction_y))
+
+    # Try to execute the move command using our movement implementation
+    try:
+        # Use a series of regular moves instead of continuous movement
+        # since Person doesn't have a move_continuously method
+        result = await _internal_move(ctx,
+                                    direction=move_direction,
+                                    is_running=False,
+                                    continuous=False,  # Use regular step by step movement
+                                    steps=steps_required)
+
+        # Check if we successfully moved
+        logger.info(f"Move result: {result}")
+        if "Successfully" in result or "Moved" in result:
+            # FIXED: Send the movement command to the frontend to update visual
+            # display
+            storyteller = getattr(story_result, '_storyteller_agent', None)
+            if storyteller and hasattr(
+    storyteller, 'send_command_to_frontend'):
+                try:
+                    command_params = {
+                        "direction": move_direction,
+                        "is_running": False,
+                        "steps": steps_required,
+                        "continuous": False
+                    }
+                    logger.info(
+                        f"🚀 Sending move command to frontend: direction={move_direction}, steps={steps_required}")
+                    await storyteller.send_command_to_frontend("move", command_params, result)
+                except Exception as e:
+                    logger.error(f"❌ Error sending WebSocket command: {e}")
+
+            return f"Moved to {nearby_message} {selected_entity_type} '{selected_entity_name}' at {target_pos}."
+        else:
+            return f"Found {nearby_message} {selected_entity_type} '{selected_entity_name}' at {target_pos}, but couldn't get there: {result}"
+    except Exception as e:
+        logger.error(f"❌ Error during movement to {selected_entity_name}: {e}")
+        return f"Found {nearby_message} {selected_entity_type} '{selected_entity_name}' at {target_pos}, but encountered an error moving there: {str(e)}"
 
 
-# List of all available tools for the agent
-ALL_GAME_TOOLS = [
-    move,
-    move_to_object,
-    jump,
-    push,
-    pull,
-    get_from_container,
-    put_in_container,
-    use_object_with,
-    look_around,
-    look_at, # Alias for examine
-    inventory, # Preferred inventory check
-    examine_object,
-    change_state, # Add the new tool here
-    # Temporarily remove this tool until we fix the schema issue
-    # execute_movement_sequence,
-    # move_continuously # Covered by move(continuous=True)
-]
-
-
-# --- Storyteller Agent Class (FINAL VERSION) ---
-
+# --- Agent Class Definition ---
 class StorytellerAgentFinal:
-    def __init__(
-            self,
-            # puppet_master_agent: Agent, # REMOVED
-            complete_story_result: CompleteStoryResult,
-            openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY"),
-            deepgram_api_key: Optional[str] = os.getenv("DEEPGRAM_API_KEY"),
-            voice: str = "nova",
-            websocket = None  # Add websocket parameter
-    ):
+    """The final version of the Storyteller agent, handling game state and interaction logic."""
+
+    def __init__(self, complete_story_result: CompleteStoryResult, websocket: WebSocket):
         logger.info("🚀 Initializing StorytellerAgentFinal...")
-        self.openai_key = openai_api_key or os.getenv("OPENAI_API_KEY")
-        self.deepgram_key = deepgram_api_key or os.getenv("DEEPGRAM_API_KEY")
-        self.voice = voice or os.getenv("CHARACTER_VOICE") or "nova"
-        self.websocket = websocket  # Store the websocket connection
+        self.websocket = websocket
+        self.game_context = complete_story_result
+        self.voice = os.getenv("CHARACTER_VOICE", DEFAULT_VOICE)
+        self.openai_client = None
+        self.deepgram_client = None
+        self.agent = None
 
-        if not self.openai_key: raise ValueError("❌ OpenAI API key is required.")
-        if not self.deepgram_key: logger.warning("⚠️ Deepgram API key missing, voice input won't work.")
+        # Store a reference to self in the game_context for tools to access
+        # IMPORTANT: This bidirectional reference is crucial for context persistence
+        self.game_context._storyteller_agent = self
 
+        # Store a session reference to ensure tools can access it
+        if hasattr(complete_story_result, '_session_data'):
+            self.session_data = complete_story_result._session_data
+        else:
+            self.session_data = {}
+            complete_story_result._session_data = self.session_data
+
+        # Log information about the game context
+        logger.info(f"🔍 Game context initialized: Person={hasattr(self.game_context, 'person')}, "
+                   f"Environment={hasattr(self.game_context, 'environment')}, "
+                   f"Theme={getattr(self.game_context, 'theme', 'Unknown')}")
+
+        # Initialize OpenAI client
         try:
-            self.openai_client = OpenAI(api_key=self.openai_key)
+            self.openai_client = OpenAI()
             logger.info("✅ Initialized OpenAI client.")
         except Exception as e:
-            logger.critical(f"💥 Failed to initialize OpenAI client: {e}", exc_info=True)
-            raise
+            logger.error(f"❌ Failed to initialize OpenAI client: {e}")
+            raise  # Re-raise the exception to prevent agent init without client
 
+        # Initialize Deepgram client
         try:
-            self.deepgram_client = DeepgramClient(api_key=self.deepgram_key)
-            logger.info("✅ Initialized Deepgram client.")
+            if DEEPGRAM_API_KEY:
+                self.deepgram_client = DeepgramClient(DEEPGRAM_API_KEY)
+                logger.info("✅ Initialized Deepgram client.")
+            else:
+                logger.warning("⚠️ DEEPGRAM_API_KEY not provided - voice transcription unavailable")
         except Exception as e:
-            logger.critical(f"💥 Failed to initialize Deepgram client: {e}", exc_info=True)
-            raise
+            logger.error(f"❌ Failed to initialize Deepgram client: {e}")
+            # Not raising - voice functionality is optional
 
-        else:
-            self.game_context: CompleteStoryResult = complete_story_result
-             # Ensure person object exists in the context for tools
-            if not hasattr(self.game_context, 'person') or not self.game_context.person:
-                 logger.warning("🤔 Game context missing 'person', creating a default one.")
-                 # Try to find a person entity or create a default one
-                 person_entity = next((e for e in self.game_context.entities if isinstance(e, Person)), None)
-                 if person_entity:
-                     self.game_context.person = person_entity
-                     logger.info(f"🧍 Found existing Person entity '{person_entity.name}' to use.")
-                 else:
-                     default_pos = (self.game_context.environment.width // 2, self.game_context.environment.height // 2) if self.game_context.environment else (0,0)
-                     self.game_context.person = Person(id="player_default", name="Player", position=default_pos)
-                     logger.info(f"🧍 Created default Person 'Player' at {default_pos}.")
-                     if not hasattr(self.game_context, 'entities') or self.game_context.entities is None:
-                         self.game_context.entities = []
-                     self.game_context.entities.append(self.game_context.person) # Add to entities list
-
-            # Make sure nearby_objects exists
-            if not hasattr(self.game_context, 'nearby_objects'):
-                self.game_context.nearby_objects = {}
-                
-            # Initial state sync
-            sync_story_state(self.game_context)
-            logger.info(f"✅ Game context loaded. Theme: '{self.game_context.theme}', Person: '{self.game_context.person.name}'")
-            if self.game_context.error:
-                logger.warning(f"⚠️ Loaded game context has an error: {self.game_context.error}")
-
-        # --- Agent Setup ---
-        self.agent_data = self._setup_agent_internal(self.game_context)
-        logger.info("✅ Storyteller agent core setup completed.")
-
-    def _setup_agent_internal(self, story_context: CompleteStoryResult) -> Dict[str, Agent]:
-        """Sets up the internal OpenAI Agent with integrated tools."""
-        logger.info("🛠️ Setting up internal Storyteller Agent core...")
-        theme = getattr(story_context, 'theme', 'Unknown Theme')
-        quest_title = "the main quest"
-        if isinstance(story_context.narrative_components, dict):
-            quest_data = story_context.narrative_components.get('quest', {})
-            if isinstance(quest_data, dict):
-                quest_title = quest_data.get('title', quest_title)
-
-        # --- MODIFIED SYSTEM PROMPT ---
-        system_prompt = get_storyteller_system_prompt(theme, quest_title, get_game_mechanics_reference())
-
-        try:
-            storyteller_agent_core = Agent[CompleteStoryResult]( # Use context type hint
-                name="Jan \'The Man\'", # Renamed
-                instructions=system_prompt,
-                # Provide the actual tool functions directly
-                tools=ALL_GAME_TOOLS,
-                output_type=AnswerSet, # Expect AnswerSet JSON
-                model="gpt-4o" # Or your preferred model
-            )
-            
-            # Add a reference to the parent StorytellerAgentFinal instance
-            # This allows tools to access the websocket connection through this reference
-            storyteller_agent_core.invoked_by = self
-            
-            logger.info(f"✅ Internal Agent '{storyteller_agent_core.name}' created with {len(ALL_GAME_TOOLS)} tools.")
-            return {"agent": storyteller_agent_core}
-        except Exception as e:
-            logger.error(f"💥 Unexpected error during Storyteller initialization: {e}")
-            traceback.print_exc()
-            return
-
-    async def _call_tool(self, tool_name: str, tool_input: Dict[str, Any]) -> Any:
-        """Call a tool function by name with the provided input parameters."""
-        # This method shouldn't be needed in the original implementation
-        logger.error("_call_tool called but not implemented")
-        return "Tool execution not implemented"
-        
-    def update_nearby_objects(self):
-        """Updates nearby objects for the player.
-        
-        This method uses the person's look method to identify objects around the player.
-        """
-        logger.info("📍 Updating nearby objects")
-        
-        # Check if game_context and person exist
-        if not hasattr(self, 'game_context') or not self.game_context:
-            logger.warning("❌ No game context available")
-            return
-            
+        # Ensure Person exists in game_context and has a position
         if not hasattr(self.game_context, 'person') or not self.game_context.person:
-            logger.warning("❌ No person object in game context")
-            return
-            
-        # Store a reference to self in the context so tools can access it
-        self.game_context._storyteller_agent = self
-            
-        # Initialize nearby_objects if not present
-        if not hasattr(self.game_context, 'nearby_objects'):
+            logger.warning("🤷 Person not found in loaded story result. Creating default.")
+            # Ensure environment exists and has dimensions before creating default person
+            if (hasattr(self.game_context, 'environment') and
+                    self.game_context.environment and
+                    hasattr(self.game_context.environment, 'width') and
+                    hasattr(self.game_context.environment, 'height')):
+                start_x = self.game_context.environment.width // 2
+                start_y = self.game_context.environment.height // 2
+                self.game_context.person = Person(id="game-char", name="Player", position=(start_x, start_y))
+                logger.info(f"👤 Default person created at ({start_x}, {start_y})")
+            else:
+                logger.error("❌ Cannot create default person: Environment or dimensions missing.")
+                raise ValueError("Environment data missing, cannot create default person.")
+        elif not self.game_context.person.position:
+            # Ensure person has a position
+            if (hasattr(self.game_context, 'environment') and
+                self.game_context.environment and
+                hasattr(self.game_context.environment, 'width') and
+                hasattr(self.game_context.environment, 'height')):
+                # Set default position at the center of the map
+                start_x = self.game_context.environment.width // 2
+                start_y = self.game_context.environment.height // 2
+                self.game_context.person.position = (start_x, start_y)
+                logger.info(f"👤 Reset person position to ({start_x}, {start_y})")
+            else:
+                # Set to a reasonable default position
+                self.game_context.person.position = (20, 20)
+                logger.info("👤 Reset person position to default (20, 20)")
+
+        # Add serialization capabilities to Environment object if needed
+        if (hasattr(self.game_context, 'environment') and
+            self.game_context.environment and
+            not hasattr(self.game_context.environment, 'to_dict')):
+            self._add_environment_serialization(self.game_context.environment)
+
+        # Initialize nearby_objects if missing
+        if not hasattr(self.game_context, 'nearby_objects') or self.game_context.nearby_objects is None:
             self.game_context.nearby_objects = {}
-            
-        # Use the person's look method if available
-        person = self.game_context.person
-        if hasattr(person, 'look') and callable(person.look):
-            try:
-                look_result = person.look(self.game_context.environment)
-                if look_result and look_result.get("success", False):
-                    nearby_objects = look_result.get("nearby_objects", {})
-                    self.game_context.nearby_objects = nearby_objects
-                    logger.debug(f"👀 Found {len(nearby_objects)} nearby objects")
-                else:
-                    logger.warning(f"⚠️ Look operation failed: {look_result.get('message', 'Unknown error')}")
-            except Exception as e:
-                logger.error(f"💥 Error updating nearby objects: {e}")
+            logger.info("📦 Initialized empty nearby_objects dictionary")
+
+        # Synchronize state after loading and potentially creating person
+        logger.info("🔄 Performing initial state synchronization...")
+        sync_success = sync_story_state(self.game_context)
+        if sync_success:
+            logger.info("✅ Initial state synchronized successfully.")
+            # ---> LOG ENV ID <---
+            if hasattr(self.game_context, 'environment') and self.game_context.environment:
+                 logger.info(f"SYNC CHECK: Environment ID after sync in __init__: {id(self.game_context.environment)}")
+            else:
+                 logger.warning("SYNC CHECK: Environment missing after sync in __init__")
         else:
-            logger.warning("🤷 Person object missing 'look' method")
-        
-        # Ensure nearby_objects is not None
-        if self.game_context.nearby_objects is None:
-            self.game_context.nearby_objects = {}
+            logger.warning("⚠️ Issues during initial state synchronization.")
 
-    def process_user_input_completion(self, response: Dict[str, Any], history: List[Dict[str, Any]], command_info: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-        """Process the completion result."""
-        # This method shouldn't be needed in the original implementation
-        logger.error("process_user_input_completion called but not implemented")
-        return self._create_error_response("Method not implemented", history)
-        
-    async def process_text_input(
-            self,
-            user_input: str,
-            conversation_history: Optional[List[Dict[str, Any]]] = None
-    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-        """Process text input from user and return a response object."""
-        logger.info(f"⌨️ Processing text input: '{user_input}'")
-        
-        # Basic history management
-        if conversation_history is None:
-            conversation_history = []
-            
-        # Call our minimal nearby_objects update
-        self.update_nearby_objects()
-        
-        try:
-            # Get the agent core
-            agent_core = self.agent_data.get("agent")
-            if not agent_core:
-                logger.error("💥 Agent core instance not found!")
-                return self._create_error_response("Agent core not initialized.", conversation_history)
-                
-            # Ensure the invoked_by reference is up to date
-            if not hasattr(agent_core, 'invoked_by') or agent_core.invoked_by != self:
-                logger.info("🔄 Refreshing agent_core.invoked_by reference to self")
-                agent_core.invoked_by = self
-                
-            # Run the agent
-            logger.info(f"🤖 Running agent with input: '{user_input}'")
-            run_result = await Runner.run(
-                starting_agent=agent_core,
-                input=user_input,
-                context=self.game_context,
-                # You could potentially adjust max_turns here if needed
-                # max_turns=10 
-            )
-            logger.info(f"✅ Agent run completed")
-            
-            # Extract result data
-            final_output = getattr(run_result, 'final_output', None)
-            tool_calls = getattr(run_result, 'tool_calls', [])
-            
-            logger.info(f"📊 Agent output: Final output type: {type(final_output)}, Tool calls: {len(tool_calls)}")
-            if tool_calls:
-                for i, tool_call in enumerate(tool_calls):
-                    tool_name = getattr(tool_call, 'name', 'unknown')
-                    logger.info(f"🛠️ Tool call #{i+1}: {tool_name}")
-            
-            # Handle tool call if present
-            if tool_calls:
-                # Process first tool call
-                tool_call = tool_calls[0]
-                tool_name = getattr(tool_call, 'name', 'unknown_tool')
-                tool_input = getattr(tool_call, 'input', {})
-                tool_output_raw = getattr(tool_call, 'output', "Action performed.")
-                tool_output_str = str(tool_output_raw)
-                
-                logger.info(f"🛠️ Using tool call: '{tool_name}'")
-                logger.info(f"  Input: {tool_input}")
-                logger.info(f"  Output: {tool_output_str}")
-                
-                # Translate to game command
-                logger.info(f"🎮 Translating tool '{tool_name}' to game command")
-                command_info = self._translate_tool_to_game_command(tool_name, tool_input, tool_output_str)
-                logger.info(f"🎮 Translated command: {command_info}")
-                
-                # Get response content
-                response_content = final_output.model_dump_json() if isinstance(final_output, AnswerSet) else self._create_basic_answer_json(tool_output_str)
-                
-                # Prepare command response
-                command_response = {
-                    "type": "command",
-                    "name": command_info["name"],
-                    "params": command_info["params"],
-                    "result": command_info["result"],
-                    "content": response_content,
-                    "command_info": command_info
-                }
-                
-                logger.info(f"📤 Returning command response: {command_response['name']}")
-                
-                # Return command type response
-                return command_response, conversation_history
-            else:
-                # Direct response without tool call
-                logger.info("💬 Agent provided direct AnswerSet response (no tool).")
-                
-                if isinstance(final_output, AnswerSet):
-                    response_content = final_output.model_dump_json()
-                    return {"type": "json", "content": response_content}, conversation_history
+        # Ensure context reference is strong by assigning back to self
+        # This reinforces bidirectional references
+        self.game_context = complete_story_result
+
+        # Setup the internal agent instance
+        self._setup_agent_internal(self.game_context)
+        logger.info("✅ StorytellerAgentFinal initialization complete.")
+
+    def _add_environment_serialization(self, environment):
+        """Add serialization methods to Environment object if needed."""
+        # Instead of modifying the Environment object directly (which fails for Pydantic models),
+        # we'll create a wrapper function that can be used in serialization
+
+        # Define a standalone serialization function that doesn't modify the object
+        def serialize_environment(env):
+            """Convert Environment object to dictionary for serialization."""
+            # If model_dump exists (Pydantic v2+), use it
+            if hasattr(env, 'model_dump') and callable(env.model_dump):
+                return env.model_dump()
+
+            # If dict exists (Pydantic v1), use it
+            if hasattr(env, 'dict') and callable(env.dict):
+                return env.dict()
+
+            # Manual conversion as fallback
+            result = {}
+
+            # Copy basic attributes
+            for attr in ['width', 'height', 'name', 'terrain_type', 'description']:
+                if hasattr(env, attr):
+                    result[attr] = getattr(env, attr)
+
+            # Handle the grid (terrain map)
+            if hasattr(env, 'grid'):
+                if callable(getattr(env, 'grid', None)):
+                    result['grid'] = env.grid()
                 else:
-                    # Fallback for non-AnswerSet output
-                    response_content = self._create_basic_answer_json("I'm processing your request.")
-                    return {"type": "json", "content": response_content}, conversation_history
-                    
-        except Exception as e:
-            logger.error(f"💥 Agent hit max turns limit: {e}", exc_info=False) # Don't need full traceback here
-            user_message = "I seem to have gotten stuck in a loop thinking about that. Could you try rephrasing your request or giving a different command?"
-            response_content = self._create_basic_answer_json(user_message, options=["Okay"])
-            return {"type": "json", "content": response_content}, conversation_history
+                    result['grid'] = env.grid
 
-    def _create_error_response(self, error_message: str, history: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
-        """Create a standardized error response."""
-        response_content = self._create_basic_answer_json(f"Error: {error_message}", options=["Try again"])
-        return {"type": "error", "content": response_content, "error": error_message}, history
-
-    def _create_basic_answer_json(self, message: str, options: List[str] = None) -> str:
-        """Create a basic AnswerSet JSON response with the given message."""
-        if options is None:
-            options = []
-        answer_set = AnswerSet(answers=[Answer(type="text", description=message, options=options)])
-        return answer_set.model_dump_json()
-        
-    def _translate_tool_to_game_command(self, tool_name: str, tool_input: Dict[str, Any], tool_output: str) -> Dict[str, Any]:
-        """Translates a tool call to a game command for the frontend."""
-        logger.info(f"🎮 Translating tool '{tool_name}' to game command")
-        
-        # Default command info
-        command_info = {
-            "name": "text",
-            "params": {},
-            "result": tool_output
-        }
-        
-        # Map tool names to game commands
-        if tool_name == "move":
-            command_info["name"] = "move"
-            
-            # Get direction and ensure it's in lowercase for consistency
-            direction = tool_input.get("direction", "")
-            if direction:
-                direction = direction.lower()
-                
-            # Normalize compass directions to cardinal directions for frontend
-            if direction == "north":
-                direction = "up"
-            elif direction == "south":
-                direction = "down"
-            elif direction == "east":
-                direction = "right"
-            elif direction == "west":
-                direction = "left"
-                
-            # Set params with normalized direction
-            command_info["params"] = {
-                "direction": direction,
-                "is_running": tool_input.get("is_running", False),
-                "continuous": tool_input.get("continuous", False)
+            # Map of default states that the frontend can properly render
+            supported_states = {
+                "campfire": {"default": "unlit", "folded": "unlit", "rolled": "unlit"},
+                "chest": {"default": "closed", "folded": "closed", "rolled": "closed"},
+                "pot": {"default": "empty", "folded": "empty", "rolled": "empty"},
+                "tent": {"default": "setup", "folded": "setup", "rolled": "setup"},
+                "bedroll": {"default": "unrolled", "folded": "unrolled", "rolled": "unrolled"},
+                "backpack": {"default": "filled", "folded": "filled", "rolled": "filled"},
+                "log_stool": {"default": "default", "folded": "default", "rolled": "default"}
             }
-            
-            # Debug log for move direction
-            logger.info(f"🚶 Move command direction: '{direction}'")
-            
-        elif tool_name == "jump":
-            command_info["name"] = "jump"
-            command_info["params"] = {
-                "target_x": tool_input.get("target_x", 0),
-                "target_y": tool_input.get("target_y", 0)
-            }
-        elif tool_name == "look_around":
-            command_info["name"] = "look"
-            command_info["params"] = {}
-        elif tool_name == "inventory" or tool_name == "check_inventory":
-            command_info["name"] = "inventory"
-            command_info["params"] = {}
-        
-        logger.debug(f"  Command translation: {command_info}")
-        return command_info
 
-    async def process_audio(
-            self,
-            audio_data: bytes,
-            on_transcription: Callable[[str], Awaitable[None]],
-            on_response: Callable[[str], Awaitable[None]], # Expects JSON string
-            on_audio: Callable[[bytes], Awaitable[None]], # MP3 chunks
-            conversation_history: Optional[List[Dict[str, Any]]] = None
-    ) -> Tuple[str, Dict[str, Any], List[Dict[str, Any]]]: # Returns display text, command info, history
-        """Process audio input from user by transcribing and handling the result."""
-        logger.info(f"🎤 Processing audio input ({len(audio_data)} bytes)")
-        
-        if not audio_data or len(audio_data) < 100:
-            logger.warning("Audio data too small to process")
-            await on_transcription("(Audio too short to process)")
-            return "", {}, conversation_history or []
-            
-        # Transcribe the audio
-        try:
-            transcript_text = await self.transcribe_audio(audio_data)
-            logger.info(f"🎙️ Transcription: '{transcript_text}'")
-            
-            # Send transcription to client
-            await on_transcription(transcript_text)
-            
-            # Process the transcribed text
-            response_data, conversation_history = await self.process_text_input(
-                transcript_text, 
-                conversation_history or []
-            )
-            
-            # Send response
-            response_content = response_data.get("content", "{}")
-            await on_response(response_content)
-            
-            # Generate TTS if there's a content
-            if "content" in response_data:
-                try:
-                    json_content = json.loads(response_data["content"])
-                    answers = json_content.get("answers", [])
-                    if answers:
-                        tts_text = " ".join([a.get("description", "") for a in answers if a.get("description")])
-                        if tts_text.strip() and self.openai_client:
-                            logger.info(f"🔊 Generating TTS for: '{tts_text[:50]}...'")
-                            speech_response = await self.openai_client.audio.speech.create(
-                                model="tts-1",
-                                voice=self.voice,
-                                input=tts_text
-                            )
-                            
-                            # Send audio to client
-                            for chunk in speech_response.iter_bytes(chunk_size=4096):
-                                await on_audio(chunk)
-                                
-                            # Signal end of audio
-                            await on_audio(b"__AUDIO_END__")
-                except Exception as e:
-                    logger.error(f"Error generating TTS: {e}")
-            
-            # Extract command info for return
-            command_info = response_data.get("command_info", {})
-            
-            return transcript_text, command_info, conversation_history or []
-        except Exception as e:
-            logger.error(f"Error processing audio: {e}", exc_info=True)
-            error_response = self._create_basic_answer_json(f"Error processing voice input: {e}")
-            await on_response(error_response)
-            return f"Error: {e}", {}, conversation_history or []
+            # Handle entity positions
+            result['entities'] = []
+            if hasattr(env, 'entity_map') and env.entity_map:
+                for entity_id, entity in env.entity_map.items():
+                    if hasattr(entity, 'position'):
+                        pos = entity.position
+                        pos_tuple = None
+                        if hasattr(pos, 'x') and hasattr(pos, 'y'):
+                            pos_tuple = (pos.x, pos.y)
+                        elif isinstance(pos, (tuple, list)) and len(pos) >= 2:
+                            pos_tuple = tuple(pos[:2])
 
-    async def transcribe_audio(self, audio_data: bytes) -> str:
-        """Transcribe audio data to text.
-        
-        Args:
-            audio_data: The audio data in bytes
-            
-        Returns:
-            str: The transcribed text
-        """
-        logger.info(f"🎙️ Transcribing audio ({len(audio_data)} bytes)")
-        
-        if not self.deepgram_client:
-            raise ValueError("Deepgram client not initialized")
+                        if pos_tuple:
+                            # Create a complete entity data dictionary with all necessary properties
+                            entity_data = {
+                                'id': entity_id,
+                                'position': pos_tuple,
+                                'type': getattr(entity, 'type', 'unknown')
+                            }
 
-        try:
-            # --- MODIFICATION: Moved imports inside the function --- 
-            from deepgram import (
-                PrerecordedOptions,
-                FileSource
-            )
-            # --- END MODIFICATION --- 
+                            # Ensure name is present
+                            entity_data['name'] = getattr(entity, 'name', f"Unknown {entity_data['type']}")
 
-            # Create options for transcription
-            options = PrerecordedOptions(
-                model="nova-3",
-                smart_format=True,
-                language="en"
-            )
+                            # CRITICAL: Ensure state is never null - set default state based on entity type
+                            entity_type = entity_data['type']
+                            current_state = getattr(entity, 'state', 'default')
 
-            # Generate buffer source from bytes
-            source: FileSource = {"buffer": audio_data} # Use dict literal as per Deepgram SDK docs
+                            if current_state is None or current_state in ['default', 'folded', 'rolled']:
+                                # Map to supported states
+                                if entity_type in supported_states and current_state in supported_states[entity_type]:
+                                    entity_data['state'] = supported_states[entity_type][current_state]
+                                elif entity_type == 'campfire':
+                                    entity_data['state'] = 'unlit'
+                                elif entity_type == 'chest':
+                                    entity_data['state'] = 'closed'
+                                elif entity_type == 'pot':
+                                    entity_data['state'] = 'empty'
+                                elif entity_type == 'tent':
+                                    entity_data['state'] = 'setup'
+                                elif entity_type == 'bedroll':
+                                    entity_data['state'] = 'unrolled'
+                                elif entity_type == 'firewood':
+                                    entity_data['state'] = 'dry'
+                                elif entity_type == 'backpack':
+                                    entity_data['state'] = 'filled'
+                                else:
+                                    # Use alternate state name
+                                    entity_data['state'] = 'unlit' if entity_type in ['campfire', 'campfire_spit', 'campfire_pot'] else 'closed'
+                            else:
+                                entity_data['state'] = current_state
 
-            # Get transcription response
-            # --- MODIFICATION: Removed await as transcribe_file seems synchronous here ---
-            response = self.deepgram_client.listen.prerecorded.v("1").transcribe_file(source, options)
-            # --- END MODIFICATION ---
+                            # Copy other useful attributes
+                            for attr in ['description', 'is_jumpable', 'is_movable', 'is_collectable',
+                                        'is_container', 'weight', 'possible_actions', 'contents']:
+                                if hasattr(entity, attr):
+                                    entity_data[attr] = getattr(entity, attr)
 
-            # Extract transcript from response
-            if response and hasattr(response, 'results') and hasattr(response.results, 'channels') and len(response.results.channels) > 0:
-                transcript = response.results.channels[0].alternatives[0].transcript
-                logger.info(f"  Deepgram Transcript: '{transcript}'")
-                return transcript if transcript else ""
-            else:
-                logger.warning("No transcript found in Deepgram response")
-                logger.debug(f"Deepgram full response: {response}")
-                return ""
-        except Exception as e:
-            logger.error(f"Error transcribing audio with Deepgram: {e}", exc_info=True)
-            raise ValueError(f"Audio transcription failed: {e}")
+                            # Set appropriate variant based on entity type
+                            if not hasattr(entity, 'variant') or getattr(entity, 'variant') is None:
+                                if entity_type == 'campfire':
+                                    entity_data['variant'] = 'medium'
+                                elif entity_type == 'chest':
+                                    entity_data['variant'] = 'wooden'
+                                elif entity_type == 'tent':
+                                    entity_data['variant'] = 'medium'
+                                elif entity_type == 'log_stool':
+                                    entity_data['variant'] = 'medium'
+                                elif entity_type == 'bedroll':
+                                    entity_data['variant'] = 'basic'
+                                else:
+                                    entity_data['variant'] = 'default'
+                            else:
+                                entity_data['variant'] = getattr(entity, 'variant')
 
-    async def send_command_to_frontend(self, command_name: str, command_params: Dict[str, Any], result: str = None) -> bool:
-        """Send command directly to the frontend via websocket.
-        
-        Args:
-            command_name: The name of the command (move, jump, etc.)
-            command_params: Parameters for the command
-            result: Optional result message
-            
-        Returns:
-            bool: True if command was sent, False otherwise
-        """
+                            result['entities'].append(entity_data)
+
+            return result
+
+        # Store the serialization function as a class attribute instead of trying to modify the Environment
+        self._environment_serializer = serialize_environment
+        logger.info("✅ Created environment serialization function")
+
+    def _setup_agent_internal(self, game_context: CompleteStoryResult):
+        """ Sets up the internal OpenAI Agent instance. """
+        logger.info("⚙️ Setting up internal OpenAI Agent...")
+
+        # Get mechanics reference first
+        mechanics_ref = get_game_mechanics_reference()
+
+        # Get theme from game context
+        theme = getattr(game_context, 'theme', "Unknown Theme")
+        logger.info(f"Using theme from context: '{theme}'")
+
+        # Safely get quest title, provide default if missing
+        quest_title = "Explore and Survive"  # Default title
+        if (hasattr(game_context, 'narrative_components') and
+                isinstance(game_context.narrative_components, dict) and
+                'quest' in game_context.narrative_components and
+                isinstance(game_context.narrative_components['quest'], dict) and
+                'title' in game_context.narrative_components['quest']):
+            quest_title = game_context.narrative_components['quest']['title']
+            logger.info(f"Using quest title from context: '{quest_title}'")
+        else:
+            logger.warning(f"Quest title not found in narrative_components, using default: '{quest_title}'")
+
+        # Call prompt function with the correct parameter names - add theme parameter
+        full_system_prompt = get_storyteller_system_prompt(
+            theme=theme,
+            quest_title=quest_title,
+            game_mechanics_reference=mechanics_ref
+        )
+
+        # Add specific instructions about response format to ensure Answer objects with options
+        format_instructions = """
+IMPORTANT TOOL SELECTION GUIDELINES:
+1. When user asks to "go to X" or "find X" where X is any object type (stool, log, campfire, etc.):
+   - Use go_to_entity_type(entity_type="X") DIRECTLY - this handles both finding and moving
+   - DO NOT use hardcoded coordinates - they're often wrong
+
+2. For debugging entity locations only:
+   - Use find_entity_by_type(entity_type="X") to just see where things are without moving
+
+3. For direct movement:
+   - Use move_to_object only when you have exact coordinates from find_entity_by_type
+   - Use move for direction-based movement (up/down/left/right)
+
+4. All object interactions require being adjacent to the object first
+
+Remember to match entity types flexibly - "stool" will match "log_stool", "fire" will match "campfire", etc.
+"""
+
+        # Append the format instructions to the full system prompt
+        full_system_prompt += "\n\n" + format_instructions
+
+        # Make sure ALL defined tools are passed to the Agent
+        # These should be the DECORATED functions/tool objects
+        all_tools = [
+            move, jump, look_around, get_inventory, get_object_details,
+            use_object_with, execute_movement_sequence, move_to_object, find_entity_by_type,
+            go_to_entity_type
+            # Add any other decorated tools defined elsewhere here
+        ]
+
+        # Check if self.openai_client exists before using it
+        if not self.openai_client:
+            logger.error("❌ OpenAI client not initialized before agent setup!")
+            raise ValueError("OpenAI client must be initialized before setting up the agent.")
+
+        # Initialize the agent with the correct parameters
+        self.agent = Agent(
+            name="Game Storyteller",
+            instructions=full_system_prompt,
+            tools=all_tools,
+            model=os.getenv("LLM_MODEL", "gpt-4o"),
+            output_type=AnswerSet
+        )
+        logger.info(f"✅ Internal Agent setup complete with {len(all_tools)} tools.")
+
+    # --- Reconstructed Methods ---
+
+    async def send_command_to_frontend(self, name: str, params: Dict[str, Any], result: Optional[str]):
+        """Sends a command message to the connected WebSocket client."""
         if not self.websocket:
-            logger.error("❌ Cannot send command to frontend: No websocket connection available")
-            return False
-            
-        # Create command message
+            logger.error("❌ Cannot send command: WebSocket connection not available.")
+            return
+
+        if not name or not isinstance(name, str):
+            logger.error(f"❌ Invalid command name type: {type(name)}. Command not sent.")
+            return
+        if not isinstance(params, dict):
+            logger.error(f"❌ Invalid command params type: {type(params)}. Command not sent.")
+            params = {}  # Default to empty dict to avoid crashing json.dumps
+
+        # Generate a default result string if none is provided
+        if result is None:
+            param_str = ", ".join(f"{k}={v}" for k, v in params.items())
+            result = f"Executing {name}({param_str})"
+
         cmd_data = {
             "type": "command",
-            "name": command_name,
-            "params": command_params,
-            "result": result or f"{command_name.capitalize()} command executed",
-            "sender": "system"  # Commands are system messages
+            "name": name,
+            "params": params,
+            "result": result,  # Include the result message
+            "sender": "system"
         }
-        
+
         try:
-            # Convert to JSON and send via websocket
-            cmd_json = json.dumps(cmd_data)
-            logger.info(f"📤 DIRECT COMMAND TO FRONTEND: {command_name}")
-            logger.info(f"📤 COMMAND JSON: {cmd_json}")
-            
-            # Actually send the command
-            await self.websocket.send_text(cmd_json)
-            logger.info(f"✅ Command sent successfully to frontend: {command_name}")
-            return True
+            # Custom JSON serialization function
+            def serialize_for_json(obj):
+                # Use our environment serializer for Environment objects
+                if hasattr(self, '_environment_serializer') and 'Environment' in obj.__class__.__name__:
+                    return self._environment_serializer(obj)
+
+                # Standard Pydantic model handling
+                if hasattr(obj, 'model_dump') and callable(obj.model_dump):
+                    return obj.model_dump()
+                elif hasattr(obj, 'dict') and callable(obj.dict):
+                    return obj.dict()
+                elif hasattr(obj, '__dict__'):
+                    return obj.__dict__
+                else:
+                    return str(obj)
+
+            # Serialize with custom encoder
+            serialized_cmd = json.dumps(cmd_data, default=serialize_for_json)
+
+            logger.info(f"🎮 Sending command to frontend: {name}, Params: {params}")
+            await self.websocket.send_text(serialized_cmd)
+            logger.debug(f"✅ Command '{name}' sent successfully.")
         except Exception as e:
-            logger.error(f"❌ Failed to send command to frontend: {e}")
-            return False
+            logger.error(f"❌ WebSocket error sending command '{name}': {e}")
+            # Attempt to close the connection gracefully if send fails?
+            # Or just log the error. For now, just log.
+
+    async def process_text_input(self, text: str, conversation_history: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """Processes text input using the internal agent."""
+        logger.info(f"Processing text input: '{text}'")
+        if not self.agent:
+            logger.error("❌ Agent not initialized. Cannot process text.")
+            return {"type": "error", "content": "Agent not ready."}, conversation_history
+
+        # Append user message to history
+        conversation_history.append({"role": "user", "content": text})
+
+        try:
+            # Make sure the agent has the current game context
+            # This ensures that even if context gets lost, it's reattached before processing
+            if not hasattr(self, 'game_context') or self.game_context is None:
+                logger.error("❌ Game context is missing during text processing")
+                return {"type": "error", "content": "Game state lost, please try setting the theme again."}, conversation_history
+
+            # ---> LOG ENV ID <---
+            if hasattr(self.game_context, 'environment') and self.game_context.environment:
+                 logger.info(f"SYNC CHECK: Environment ID in process_text_input before run: {id(self.game_context.environment)}")
+            else:
+                 logger.warning("SYNC CHECK: Environment missing in process_text_input before run")
+
+            # Create a Runner instance for the agent
+            runner = Runner()
+            runner.agent = self.agent
+
+            # CRITICAL: Properly set the context object for the agent runner
+            # This ensures tools can access ctx.context
+            runner.context = self.game_context
+
+            # Set a reference to the storyteller agent in the context for tool access
+            self.game_context._storyteller_agent = self
+
+            # Log context data to verify it's properly set
+            logger.info(f"✅ Context set for agent: Person={getattr(self.game_context, 'person', None) is not None}, Environment={getattr(self.game_context, 'environment', None) is not None}")
+
+            # Run the agent using the runner with explicit context
+            response = await runner.run(starting_agent=self.agent, input=text, context=self.game_context)
+
+            final_response_data = None
+
+            # --- Handle Tool Calls (if any) ---
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                logger.info("🛠️ Agent response included tool calls")
+                first_tool_call = response.tool_calls[0]
+                tool_name = first_tool_call.function.name
+                tool_args = json.loads(first_tool_call.function.arguments)
+                final_response_data = {"type": "command", "name": tool_name, "params": tool_args}
+
+            # --- Handle Direct Content Response ---
+            elif hasattr(response, 'final_output'):
+                assistant_response_content = response.final_output
+
+                # Check if response is already an AnswerSet object (with output_type=AnswerSet)
+                if isinstance(assistant_response_content, AnswerSet):
+                    logger.info("✅ Received direct AnswerSet object from agent")
+                    # Use the object directly without conversion
+                    final_response_data = {
+                        "type": "json",
+                        "content": assistant_response_content.model_dump()
+                    }
+                    # Add to conversation history as string representation
+                    conversation_history.append({"role": "assistant", "content": str(assistant_response_content.model_dump())})
+
+                # Check if the response is JSON (likely an AnswerSet)
+                elif isinstance(assistant_response_content, str):
+                    if assistant_response_content.strip().startswith('{'):
+                        try:
+                            # Validate it's our expected AnswerSet format (or similar)
+                            json_content = json.loads(assistant_response_content)
+
+                            # Check if it's already in the AnswerSet format
+                            if "answers" in json_content and isinstance(json_content["answers"], list):
+                                final_response_data = {"type": "json", "content": assistant_response_content}
+                                # Convert to AnswerSet format
+                                logger.info("⚠️ Response is JSON but not in AnswerSet format, converting...")
+                                answer_set = self._format_as_answer_set(assistant_response_content)
+                                final_response_data = {"type": "json", "content": answer_set}
+                        except json.JSONDecodeError:
+                            logger.warning(f"Assistant response looked like JSON but failed to parse: {assistant_response_content[:100]}...")
+                            # Convert plain text to AnswerSet format
+                            answer_set = self._format_as_answer_set(assistant_response_content)
+                            final_response_data = {"type": "json", "content": answer_set}
+                    else:
+                        # Handle plain text response - convert to AnswerSet format
+                        logger.info("Converting plain text response to AnswerSet format")
+                        answer_set = self._format_as_answer_set(assistant_response_content)
+                        final_response_data = {"type": "json", "content": answer_set}
+
+                    # Append assistant response to history (original string format)
+                    conversation_history.append({"role": "assistant", "content": str(assistant_response_content)})
+                else:
+                    # Handle other response types
+                    logger.warning(f"Unexpected response type: {type(assistant_response_content)}")
+                    answer_set = self._format_as_answer_set(str(assistant_response_content))
+                    final_response_data = {"type": "json", "content": answer_set}
+
+                    # Append assistant response to history (stringified)
+                    conversation_history.append({"role": "assistant", "content": str(assistant_response_content)})
+
+            else:
+                logger.error(f"❌ Unexpected agent response structure: {response}")
+                final_response_data = {"type": "error", "content": "Received unexpected response from agent."}
+
+            return final_response_data, conversation_history
+
+        except Exception as e:
+            logger.error(f"❌ Error during agent text processing: {e}", exc_info=True)
+            return {"type": "error", "content": f"Error processing input: {e}"}, conversation_history
+
+    def _format_as_answer_set(self, text: str) -> str:
+        """Format a text response as an AnswerSet JSON with options.
+
+        Args:
+            text: The text to format
+
+        Returns:
+            str: JSON string in the AnswerSet format
+        """
+        try:
+            # Generate 2-4 relevant options based on the text
+            sentences = [s.strip() for s in text.split('.') if s.strip()]
+
+            # Extract key words for options
+            import re
+            words = re.findall(r'\b\w+\b', text.lower())
+            action_words = [w for w in words if len(w) > 3 and w not in
+                           {'this', 'that', 'with', 'from', 'have', 'what', 'when', 'where',
+                            'there', 'their', 'about', 'would', 'could', 'should'}]
+
+            # Create options based on text content
+            options = []
+
+            # Add movement options if relevant
+            if any(word in words for word in ['move', 'walk', 'go', 'turn', 'north', 'south', 'east', 'west',
+                                             'left', 'right', 'up', 'down', 'forward', 'backward']):
+                options.append("Look around")
+
+            # Add look option if relevant
+            if any(word in words for word in ['see', 'look', 'observe', 'watch', 'view']):
+                options.append("Look closer")
+
+            # Add inventory option if relevant
+            if any(word in words for word in ['inventory', 'item', 'carry', 'holding', 'have']):
+                options.append("Check inventory")
+
+            # Add interaction options
+            if len(action_words) >= 3:
+                # Use some action words to create options
+                action_words = list(set(action_words))  # Remove duplicates
+                import random
+                random.shuffle(action_words)
+
+                # Create action phrases
+                if len(options) < 3 and len(action_words) >= 2:
+                    options.append(f"{action_words[0].capitalize()} {action_words[1]}")
+
+                if len(options) < 4 and len(action_words) >= 4:
+                    options.append(f"{action_words[2].capitalize()} {action_words[3]}")
+
+            # Always include a question option
+            if "?" not in text and len(options) < 4:
+                options.append("Ask questions")
+
+            # If we still need options, add generic ones
+            generic_options = ["Explore more", "Try something else", "What next?", "Continue"]
+            while len(options) < 2:
+                if generic_options:
+                    options.append(generic_options.pop(0))
+                else:
+                    break
+
+            # Limit options to 4
+            options = options[:4]
+
+            # Create the answer object
+            answer = {
+                "type": "text",
+                "description": text[:400],  # Limit to 400 chars
+                "options": options
+            }
+
+            # Create the answer set
+            answer_set = {
+                "answers": [answer]
+            }
+
+            return json.dumps(answer_set)
+        except Exception as e:
+            logger.error(f"❌ Error formatting answer set: {e}")
+            # Fallback
+            fallback_answer = {
+                "answers": [{
+                    "type": "text",
+                    "description": text[:400] if text else "No response",
+                    "options": ["What next?", "Explore more"]
+                }]
+            }
+            return json.dumps(fallback_answer)
+
+    async def process_audio(self, audio_data: bytes, on_transcription: Callable[[str], Awaitable[None]],
+                            on_response: Callable[[str], Awaitable[None]], on_audio: Callable[[bytes], Awaitable[None]],
+                            conversation_history: List[Dict[str, Any]]) -> Tuple[
+        str, Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+        """Processes audio input: Transcribe -> Process Text -> Generate TTS."""
+        logger.info(f"Processing audio data: {len(audio_data)} bytes")
+        if not self.agent or not self.deepgram_client or not self.openai_client:
+            logger.error("❌ Agent or required clients not initialized. Cannot process audio.")
+            await on_response(json.dumps({"type": "error", "content": "Audio processing components not ready."}))
+            return "", None, conversation_history
+
+        transcribed_text = ""
+        command_info = None
+
+        try:
+            # 1. Transcribe using Deepgram
+            source = {'buffer': audio_data, 'mimetype': 'audio/webm'}  # Adjust mimetype if needed
+            options = PrerecordedOptions(model="nova-2", smart_format=True)
+            dg_response = await self.deepgram_client.listen.prerecorded.v("1").transcribe_file(source, options)
+            transcribed_text = dg_response.results.channels[0].alternatives[0].transcript
+            logger.info(f"🎤 Transcription: '{transcribed_text}'")
+            await on_transcription(transcribed_text)  # Send transcription back to client
+
+            if not transcribed_text.strip():
+                logger.warning("⚠️ Transcription resulted in empty text.")
+                # Send a message indicating silence or no speech?
+                # For now, just return early.
+                return "", None, conversation_history
+
+            # 2. Process the transcribed text using the agent (similar to process_text_input)
+            response_data, conversation_history = await self.process_text_input(transcribed_text, conversation_history)
+            logger.debug(f"Agent response data after audio transcription: {response_data}")
+
+            # 3. Handle Agent Response (JSON for TTS, Command, or Error)
+            response_type = response_data.get("type")
+            response_content = response_data.get("content")
+
+            if response_type == "json":
+                await on_response(response_content)  # Send the JSON response
+                try:
+                    # Extract text for TTS from JSON (assuming AnswerSet structure)
+                    tts_text = ""
+                    # Check if response_content is a dict or a JSON string
+                    if isinstance(response_content, dict):
+                        json_content = response_content
+                    else:
+                        json_content = json.loads(response_content)
+
+                    answers = json_content.get("answers", [])
+                    tts_text = " ".join([ans.get("description", "") for ans in answers if isinstance(ans, dict)])
+
+                    if tts_text.strip():
+                        logger.info(f"🔊 Generating TTS for: '{tts_text[:50]}...'")
+                        # Generate TTS using OpenAI
+                        speech_response = self.openai_client.audio.speech.create(
+                            model="tts-1",
+                            voice=self.voice,
+                            input=tts_text,
+                            response_format="mp3"
+                        )
+
+                        # Stream audio chunks (handle bytes content)
+                        session_data = {"audio_sent_metadata": False}
+
+                        # Send audio_start metadata if needed
+                        if not session_data["audio_sent_metadata"]:
+                            await on_response(json.dumps({
+                                "type": "audio_start",
+                                "format": "mp3",
+                                "timestamp": time.time()
+                            }))
+                            session_data["audio_sent_metadata"] = True
+                            await asyncio.sleep(0.2)  # Small delay after metadata
+
+                        # Handle content as a bytes object
+                        content_bytes = speech_response.content
+                        chunk_size = 4096
+
+                        # Send in chunks
+                        for i in range(0, len(content_bytes), chunk_size):
+                            chunk = content_bytes[i:i+chunk_size]
+                            if chunk:
+                                await on_audio(chunk)
+                                await asyncio.sleep(0.02)  # Small delay between chunks
+
+                        # Signal end of audio
+                            await on_audio(b"__AUDIO_END__")
+                    else:
+                        logger.warning("⚠️ No text found in JSON response for TTS.")
+                except json.JSONDecodeError:
+                    logger.error(f"❌ Failed to decode JSON response for TTS: {response_content[:100]}...")
+                except Exception as e:
+                    logger.error(f"❌ Error during TTS generation/streaming: {e}", exc_info=True)
+
+            elif response_type == "command":
+                command_info = {"name": response_data.get("name"), "params": response_data.get("params")}
+                logger.info(f"🎮 Agent returned command: {command_info}")
+                # Command will be sent by main.py after this function returns
+
+            elif response_type == "text":  # Handle plain text response from agent if it occurs
+                # Convert to AnswerSet format with options
+                answer_set = self._format_as_answer_set(response_content)
+                await on_response(answer_set)
+                # Generate TTS for the text
+                logger.info(f"🔊 Generating TTS for plain text: '{response_content[:50]}...'")
+                try:
+                    speech_response = self.openai_client.audio.speech.create(
+                        model="tts-1",
+                        voice=self.voice,
+                        input=response_content,
+                        response_format="mp3"
+                    )
+
+                    # Stream audio chunks (handle bytes content)
+                    session_data = {"audio_sent_metadata": False}
+
+                    # Send audio_start metadata if needed
+                    if not session_data["audio_sent_metadata"]:
+                        await on_response(json.dumps({
+                            "type": "audio_start",
+                            "format": "mp3",
+                            "timestamp": time.time()
+                        }))
+                        session_data["audio_sent_metadata"] = True
+                        await asyncio.sleep(0.2)  # Small delay after metadata
+
+                    # Handle content as a bytes object
+                    content_bytes = speech_response.content
+                    chunk_size = 4096
+
+                    # Send in chunks
+                    for i in range(0, len(content_bytes), chunk_size):
+                        chunk = content_bytes[i:i+chunk_size]
+                        if chunk:
+                            await on_audio(chunk)
+                            await asyncio.sleep(0.02)  # Small delay between chunks
+
+                    # Signal end of audio
+                    await on_audio(b"__AUDIO_END__")
+                except Exception as e:
+                    logger.error(f"❌ Error during plain text TTS generation: {e}", exc_info=True)
+
+            elif response_type == "error":
+                await on_response(json.dumps(response_data))  # Forward error to client
+
+            else:
+                logger.warning(f"⚠️ Unhandled agent response type in process_audio: {response_type}")
+
+        except Exception as e:
+            logger.error(f"❌ Error during audio processing pipeline: {e}", exc_info=True)
+            error_msg = {"type": "error", "content": f"Error processing audio: {e}", "sender": "system"}
+            try:
+                await on_response(json.dumps(error_msg))
+            except Exception as send_err:
+                logger.error(f"❌ Failed to send error message to client: {send_err}")
+
+        return transcribed_text, command_info, conversation_history
 
 
-# --- Example Usage (Updated for Final Agent) ---
+# --- End Reconstructed Methods ---
+
 async def example_run():
     """Example test function."""
     pass
-    
+
+
 if __name__ == "__main__":
     pass

@@ -54,6 +54,7 @@ Finish the turn means stop executing this instructions and go back to the main #
 - **Restart:** If the user asks to restart, instruct them to refresh the page/app. Output: `{{ "answers": [{{"type": "text", "description": "Wanna start over? Just refresh!", "options":[]}}] }}`
 - Do not execute more than 10 tools per turn. Plan ahead.
 - Avoid giving coordinates like (19,20) or anything like that.
+- Please, use small sentences. Max 3 sentences. Add 0 to 3 options.
 
 # GAME MECHANICS REFERENCE (Use for understanding possibilities)
 {game_mechanics_reference}

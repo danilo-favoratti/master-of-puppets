@@ -4,24 +4,20 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import List, Set, Dict, Any, Literal, Tuple
 
-import random
 import numpy as np
 from colorama import Fore, Back, Style, init
 
 from game_constants import *
 from game_object import GameObject, Container
 
-# Initialize colorama for Windows
 init()
 
-# Map configuration
 MAP_SIZE = 60
 BORDER_SIZE = 15
 WATER_LEVEL = 0.5  # Values below this are water, above are land
 WATER_SYMBOL = 0
 LAND_SYMBOL = 1
 
-# Version information
 VERSION = "2.0"  # Removed landmark and NPC functionality
 
 def create_game(map_size: int = MAP_SIZE, 
@@ -90,43 +86,30 @@ def generate_perlin_noise(width: int, height: int, scale: float = 10.0, octaves:
     Returns:
         2D numpy array of noise values between 0 and 1
     """
-    # Initialize empty noise array
     noise_map = np.zeros((height, width))
     
-    # Use numpy's random function as a simple noise source
-    # In a real implementation, you'd use a proper Perlin noise library
     random_grid = np.random.rand(height, width)
     
-    # Simple approximation of noise for demonstration
-    # For each coordinate, calculate a weighted sum of surrounding random values
     for y in range(height):
         for x in range(width):
-            # Get normalized coordinates
             nx = x / width
             ny = y / height
             
-            # Use a weighted average of surrounding points as "noise"
-            # This is a very simplified version of noise and not true Perlin noise
             frequency = 1
             amplitude = 1
             noise_value = 0
             
-            # Sample points at different frequencies and amplitudes
             for i in range(octaves):
-                # Sample index calculation
                 sample_x = int((nx * frequency * scale) % width)
                 sample_y = int((ny * frequency * scale) % height)
                 
-                # Get noise value
                 noise_value += random_grid[sample_y, sample_x] * amplitude
                 
-                # Update frequency and amplitude for next octave
                 amplitude *= persistence
                 frequency *= lacunarity
             
             noise_map[y, x] = noise_value
     
-    # Normalize the noise values to [0, 1]
     min_val = np.min(noise_map)
     max_val = np.max(noise_map)
     noise_map = (noise_map - min_val) / (max_val - min_val)
@@ -149,15 +132,12 @@ def create_distance_map(width: int, height: int, method: Literal["square_bump", 
     
     for y in range(height):
         for x in range(width):
-            # Normalize coordinates to range from -1 to 1
             nx = 2 * x / width - 1
             ny = 2 * y / height - 1
             
             if method == "square_bump":
-                # Square bump distance: d = 1 - (1-nx²) * (1-ny²)
                 distance_map[y, x] = 1 - (1 - nx**2) * (1 - ny**2)
             else:
-                # Euclidean² distance: d = min(1, (nx² + ny²) / sqrt(2))
                 distance_map[y, x] = min(1, (nx**2 + ny**2) / math.sqrt(2))
     
     return distance_map
@@ -173,34 +153,27 @@ def generate_island_map(size: int = MAP_SIZE, border_size: int = BORDER_SIZE) ->
     Returns:
         2D list of strings representing the map
     """
-    # Generate base noise
     inner_size = size - 2 * border_size
     noise = generate_perlin_noise(inner_size, inner_size)
     
-    # Create distance map
     distance = create_distance_map(inner_size, inner_size, "square_bump")
     
-    # Apply shaping function (linear interpolation)
     mix = 0.65  # Control how much of the distance affects the final value
     shaped_elevation = np.zeros_like(noise)
     for y in range(inner_size):
         for x in range(inner_size):
             d = distance[y, x]
             e = noise[y, x]
-            # Linear interpolation: e = lerp(e, 1-d, mix)
             shaped_elevation[y, x] = e * (1 - mix) + (1 - d) * mix
     
-    # Create the final map with water border
     map_grid = []
     for y in range(size):
         row = []
         for x in range(size):
-            # If in the border area, it's water
             if (y < border_size or y >= size - border_size or 
                 x < border_size or x >= size - border_size):
                 row.append(WATER_SYMBOL)
             else:
-                # Otherwise, use the shaped elevation
                 inner_x = x - border_size
                 inner_y = y - border_size
                 if shaped_elevation[inner_y, inner_x] >= WATER_LEVEL:
@@ -231,7 +204,6 @@ def generate_map() -> List[List[str]]:
     return generate_island_map()
 
 if __name__ == "__main__":
-    # Generate and print a map
     map_grid = generate_map()
     print_map(map_grid) 
 
@@ -246,7 +218,6 @@ class Backpack(GameObject):
     possible_alone_actions: Set[str] = field(default_factory=set)  # Actions available when used alone
 
     def __post_init__(self):
-        # Backpacks are movable and can be interacted with
         self.is_movable = True
         self.is_jumpable = False
         self.is_usable_alone = True
@@ -305,7 +276,6 @@ class BackpackFactory:
             valid_variants = ", ".join(cls._backpack_data.keys())
             raise ValueError(f"Invalid backpack variant: {variant}. Valid variants are: {valid_variants}")
             
-        # If no id is provided, generate a default id.
         if id is None:
             id = f"backpack_{variant}_{random.randint(1000, 9999)}"
             
@@ -324,7 +294,6 @@ class BackpackFactory:
         
         return backpack.to_dict()
 
-# Action constants
 ACTION_SLEEP = "sleep"
 
 @dataclass
@@ -338,7 +307,6 @@ class Bedroll(GameObject):
     possible_alone_actions: Set[str] = field(default_factory=set)  # Actions available when used alone
 
     def __post_init__(self):
-        # Bedrolls are movable but become immovable when in use
         self.is_movable = True
         self.is_jumpable = False
         self.is_usable_alone = True
@@ -395,7 +363,6 @@ class BedrollFactory:
             valid_variants = ", ".join(cls._bedroll_data.keys())
             raise ValueError(f"Invalid bedroll variant: {variant}. Valid variants are: {valid_variants}")
             
-        # If no id is provided, generate a default id.
         if id is None:
             id = f"bedroll_{variant}_{random.randint(1000, 9999)}"
             
@@ -428,14 +395,12 @@ class CampfirePot(GameObject):
     max_items: int = 1  # Maximum number of items the pot can hold
 
     def __post_init__(self):
-        # Pots are movable and can be interacted with
         self.is_movable = True
         self.is_jumpable = False
         self.is_usable_alone = True
         self.weight = 3  # Pots are moderately heavy
         self.usable_with = {CAMPFIRE_BURNING, CAMPFIRE_DYING}  # Can be used with burning/dying fires
         
-        # Set possible actions based on state
         if self.state == POT_EMPTY:
             self.possible_alone_actions = {ACTION_PLACE}
         elif self.state == POT_COOKING:
@@ -507,7 +472,6 @@ class CampfirePotFactory:
             valid_types = ", ".join(cls._pot_data.keys())
             raise ValueError(f"Invalid pot type: {pot_type}. Valid types are: {valid_types}")
             
-        # If no id is provided, generate a default id.
         if id is None:
             id = f"pot_{pot_type}_{random.randint(1000, 9999)}"
             
@@ -544,14 +508,12 @@ class SpitItem(GameObject):
     is_edible: bool = True  # Whether the item can be eaten
 
     def __post_init__(self):
-        # Spit items are movable and can be interacted with
         self.is_movable = True
         self.is_jumpable = False
         self.is_usable_alone = True
         self.weight = 1  # Food items are relatively light
         self.usable_with = {POT_SPIT}  # Can be used with a spit
         
-        # Set possible actions based on state
         if self.state == SPIT_ITEM_RAW:
             self.possible_alone_actions = {ACTION_PLACE_ON_SPIT}
         elif self.state == SPIT_ITEM_COOKING:
@@ -633,7 +595,6 @@ class SpitItemFactory:
             valid_types = ", ".join(cls._item_data.keys())
             raise ValueError(f"Invalid item type: {item_type}. Valid types are: {valid_types}")
             
-        # If no id is provided, generate a default id.
         if id is None:
             id = f"spit_item_{item_type}_{random.randint(1000, 9999)}"
             
@@ -668,7 +629,6 @@ class CampfireSpit(GameObject):
     possible_alone_actions: Set[str] = field(default_factory=set)
 
     def __post_init__(self):
-        # Spits are movable but not jumpable
         self.is_movable = True
         self.is_jumpable = False
         self.is_usable_alone = True
@@ -746,7 +706,6 @@ class CampfireSpitFactory:
             valid_qualities = ", ".join(cls._spit_data.keys())
             raise ValueError(f"Invalid quality level: {quality}. Valid qualities are: {valid_qualities}")
             
-        # If no id is provided, generate a default id
         if id is None:
             id = f"campfire_spit_{quality}_{random.randint(1000, 9999)}"
             
@@ -779,14 +738,12 @@ class Campfire(GameObject):
     possible_alone_actions: Set[str] = field(default_factory=set)  # Actions available when used alone
 
     def __post_init__(self):
-        # Campfires are immovable and can be interacted with
         self.is_movable = False
         self.is_jumpable = True
         self.is_usable_alone = True
         self.weight = 5  # Campfires are heavier than candles
         self.usable_with = set()  # Can be used with items like wood, water, etc.
         
-        # Set possible actions based on state
         if self.state == CAMPFIRE_UNLIT:
             self.possible_alone_actions = {ACTION_LIGHT}
         elif self.state in [CAMPFIRE_BURNING, CAMPFIRE_DYING]:
@@ -858,7 +815,6 @@ class CampfireFactory:
             valid_states = ", ".join(cls._campfire_data.keys())
             raise ValueError(f"Invalid campfire state: {state}. Valid states are: {valid_states}")
             
-        # If no id is provided, generate a default id.
         if id is None:
             id = f"campfire_{state}_{random.randint(1000, 9999)}"
             
@@ -876,7 +832,6 @@ class CampfireFactory:
         
         return campfire.to_dict()
 
-# Chest type constants
 CHEST_BASIC_WOODEN = "basic_wooden"
 CHEST_FORESTWOOD = "forestwood"
 CHEST_BRONZE_BANDED = "bronze_banded"
@@ -893,7 +848,6 @@ CHEST_CRIMSON = "crimson"
 CHEST_VIOLET = "violet"
 CHEST_STONE_TITAN = "stone_titan"
 
-# Chest rarity types
 CHEST_TYPES = [
     "wooden",    # Common
     "silver",    # Uncommon
@@ -901,7 +855,6 @@ CHEST_TYPES = [
     "magical"    # Epic
 ]
 
-# Items that can be found in chests
 CHEST_ITEMS = {
     "wooden": [
         "apple", "bread", "rope", "torch", "flint", "small_coin_pouch"
@@ -920,7 +873,6 @@ CHEST_ITEMS = {
     ]
 }
 
-# Lock types for chests
 LOCK_TYPES = {
     "wooden": ["simple", "broken", None],
     "silver": ["standard", "tricky", "simple", None],
@@ -937,7 +889,6 @@ class Chest(Container):
     durability: int = 100  # Chest's durability (0-100)
     
     def __post_init__(self):
-        # All chests are movable containers
         self.is_movable = True
         self.is_jumpable = False
         self.is_usable_alone = True
@@ -1104,7 +1055,6 @@ class ChestFactory:
             valid_types = ", ".join(cls._chest_data.keys())
             raise ValueError(f"Invalid chest type: {chest_type}. Valid types are: {valid_types}")
             
-        # If no id is provided, generate a default id
         if id is None:
             id = f"chest_{chest_type}"
             
@@ -1130,11 +1080,9 @@ def create_chest(chest_type: str = None) -> Dict[str, Any]:
     Returns:
         Dict: A chest object with properties
     """
-    # Choose a random chest type if none specified
     if chest_type is None:
         chest_type = random.choice(CHEST_TYPES)
     
-    # Determine rarity weights based on chest type
     if chest_type == "wooden":
         rarity_weights = [0.7, 0.25, 0.05, 0]  # Common, uncommon, rare, epic
     elif chest_type == "silver":
@@ -1144,20 +1092,16 @@ def create_chest(chest_type: str = None) -> Dict[str, Any]:
     else:  # magical
         rarity_weights = [0, 0.1, 0.3, 0.6]
     
-    # Select items based on rarity weights
     num_items = random.randint(1, 3) if chest_type == "wooden" else \
                random.randint(2, 4) if chest_type == "silver" else \
                random.randint(3, 5) if chest_type == "golden" else \
                random.randint(4, 6)  # magical
     
-    # Select items for the chest
     chest_contents = []
     
     for _ in range(num_items):
-        # Choose an item tier based on rarity weights
         tier = random.choices(range(4), weights=rarity_weights)[0]
         
-        # Get items from appropriate tier
         item_tier = CHEST_TYPES[tier]
         item = random.choice(CHEST_ITEMS[item_tier])
         
@@ -1167,10 +1111,8 @@ def create_chest(chest_type: str = None) -> Dict[str, Any]:
             "quantity": random.randint(1, 3) if tier < 2 else random.randint(1, 2)
         })
     
-    # Determine lock type
     lock_type = random.choice(LOCK_TYPES[chest_type])
     
-    # Create the chest object
     chest = {
         "type": chest_type,
         "contents": chest_contents,
@@ -1180,7 +1122,6 @@ def create_chest(chest_type: str = None) -> Dict[str, Any]:
     
     return chest
 
-# Action constants
 ACTION_COLLECT = "collect"
 
 @dataclass
@@ -1192,7 +1133,6 @@ class Firewood(GameObject):
     possible_alone_actions: Set[str] = field(default_factory=set)  # Actions available when used alone
 
     def __post_init__(self):
-        # Firewood is movable and can be collected
         self.is_movable = True
         self.is_jumpable = False
         self.is_usable_alone = True
@@ -1249,7 +1189,6 @@ class FirewoodFactory:
             valid_variants = ", ".join(cls._firewood_data.keys())
             raise ValueError(f"Invalid firewood variant: {variant}. Valid variants are: {valid_variants}")
             
-        # If no id is provided, generate a default id.
         if id is None:
             id = f"firewood_{variant}_{random.randint(1000, 9999)}"
             
@@ -1268,9 +1207,7 @@ class FirewoodFactory:
         return firewood.to_dict()
 
 
-# Example usage:
 if __name__ == "__main__":
-    # Create a fallen branch
     firewood = FirewoodFactory.create_firewood()
     print(f"Created Firewood: {firewood['name']}")
     print(f"Description: {firewood['description']}")
@@ -1418,10 +1355,8 @@ class LandObstacleFactory:
             
         plant_props = plant_properties[plant_type]
         
-        # Create a copy of props to avoid modifying the original
         final_props = props.copy()
         
-        # Update final_props with plant_props, but don't override existing props
         for key, value in plant_props.items():
             if key not in final_props:
                 final_props[key] = value
@@ -1474,7 +1409,6 @@ def create_land_obstacle(obstacle_type: str = None, **props) -> dict:
     Returns:
         dict: A dictionary representation of the land obstacle with position and other metadata.
     """
-    # Use specific factory method if obstacle_type is provided
     if obstacle_type == "hole":
         game_obj = LandObstacleFactory.create_hole(**props)
     elif obstacle_type == "log":
@@ -1492,14 +1426,11 @@ def create_land_obstacle(obstacle_type: str = None, **props) -> dict:
     elif obstacle_type == "tree":
         game_obj = LandObstacleFactory.create_chestnut_tree(**props)
     else:
-        # Create a random obstacle
         game_obj = LandObstacleFactory.create_random_obstacle(**props)
     
-    # Convert GameObject to a dictionary representation
     obstacle_data = game_obj.to_dict()
     obstacle_data["type"] = obstacle_type or "random"
     
-    # Add any additional properties
     for key, value in props.items():
         if key not in obstacle_data:
             obstacle_data[key] = value
@@ -1512,7 +1443,6 @@ import random
 
 from game_object import GameObject
 
-# Action constants
 ACTION_SIT = "sit"
 
 
@@ -1525,7 +1455,6 @@ class LogStool(GameObject):
     possible_alone_actions: Set[str] = field(default_factory=set)  # Actions available when used alone
 
     def __post_init__(self):
-        # Log stools are movable and can be interacted with
         self.is_movable = True
         self.is_jumpable = False
         self.is_usable_alone = True
@@ -1567,7 +1496,6 @@ class LogStoolFactory:
             valid_variants = ", ".join(cls._stool_data.keys())
             raise ValueError(f"Invalid stool variant: {variant}. Valid variants are: {valid_variants}")
             
-        # If no id is provided, generate a default id.
         if id is None:
             id = f"stool_{variant}_{random.randint(1000, 9999)}"
             
@@ -1584,12 +1512,10 @@ class LogStoolFactory:
         
         return stool.to_dict()
 
-# Pot size constants
 POT_SIZE_SMALL = "small"
 POT_SIZE_MEDIUM = "medium"
 POT_SIZE_BIG = "big"
 
-# Pot state constants
 POT_STATE_DEFAULT = "default"
 POT_STATE_BREAKING = "breaking"
 POT_STATE_BROKEN = "broken"
@@ -1603,7 +1529,6 @@ class Pot(Container):
     current_durability: int = 100  # Current durability
     
     def __post_init__(self):
-        # Set basic properties based on pot size
         if self.pot_size == POT_SIZE_SMALL:
             self.is_movable = True
             self.is_jumpable = True
@@ -1637,13 +1562,11 @@ class Pot(Container):
             
         self.current_durability = max(0, self.current_durability - amount)
         
-        # Update state based on durability percentage
         durability_percentage = (self.current_durability / self.max_durability) * 100
         
         if durability_percentage <= 0:
             old_state = self.state
             self.state = POT_STATE_BROKEN
-            # If broken, reduce capacity and empty contents if any
             self.capacity = 0
             self.contents = []
             return {
@@ -1740,22 +1663,18 @@ class PotFactory:
         Raises:
             ValueError: If an invalid size or state is provided.
         """
-        # Validate size
         if size not in cls._pot_data:
             valid_sizes = ", ".join(cls._pot_data.keys())
             raise ValueError(f"Invalid pot size: {size}. Valid sizes are: {valid_sizes}")
         
-        # Validate state
         valid_states = [POT_STATE_DEFAULT, POT_STATE_BREAKING, POT_STATE_BROKEN]
         if state not in valid_states:
             valid_states_str = ", ".join(valid_states)
             raise ValueError(f"Invalid pot state: {state}. Valid states are: {valid_states_str}")
             
-        # If no id is provided, generate a default id.
         if id is None:
             id = f"pot_{size}_{random.randint(1000, 9999)}"
         
-        # Create the pot with basic properties
         data = cls._pot_data[size]
         pot = Pot(
             id=id,
@@ -1769,7 +1688,6 @@ class PotFactory:
             weight=data["weight"]
         )
         
-        # Adjust properties based on state
         if state == POT_STATE_BROKEN:
             pot.capacity = 0
             pot.contents = []
@@ -1788,18 +1706,14 @@ def create_pot(size: str = None, state: str = None) -> Dict[str, Any]:
     Returns:
         Dict: A dictionary representation of the pot object.
     """
-    # Choose random size if not specified
     if size is None:
         size = random.choice([POT_SIZE_SMALL, POT_SIZE_MEDIUM, POT_SIZE_BIG])
     
-    # Default state if not specified
     if state is None:
         state = POT_STATE_DEFAULT
         
-    # Create a pot using the factory
     return PotFactory.create_pot(size=size, state=state)
 
-# Action constants
 ACTION_ENTER = "enter"
 ACTION_EXIT = "exit"
 
@@ -1815,7 +1729,6 @@ class Tent(GameObject):
     possible_alone_actions: Set[str] = field(default_factory=set)  # Actions available when used alone
 
     def __post_init__(self):
-        # Tents are movable but become immovable when set up
         self.is_movable = True
         self.is_jumpable = False
         self.is_usable_alone = True
@@ -1872,7 +1785,6 @@ class TentFactory:
             valid_variants = ", ".join(cls._tent_data.keys())
             raise ValueError(f"Invalid tent variant: {variant}. Valid variants are: {valid_variants}")
             
-        # If no id is provided, generate a default id.
         if id is None:
             id = f"tent_{variant}_{random.randint(1000, 9999)}"
             
@@ -2048,13 +1960,10 @@ class WeatherSystem:
             
             for effect, value in effects.items():
                 if effect in combined_effects:
-                    # For most effects, we take the most extreme value
                     if "modifier" in effect or "reduction" in effect:
                         combined_effects[effect] = min(combined_effects[effect], value) if value < 0 else max(combined_effects[effect], value)
-                    # For chances, we add them up to a max of 1.0
                     elif "chance" in effect:
                         combined_effects[effect] = min(combined_effects[effect] + value, 1.0)
-                    # For other effects, we take the max
                     else:
                         combined_effects[effect] = max(combined_effects[effect], value)
                 else:
@@ -2089,7 +1998,6 @@ class WeatherSystem:
             
         weather_type = random.choice(available_types)
         
-        # Generate random parameters
         params = WeatherParameters(
             intensity=random.uniform(0.2, 1.0),
             duration=random.randint(50, 200),
@@ -2138,7 +2046,6 @@ class GameFactory:
         Returns:
             Tuple[int, int]: A valid (x, y) position for the player
         """
-        # Get all land tiles
         land_tiles = []
         for y in range(self.map_size):
             for x in range(self.map_size):
@@ -2146,9 +2053,7 @@ class GameFactory:
                    x < self.border_size or x >= self.map_size - self.border_size:
                     continue
                 
-                # Check if the tile is land
                 if self.map_grid[y][x] == "$$$":
-                    # Check if the tile is already occupied
                     occupied = False
                     for obj_type, obj_list in self.objects.items():
                         for obj in obj_list:
@@ -2161,14 +2066,11 @@ class GameFactory:
                     if not occupied:
                         land_tiles.append((x, y))
         
-        # Shuffle the land tiles for random selection
         random.shuffle(land_tiles)
         
-        # Check each tile for valid movement options
         for x, y in land_tiles:
             free_positions = 0
             
-            # Check adjacent positions (including diagonals)
             for dx in [-1, 0, 1]:
                 for dy in [-1, 0, 1]:
                     if dx == 0 and dy == 0:
@@ -2177,12 +2079,10 @@ class GameFactory:
                     new_x = x + dx
                     new_y = y + dy
                     
-                    # Check if position is valid and free
                     if (new_x >= self.border_size and new_x < self.map_size - self.border_size and
                         new_y >= self.border_size and new_y < self.map_size - self.border_size and
                         self.map_grid[new_y][new_x] == "$$$"):
                         
-                        # Check if position is occupied
                         occupied = False
                         for obj_type, obj_list in self.objects.items():
                             for obj in obj_list:
@@ -2195,11 +2095,9 @@ class GameFactory:
                         if not occupied:
                             free_positions += 1
             
-            # If we found a position with at least 5 free adjacent tiles
             if free_positions >= 5:
                 return (x, y)
         
-        # If no position found, return a default position
         return (self.border_size + 1, self.border_size + 1)
         
     def generate_world(self, 
@@ -2233,12 +2131,9 @@ class GameFactory:
         Returns:
             Dict containing the map, placed objects, and suggested player position
         """
-        # Generate the map
         self.map_grid = generate_map()
         
-        # Place objects in order of importance
         self.place_objects("obstacles", obstacle_count)
-        # Removed camps placement
         self.place_objects("campfires", campfire_count)
         self.place_objects("tents", tent_count)
         self.place_objects("bedrolls", bedroll_count)
@@ -2250,7 +2145,6 @@ class GameFactory:
         self.place_objects("firewood", firewood_count)
         self.place_objects("pots", pot_count)
         
-        # Find a valid starting position for the player
         player_position = self.find_valid_player_position()
         
         return {
@@ -2269,7 +2163,6 @@ class GameFactory:
         landmark_types = ["tower", "statue", "ruins", "cave", "shrine", "portal", "monolith"]
         landmark_type = random.choice(landmark_types)
         
-        # Randomize if the landmark is special (has unique properties)
         is_special = random.random() < 0.3  # 30% chance of being special
         
         landmark = {
@@ -2279,7 +2172,6 @@ class GameFactory:
             "id": f"landmark_{landmark_type}_{random.randint(1000, 9999)}"
         }
         
-        # Add special properties based on type
         if landmark_type == "tower":
             landmark["height"] = random.randint(3, 8)
             landmark["description"] = f"A {landmark['height']}-story high watchtower overlooking the area."
@@ -2347,10 +2239,8 @@ class GameFactory:
         npc_types = ["villager", "hero", "merchant", "guard", "wizard", "monk", "thief"]
         npc_type = random.choice(npc_types)
         
-        # Basic states
         states = ["idle", "walking", "sleeping", "working", "eating"]
         
-        # Type-specific states
         type_states = {
             "villager": ["farming", "chatting", "crafting"],
             "hero": ["training", "resting", "negotiating"],
@@ -2361,11 +2251,9 @@ class GameFactory:
             "thief": ["sneaking", "hiding", "stealing"]
         }
         
-        # Combine basic states with type-specific states
         all_states = states + type_states.get(npc_type, [])
         state = random.choice(all_states)
         
-        # Determine if hostile based on type (thieves more likely to be hostile)
         hostile_chance = {
             "thief": 0.7,
             "wizard": 0.3,
@@ -2377,7 +2265,6 @@ class GameFactory:
         }
         is_hostile = random.random() < hostile_chance.get(npc_type, 0.1)
         
-        # Create the NPC
         npc = {
             "id": f"npc_{npc_type}_{random.randint(1000, 9999)}",
             "type": npc_type,
@@ -2388,7 +2275,6 @@ class GameFactory:
             "inventory": []
         }
         
-        # Add some random items to inventory
         possible_items = ["potion", "food", "coin", "tool", "weapon", "clothing"]
         inventory_size = random.randint(0, 3)
         
@@ -2411,10 +2297,8 @@ class GameFactory:
             object_type: Type of object to place 
             count: Number of objects to place
         """
-        # Reset the objects list for this type
         self.objects[object_type] = []
         
-        # Find all land tiles
         land_tiles = []
         for y in range(self.map_size):
             for x in range(self.map_size):
@@ -2422,9 +2306,7 @@ class GameFactory:
                    x < self.border_size or x >= self.map_size - self.border_size:
                     continue
                 
-                # Check if the tile is land
                 if self.map_grid[y][x] == "$$$":
-                    # Check if the tile is already occupied by another object
                     occupied = False
                     for obj_type, obj_list in self.objects.items():
                         for obj in obj_list:
@@ -2437,14 +2319,11 @@ class GameFactory:
                     if not occupied:
                         land_tiles.append((x, y))
         
-        # Shuffle the land tiles
         random.shuffle(land_tiles)
         
-        # Place objects on the first 'count' land tiles
         for i in range(min(count, len(land_tiles))):
             x, y = land_tiles[i]
             
-            # Create the object
             if object_type == "chests":
                 obj = create_chest()
             elif object_type == "obstacles":
@@ -2470,10 +2349,8 @@ class GameFactory:
             else:
                 continue
             
-            # Add position to the object
             obj["position"] = (x, y)
             
-            # Add to the objects list
             self.objects[object_type].append(obj)
 
     def print_world(self) -> None:
@@ -2485,17 +2362,13 @@ class GameFactory:
             print("No world generated yet. Call generate_world() first.")
             return
         
-        # Create a copy of the map grid for display
         display_grid = [row[:] for row in self.map_grid]
         
-        # Place objects on the display grid in order of visibility (layering)
         
-        # First obstacles (lowest layer above terrain)
         for obstacle in self.objects["obstacles"]:
             x, y = obstacle["position"]
             display_grid[y][x] = "OBS"
         
-        # Add pots to the display grid
         for pot in self.objects["pots"]:
             x, y = pot["position"]
             if pot["size"] == "small":
@@ -2533,7 +2406,6 @@ class GameFactory:
             x, y = firewood["position"]
             display_grid[y][x] = "FWD"
         
-        # Then chests and backpacks
         for chest in self.objects["chests"]:
             x, y = chest["position"]
             
@@ -2550,18 +2422,15 @@ class GameFactory:
             x, y = backpack["position"]
             display_grid[y][x] = "BPK"
         
-        # Count land tiles
         land_count = sum(1 for row in self.map_grid for tile in row if tile == "$$$")
         water_count = self.map_size * self.map_size - land_count
         
-        # Print world summary
         print("\n== WORLD SUMMARY ==")
         print(f"Size: {self.map_size}x{self.map_size}")
         print(f"Land tiles: {land_count} ({land_count / (self.map_size * self.map_size) * 100:.1f}%)")
         print(f"Water tiles: {water_count} ({water_count / (self.map_size * self.map_size) * 100:.1f}%)")
         print(f"Objects: {sum(len(obj_list) for obj_list in self.objects.values())}")
         
-        # Print the legend
         print("\n== WORLD MAP LEGEND ==")
         print(f"{Fore.BLUE}{Back.CYAN}~~~{Style.RESET_ALL} Water")
         print(f"{Fore.GREEN}{Back.BLACK}$$${Style.RESET_ALL} Land")
@@ -2577,7 +2446,6 @@ class GameFactory:
               f"{Fore.GREEN}{Back.BLACK}BPT{Style.RESET_ALL} Big Pot")
         print("=====================\n")
         
-        # Print the map with colors
         for y in range(self.map_size):
             row = ""
             for x in range(self.map_size):
@@ -2588,34 +2456,27 @@ class GameFactory:
                 elif tile == "$$$":  # Land
                     row += f"{Fore.GREEN}{Back.BLACK}$$$"
                 
-                # Chests and backpacks (yellow)
                 elif tile in ["CHW", "CHS", "CHG", "CHM", "BPK"]:
                     row += f"{Fore.YELLOW}{Back.BLACK}{tile}"
                 
-                # Camps and camp items (red)
                 elif tile in ["BND", "TRV", "MRC", "ABD", "MIL", "CFR", "TNT", "BDR", "LST", "CSP", "CPT", "FWD"]:
                     row += f"{Fore.RED}{Back.BLACK}{tile}"
                 
-                # Obstacles (magenta)
                 elif tile in ["OBS"]:
                     row += f"{Fore.MAGENTA}{Back.BLACK}{tile}"
                 
-                # Pots (green)
                 elif tile in ["SPT", "MPT", "BPT"]:
                     row += f"{Fore.GREEN}{Back.BLACK}{tile}"
                 
                 else:
                     row += f"{Style.RESET_ALL}{tile}"
                 
-                # Add a space between tiles for better readability
                 row += " "
             
             print(row + Style.RESET_ALL)
         
-        # Print object details
         print(f"\nGame World Generated:")
         
-        # Print chests
         print(f"- {len(self.objects['chests'])} chests")
         for i, chest in enumerate(self.objects['chests']):
             chest_type = chest['type'].capitalize()
@@ -2624,14 +2485,12 @@ class GameFactory:
                 contents += f", and {len(chest['contents']) - 2} more items"
             print(f"  {i+1}. {chest_type} chest {Fore.YELLOW}({chest['position'][0]},{chest['position'][1]}){Style.RESET_ALL}: {contents}")
         
-        # Print backpacks
         print(f"- {len(self.objects['backpacks'])} backpacks")
         for i, backpack in enumerate(self.objects['backpacks']):
             capacity = backpack.get('capacity', 'Unknown')
             color = backpack.get('color', 'Unknown')
             print(f"  {i+1}. {color} backpack {Fore.YELLOW}({backpack['position'][0]},{backpack['position'][1]}){Style.RESET_ALL}: {capacity} capacity")
         
-        # Print camps
         print(f"- {len(self.objects['camps'])} camps")
         for i, camp in enumerate(self.objects['camps']):
             occupants = len(camp['occupants'])
@@ -2639,7 +2498,6 @@ class GameFactory:
             size = camp['size'].capitalize()
             print(f"  {i+1}. {size} {camp_type} camp {Fore.RED}({camp['position'][0]},{camp['position'][1]}){Style.RESET_ALL}: {occupants} occupants, {len(camp['structures'])} structures")
         
-        # Print camp items
         for item_type, color_code in [
             ('campfires', Fore.RED),
             ('tents', Fore.RED),
@@ -2656,7 +2514,6 @@ class GameFactory:
                     quality = item.get('quality', 'standard').capitalize()
                     print(f"  {i+1}. {quality} {item_name[:-1]} {color_code}({item['position'][0]},{item['position'][1]}){Style.RESET_ALL}")
         
-        # Print pots
         if len(self.objects['pots']) > 0:
             print(f"- {len(self.objects['pots'])} pots")
             for i, pot in enumerate(self.objects['pots']):
@@ -2673,7 +2530,6 @@ class GameFactory:
             obstacle_type = obstacle['type'].capitalize() if 'type' in obstacle else 'Generic'
             print(f"  {i+1}. {obstacle_type} obstacle {Fore.MAGENTA}({obstacle['position'][0]},{obstacle['position'][1]}){Style.RESET_ALL}")
         
-        # Print NPCs
         print(f"- {len(self.objects['npcs'])} NPCs")
         for i, npc in enumerate(self.objects['npcs']):
             npc_type = npc['type'].capitalize()
@@ -2690,11 +2546,9 @@ class GameFactory:
         if not self.map_grid:
             return {"error": "No world generated yet. Call generate_world() first."}
         
-        # Count land and water tiles
         land_count = sum(1 for row in self.map_grid for tile in row if tile == LAND_SYMBOL)
         water_count = self.map_size * self.map_size - land_count
         
-        # Convert map grid to 0s and 1s (water = 0, land = 1)
         grid = []
         for row in self.map_grid:
             grid_row = []
@@ -2702,7 +2556,6 @@ class GameFactory:
                 grid_row.append(1 if cell == "$$$" else 0)
             grid.append(grid_row)
         
-        # Create the world data dictionary
         world_data = {
             "map": {
                 "size": self.map_size,
@@ -2730,7 +2583,6 @@ class GameFactory:
         if not self.map_grid:
             return {"error": "No world generated yet. Call generate_world() first."}
             
-        # Convert map grid to 0s and 1s (water = 0, land = 1)
         ui_grid = []
         for row in self.map_grid:
             grid_row = []
@@ -2738,10 +2590,8 @@ class GameFactory:
                 grid_row.append(1 if cell == "$$$" else 0)
             ui_grid.append(grid_row)
             
-        # Convert objects to entities
         entities = []
             
-        # Convert campfires
         for i, campfire in enumerate(self.objects["campfires"]):
             entities.append({
                 "id": campfire.get("id", f"campfire-{i+1}"),
@@ -2760,7 +2610,6 @@ class GameFactory:
                 "description": campfire.get("description", "A place to cook and keep warm.")
             })
             
-        # Convert pots
         for i, pot in enumerate(self.objects["pots"]):
             entities.append({
                 "id": pot.get("id", f"pot-{i+1}"),
@@ -2782,7 +2631,6 @@ class GameFactory:
                 "description": pot.get("description", "A simple pot, useful for various tasks.")
             })
 
-        # Convert chests
         for i, chest in enumerate(self.objects["chests"]):
             entities.append({
                 "id": chest.get("id", f"chest-{i+1}"),
@@ -2803,7 +2651,6 @@ class GameFactory:
                 "description": chest.get("description", "A container for storing valuable items.")
             })
 
-        # Convert camp items (tents, bedrolls, log stools, etc.)
         camp_items = {
             "tents": ("tent", "A shelter for resting and protection from weather."),
             "bedrolls": ("bedroll", "A comfortable place to sleep."),
@@ -2818,7 +2665,6 @@ class GameFactory:
             for i, item in enumerate(self.objects[item_type]):
                 base_name = item_type[:-1].replace("_", " ").title()
                 
-                # Convert possible actions to camelCase format
                 possible_actions = []
                 if "possible_actions" in item:
                     possible_actions = item["possible_actions"]
@@ -2842,7 +2688,6 @@ class GameFactory:
                     "description": item.get("description", default_desc)
                 })
         
-        # Convert obstacles
         for i, obstacle in enumerate(self.objects["obstacles"]):
             obstacle_type = obstacle.get("type", "obstacle")
             entities.append({
@@ -2872,10 +2717,8 @@ class GameFactory:
         }
     
 if __name__ == "__main__":
-    # Create a game factory
     factory = GameFactory()
     
-    # Generate a world with all object types
     world = factory.generate_world(
         chest_count=8, 
         obstacle_count=12,
@@ -2890,19 +2733,15 @@ if __name__ == "__main__":
         pot_count=6
     )
     
-    # Print the world
     factory.print_world()
     
-    # Print and save JSON representations
     import json
     from datetime import datetime
     
-    # Generate timestamp and filenames
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     map_filename = f"{timestamp}-map.json"
     ui_filename = f"{timestamp}-ui.json"
     
-    # Save original map JSON
     world_json = factory.export_world_json()
     print("\nJSON representation of the world:")
     print(json.dumps(world_json, indent=2))
@@ -2911,7 +2750,6 @@ if __name__ == "__main__":
         json.dump(world_json, f, indent=2)
     print(f"\nMap saved to: {map_filename}")
     
-    # Save UI JSON
     ui_json = factory.export_world_ui_json()
     print("\nUI JSON representation of the world:")
     print(json.dumps(ui_json, indent=2))
@@ -2923,35 +2761,29 @@ if __name__ == "__main__":
 class RainWeatherObject(GameObject):
     """Rain drop object that falls down the screen."""
     def __init__(self, x_pos, id_num):
-        from game_object import GameObject  # Import updated
         super().__init__(
             id=f"rain_{id_num}",
             name="Rain Drop",
             description="A drop of rain falling from the sky",
             is_movable=False
         )
-        # ... existing code ...
 
 class CloudWeatherObject(GameObject):
     """Cloud object that moves across the screen."""
     def __init__(self, y_pos, id_num):
-        from game_object import GameObject  # Import updated
         super().__init__(
             id=f"cloud_{id_num}",
             name="Cloud",
             description="A fluffy cloud floating in the sky",
             is_movable=False
         )
-        # ... existing code ...
 
 class LightningWeatherObject(GameObject):
     """Lightning bolt that briefly appears on the screen."""
     def __init__(self, x_pos, id_num):
-        from game_object import GameObject  # Import updated
         super().__init__(
             id=f"lightning_{id_num}",
             name="Lightning Bolt",
             description="A bright flash of lightning",
             is_movable=False
         )
-        # ... existing code ...

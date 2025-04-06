@@ -146,10 +146,10 @@ venv.bak/
 # mkdocs documentation
 /site
 .idea/*
-frontend/.idea
+frontend/.idea/*
 node_modules
 backend/output.mp3
-backend/.idea
+backend/.idea/*
 backend/game_output/*
 # mypy
 .mypy_cache/

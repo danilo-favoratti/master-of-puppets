@@ -99,7 +99,6 @@ class Container(GameObject):
         if not self.is_open:
             return {"success": False, "message": f"{self.name} is closed"}
         
-        # Handle different input types
         item_id = item_or_id.id if hasattr(item_or_id, 'id') else item_or_id
             
         for i, item in enumerate(self.contents):

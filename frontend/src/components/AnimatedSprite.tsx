@@ -57,21 +57,40 @@ export const AnimatedSprite = (props: AnimatedSpriteProps) => {
   useEffect(() => {
     if (!texture) return;
 
-    const currentState =
-      props.animationConfig?.[
-        props.state as keyof typeof props.animationConfig
-      ];
+    // Default animation configurations for different state types
+    const defaultAnimations: Record<string, any> = {
+      // Static state animations (single frame)
+      "unlit": { frame: { x: 0, y: 0 } },
+      "closed": { frame: { x: 0, y: 0 } },
+      "empty": { frame: { x: 0, y: 0 } },
+      "setup": { frame: { x: 0, y: 0 } },
+      "unrolled": { frame: { x: 2, y: 2 } },
+      "filled": { frame: { x: 0, y: 0 } },
+      "idle": { frame: { x: 0, y: 0 } },
+      "default": { frame: { x: 0, y: 0 } },
+      
+      // Add any other states that might come from the backend
+    };
+
+    // Get animation config for current state, fall back to defaults if not found
+    let currentState = props.animationConfig?.[
+      props.state as keyof typeof props.animationConfig
+    ];
 
     if (!currentState) {
-      console.warn(`Animation config for state "${props.state}" is missing`);
-      return;
+      // If missing in provided animationConfig, check our defaults
+      if (props.state && defaultAnimations[props.state]) {
+        currentState = defaultAnimations[props.state];
+        console.debug(`Using default animation for state "${props.state}"`);
+      } else {
+        // Fall back to a completely default state as last resort
+        currentState = defaultAnimations["default"];
+        console.warn(`Animation config for state "${props.state}" is missing, using fallback`);
+      }
     }
 
-    // Handle unlit state (static frame)
-    if (
-      (props.state === "unlit" || props.state === "idle") &&
-      "frame" in currentState
-    ) {
+    // Handle static frame states (unlit, idle, etc.)
+    if ("frame" in currentState) {
       const frame = currentState.frame;
       if (frame && typeof frame === "object" && "x" in frame && "y" in frame) {
         const { x, y } = frame;
@@ -140,14 +159,14 @@ export const AnimatedSprite = (props: AnimatedSpriteProps) => {
   const heightProportion = props.heightProportion || 1;
   const baseSize = props.size || 1;
 
-  let posY = props.position.y;
+  let posY = props.position[1];
 
   if (heightProportion != 1) {
     posY += baseSize / 2;
   }
 
   return (
-    <group position={[props.position.x, posY, props.zOffset || 0.01]}>
+    <group position={[props.position[0], posY, props.zOffset || 0.01]}>
       <mesh name={props.name} onClick={props.onClick}>
         <planeGeometry args={[baseSize, baseSize * heightProportion]} />
         <meshStandardMaterial

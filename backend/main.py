@@ -17,7 +17,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent_copywriter_direct import CompleteStoryResult
-from agent_puppet_master import create_puppet_master
 from agent_storyteller_final import StorytellerAgentFinal
 
 # Load environment variables
@@ -255,11 +254,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
                         # --- Initialize StorytellerAgent with the context ---
                         try:
-                            # Create a character controller agent
-                            char_controller_agent = create_puppet_master(person_name="Jan Character",
-                                                                         story_result=complete_story_result)
-                            session_data["char_controller_agent"] = char_controller_agent
-
                             storyteller_agent = StorytellerAgentFinal(
                                 complete_story_result=complete_story_result,  # Pass the validated object
                                 websocket=websocket  # Pass the websocket connection
@@ -335,14 +329,44 @@ async def websocket_endpoint(websocket: WebSocket):
                                     print(f"📄 Processing JSON response")
                                     # Extract text from answers for TTS
                                     try:
-                                        json_content = json.loads(response_data["content"])
-                                        # Ensure we handle potential list/dict structure correctly
-                                        answers_list = json_content.get("answers", [])
-                                        tts_text = " ".join([answer.get("description", "")
-                                                         for answer in answers_list if isinstance(answer, dict)])
+                                        json_content = response_data["content"]
+                                        # --- Granular TTS Text Preparation ---
+                                        tts_text = "" # Initialize
+                                        try:
+                                            answers_list = json_content.get("answers", []) if json_content else []
+                                            print(f"DEBUG: answers_list type: {type(answers_list)}, Length: {len(answers_list) if isinstance(answers_list, list) else 'N/A'}")
 
+                                            descriptions = []
+                                            if isinstance(answers_list, list):
+                                                for i, answer in enumerate(answers_list):
+                                                    if isinstance(answer, dict):
+                                                        desc = answer.get("description", "")
+                                                        if not isinstance(desc, str):
+                                                            print(f"WARNING: Description at index {i} is not a string (type: {type(desc)}). Using empty string.")
+                                                            descriptions.append("")
+                                                        else:
+                                                            descriptions.append(desc)
+                                                    else:
+                                                        print(f"WARNING: Item at index {i} in answers_list is not a dict (type: {type(answer)}). Skipping.")
+                                            
+                                            print(f"DEBUG: Extracted descriptions (before join): {descriptions}")
+
+                                            # Explicitly join the guaranteed list of strings
+                                            tts_text = " ".join(descriptions)
+
+                                        except Exception as join_error:
+                                            print(f"ERROR: Failed during description extraction or join: {join_error}")
+                                            traceback.print_exc()
+                                            # Fallback to empty string if extraction/join fails
+                                            tts_text = ""
+                                        # --------------------------------------
+
+                                        print(f"DEBUG: Type of tts_text after preparation: {type(tts_text)}")
+                                        print(f"DEBUG: Value of tts_text (first 100 chars): {tts_text[:100]}")
+
+                                        # --- TTS Generation with Input Validation ---
                                         # Generate TTS audio for the response
-                                        if tts_text.strip() and storyteller_agent.openai_client:  # Check if client exists
+                                        if isinstance(tts_text, str) and tts_text.strip() and storyteller_agent.openai_client:
                                             print(f"Generating TTS for: '{tts_text[:50]}...'")  # Log TTS text
                                             try:
                                                 speech_response = storyteller_agent.openai_client.audio.speech.create(
@@ -352,9 +376,25 @@ async def websocket_endpoint(websocket: WebSocket):
                                                 )
                                                 session_data["audio_sent_metadata"] = False
 
-                                                # Send the JSON content directly to the client
-                                                await on_response(response_data["content"])
+                                                # --- Send the STRUCTURED JSON response FIRST --- 
+                                                # Ensure content is a string for sending
+                                                json_string_content = "{}"
+                                                if isinstance(json_content, dict):
+                                                    try:
+                                                        json_string_content = json.dumps(json_content)
+                                                    except Exception as dump_err:
+                                                        print(f"ERROR dumping json_content for sending: {dump_err}")
+                                                elif isinstance(json_content, str): # Should not happen often now
+                                                    json_string_content = json_content
+                                                
+                                                await websocket.send_text(json.dumps({
+                                                    "type": "json", # <-- Send as type JSON
+                                                    "content": json_string_content, # <-- Send stringified JSON
+                                                    "sender": "character"
+                                                }))
+                                                # ---------------------------------------------
 
+                                                # --- THEN stream the TTS audio --- 
                                                 for chunk in speech_response.iter_bytes():
                                                     await on_audio(chunk)
 
@@ -383,7 +423,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                             answers_list = json_content.get("answers", [])
                                             tts_text = " ".join([answer.get("description", "")
                                                              for answer in answers_list if isinstance(answer, dict)])
-                                            if tts_text.strip() and storyteller_agent.openai_client:
+                                            
+                                            # Explicitly check if tts_text is a non-empty string
+                                            if isinstance(tts_text, str) and tts_text.strip() and storyteller_agent.openai_client:
                                                 print(f"Generating TTS for command response: '{tts_text[:50]}...'")
                                                 try:
                                                     speech_response = await storyteller_agent.openai_client.audio.speech.create(

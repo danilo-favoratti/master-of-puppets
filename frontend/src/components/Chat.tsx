@@ -46,17 +46,6 @@ class BackgroundMusicPlayer {
 // Get the singleton instance
 const globalMusicPlayer = BackgroundMusicPlayer.getInstance();
 
-// Add near the top, after imports
-// Enable or disable verbose logging
-const VERBOSE_LOGGING = false;
-
-// Helper function for conditional logging
-const log = (message: string, ...args: any[]) => {
-  if (VERBOSE_LOGGING) {
-    console.log(message, ...args);
-  }
-};
-
 interface ChatProps {
   messages: Array<{ content: string; sender: string; isError?: boolean; options?: string[]; messageId?: string}>;
   sendTextMessage: (message: string) => void;
@@ -94,9 +83,8 @@ const Chat = ({
   const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
   const hasPlayedAudioRef = useRef(false);
   const [isPlaying, setIsPlaying] = useState(false);
-
-  // Add a debug flag near the top
-  const DEBUG = true;
+  // Add a ref to store audio chunks
+  const audioChunksRef = useRef<Uint8Array[]>([]);
 
   // Add state for audio processing
   const [isProcessingAudio, setIsProcessingAudio] = useState(false);
@@ -116,9 +104,15 @@ const Chat = ({
   // Add a ref to track if we've explicitly started processing
   const hasStartedProcessingRef = useRef<boolean>(false);
 
+  // Add new state for initial wait
+  const [showInitialWait, setShowInitialWait] = useState(true);
+  const initialWaitDismissedRef = useRef(false); // Ref to ensure dismissal happens only once
+
+  // Add state for help panel visibility
+  const [isHelpVisible, setIsHelpVisible] = useState(false);
+
   // Reset all UI state indicators on component mount
   useEffect(() => {
-    log("Resetting all UI state indicators on component mount");
     // Reset recording state
     setIsRecording(false);
     // Reset audio processing state
@@ -137,6 +131,11 @@ const Chat = ({
     if (waitingTimerRef.current) {
       window.clearTimeout(waitingTimerRef.current);
       waitingTimerRef.current = null;
+    }
+
+    // Reset initial wait state ONLY IF it hasn't been dismissed yet
+    if (!initialWaitDismissedRef.current) {
+      setShowInitialWait(true);
     }
 
     // Mark that we're no longer in initial mount after a short delay
@@ -168,14 +167,42 @@ const Chat = ({
   // First, add a function to handle parsing string messages to check for JSON-in-string formatted messages
   const tryParseJsonInString = (text: string) => {
     try {
-      // Check if the string might be JSON (starts with '{' or '[')
-      if ((text.trim().startsWith('{') || text.trim().startsWith('[')) && 
-          (text.trim().endsWith('}') || text.trim().endsWith(']'))) {
-        return JSON.parse(text);
+      // Safety check for null/undefined
+      if (!text) return null;
+      
+      const cleanText = text.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+      
+      if ((cleanText.trim().startsWith('{') || cleanText.trim().startsWith('[')) && 
+          (cleanText.trim().endsWith('}') || cleanText.trim().endsWith(']'))) {
+        
+        try {
+          const parsed = JSON.parse(cleanText);
+          
+          if (parsed.answers && Array.isArray(parsed.answers)) {
+            return parsed;
+          }
+          
+          return parsed;
+        } catch (parseError) {
+          console.error("⚠️ Error parsing what looks like JSON:", parseError);
+          // Try a more lenient approach
+          try {
+            const sanitized = cleanText
+              .replace(/\\"/g, '"')      // Fix escaped quotes
+              .replace(/"{/g, '{')       // Fix starting brackets
+              .replace(/}"/g, '}')       // Fix ending brackets
+              .replace(/\\n/g, '')       // Remove newlines
+              .replace(/\\/g, '\\\\');   // Escape backslashes
+              
+            const reparsed = JSON.parse(sanitized);
+            return reparsed;
+          } catch (e) {
+            console.error("❌ Even sanitized parse failed:", e);
+          }
+        }
       }
     } catch (e) {
-      // If parsing fails, it's not valid JSON
-      log("Not valid JSON in message:", e);
+      console.error("❌ Error in tryParseJsonInString:", e);
     }
     return null;
   };
@@ -185,11 +212,8 @@ const Chat = ({
     if (!websocket) return;
     websocket.binaryType = "arraybuffer";
 
-    let audioChunks: Uint8Array[] = [];
     let isReceivingAudio = false;
     let audioStartReceived = false;
-
-    log("Setting up WebSocket listeners for audio");
 
     // Reset UI states when WebSocket changes
     setIsProcessingAudio(false);
@@ -201,33 +225,40 @@ const Chat = ({
         if (typeof event.data === "string") {
           try {
             const data = JSON.parse(event.data);
-            log("WebSocket received JSON message:", data.type);
+            
+            // Skip audio-related messages
+            if (data.type === "audio_start" || data.type === "audio_end" || data.type === "audio_data") {
+              // Handle internally without passing up
+              switch (data.type) {
+                case "audio_start":
+                  audioChunksRef.current = [];
+                  isReceivingAudio = true;
+                  audioStartReceived = true;
+                  hasPlayedAudioRef.current = false;
+                  break;
+                case "audio_end":
+                  handleAudioEnd();
+                  break;
+                default: // audio_data or others handled by binary handler
+                  break;
+              }
+              return; // Don't process further up the chain
+            }
 
+            // Handle non-audio JSON messages (errors, commands etc.)
             switch (data.type) {
-              case "audio_start":
-                log("WebSocket: Received audio_start signal");
-                isReceivingAudio = true;
-                audioStartReceived = true;
-                hasPlayedAudioRef.current = false;
-                audioChunks = [];
-                break;
-
-              case "audio_end":
-                handleAudioEnd();
-                break;
-
               case "error":
-                log("Received error from server:", data.content);
+                console.error("WebSocket error message:", data.content);
                 setIsProcessingAudio(false);
                 setIsWaitingForResponse(false);
                 break;
-
-              // Let App.tsx handle other message types
+              // Let App.tsx handle other message types if needed, but filter here
               default:
+                // If other message types need handling in Chat.tsx, add cases here
                 break;
             }
           } catch (jsonError) {
-            log("Error parsing JSON from WebSocket:", jsonError);
+            console.error("Error parsing JSON from WebSocket:", jsonError, "Raw data:", event.data);
           }
         }
         // Handle binary data (audio chunks)
@@ -235,117 +266,124 @@ const Chat = ({
           handleBinaryData(event.data);
         }
       } catch (err) {
-        log("Error in WebSocket message handler:", err);
+        console.error("Error in WebSocket message handler:", err);
       }
     };
 
     // Helper function to handle audio end
     const handleAudioEnd = () => {
-      log(
-        `WebSocket: Received audio_end signal, chunks: ${audioChunks.length}, audioStartReceived: ${audioStartReceived}`
-      );
-
-      if (audioStartReceived && audioChunks.length > 0 && !hasPlayedAudioRef.current) {
-        log(
-          `Playing audio: ${audioChunks.length} chunks totaling ${audioChunks.reduce(
-            (acc, chunk) => acc + chunk.length,
-            0
-          )} bytes`
-        );
-        playBufferedAudio(audioChunks);
-        hasPlayedAudioRef.current = true;
-      } else {
-        if (!audioStartReceived) {
-          log("Received audio_end but no audio_start was received");
-        }
-        if (audioChunks.length === 0) {
-          log("No audio chunks to play after audio_end");
-        }
-      }
-
-      // Reset state
       isReceivingAudio = false;
-      audioStartReceived = false;
-      audioChunks = [];
-    };
-
-    // Helper function to handle binary data
-    const handleBinaryData = (data: ArrayBuffer) => {
-      log(
-        `WebSocket: Received binary data, size: ${data.byteLength} bytes, isReceiving: ${isReceivingAudio}, audioStartReceived: ${audioStartReceived}`
-      );
-
-      if (isReceivingAudio && audioStartReceived) {
-        try {
-          const arrayBuf = new Uint8Array(data);
-          const isEndMarker = arrayBuf.length === 12;
-
-          if (isEndMarker) {
-            let endMarkerString = "";
-            for (let i = 0; i < arrayBuf.length; i++) {
-              endMarkerString += String.fromCharCode(arrayBuf[i]);
-            }
-            if (endMarkerString === "__AUDIO_END__") {
-              handleAudioEnd();
-            } else {
-              audioChunks.push(arrayBuf);
-            }
-          } else {
-            if (audioChunks.length === 0) {
-              logFirstChunk(arrayBuf);
-            }
-            audioChunks.push(arrayBuf);
-            logChunkProgress();
-          }
-        } catch (binaryError) {
-          log("Error processing binary data:", binaryError);
-        }
+      if (audioChunksRef.current.length > 0) {
+        analyzeAudioData(audioChunksRef.current);
+        emergencyPlayAudio();
       } else {
-        logAudioStateWarnings();
+        console.error("❌ No audio chunks to play after receiving audio_end");
+      }
+      setIsProcessingAudio(false);
+      setIsWaitingForResponse(false);
+    };
+
+    // Emergency direct audio playback method
+    const emergencyPlayAudio = () => {
+      try {
+        if (!audioChunksRef.current || audioChunksRef.current.length === 0) {
+          console.error("❌ No audio chunks available for emergency playback");
+          return;
+        }
+        
+        const totalBytes = audioChunksRef.current.reduce((total, chunk) => total + chunk.length, 0);
+        const combinedArray = new Uint8Array(totalBytes);
+        let offset = 0;
+        for (const chunk of audioChunksRef.current) {
+          combinedArray.set(chunk, offset);
+          offset += chunk.length;
+        }
+        
+        const blob = new Blob([combinedArray], { type: "audio/mpeg" });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio();
+        audio.src = url;
+        audio.volume = 1.0;
+        audio.muted = false;
+        
+        audioPlayerRef.current = audio;
+        document.body.appendChild(audio);
+        
+        const playPromise = audio.play();
+        if (playPromise) {
+          playPromise
+            .then(() => { /* Play started */ })
+            .catch(error => {
+              console.error("🚨 Emergency audio play failed:", error);
+              
+              // Create manual play button on failure
+              const playButton = document.createElement('button');
+              playButton.innerText = '▶️ Play Audio';
+              playButton.style.position = 'fixed';
+              playButton.style.bottom = '10px';
+              playButton.style.right = '10px';
+              playButton.style.zIndex = '9999';
+              playButton.style.padding = '10px';
+              playButton.style.backgroundColor = '#ff0000';
+              playButton.style.color = 'white';
+              playButton.style.border = 'none';
+              playButton.style.borderRadius = '5px';
+              playButton.style.cursor = 'pointer';
+              
+              playButton.onclick = () => {
+                audio.play().catch(e => console.error("🚨 Manual play failed:", e));
+                playButton.remove();
+              };
+              document.body.appendChild(playButton);
+              setTimeout(() => {
+                if (document.body.contains(playButton)) {
+                  playButton.remove();
+                }
+              }, 10000);
+            });
+        }
+        // Setup cleanup on end
+        audio.onended = () => {
+            URL.revokeObjectURL(url);
+            if (document.body.contains(audio)) {
+                document.body.removeChild(audio);
+            }
+        };
+        audio.onerror = (e) => {
+            console.error("🚨 Emergency audio error:", e, audio.error);
+            URL.revokeObjectURL(url); // Cleanup URL on error too
+            if (document.body.contains(audio)) {
+                document.body.removeChild(audio);
+            }
+        };
+
+      } catch (error) {
+        console.error("🚨 Critical error in emergency audio playback:", error);
       }
     };
 
-    // Helper function to log first chunk details
-    const logFirstChunk = (arrayBuf: Uint8Array) => {
-      log(
-        `Added FIRST audio chunk: ${arrayBuf.length} bytes, first 30 bytes:`,
-        Array.from(arrayBuf.slice(0, 30))
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join(" ")
-      );
-      const potentialHeader = Array.from(arrayBuf.slice(0, 3))
-        .map((b) => b.toString(16).padStart(2, "0"))
-        .join(" ");
-      log(`MP3 header check: ${potentialHeader}`);
-      if (arrayBuf.length < 100) {
-        log(`Suspiciously small first audio chunk: ${arrayBuf.length} bytes`);
+    // Function to handle binary data (audio chunks)
+    const handleBinaryData = (data: ArrayBuffer) => {
+      const chunk = new Uint8Array(data);
+      if (chunk.length === 12) { // Check for marker
+        try {
+          let endMarkerString = "";
+          for (let i = 0; i < chunk.length; i++) {
+            endMarkerString += String.fromCharCode(chunk[i]);
+          }
+          if (endMarkerString === "__AUDIO_END__") {
+            handleAudioEnd();
+            return;
+          }
+        } catch (error) {
+          console.error("Error checking for end marker:", error);
+        }
       }
-    };
-
-    // Helper function to log chunk progress
-    const logChunkProgress = () => {
-      if (audioChunks.length % 5 === 0) {
-        const totalSize = audioChunks.reduce((acc, chunk) => acc + chunk.length, 0);
-        log(
-          `Accumulated ${audioChunks.length} chunks, total size: ${totalSize} bytes`
-        );
-      }
-    };
-
-    // Helper function to log audio state warnings
-    const logAudioStateWarnings = () => {
-      if (!isReceivingAudio) {
-        log("Received binary data but isReceivingAudio is false");
-      }
-      if (!audioStartReceived) {
-        log("Received binary data but no audio_start was received");
-      }
+      audioChunksRef.current.push(chunk);
     };
 
     websocket.addEventListener("message", handleMessage);
-
     return () => {
-      log("Cleaning up WebSocket audio listeners");
       websocket.removeEventListener("message", handleMessage);
     };
   }, [websocket]);
@@ -400,7 +438,6 @@ const Chat = ({
     try {
       // Clear any previous state to ensure clean recording
       if (isProcessingAudio || isWaitingForResponse) {
-        log("Clearing previous states before starting new recording");
         setIsProcessingAudio(false);
         setIsWaitingForResponse(false);
 
@@ -441,17 +478,13 @@ const Chat = ({
 
       mediaRecorder.addEventListener("dataavailable", (event) => {
         if (event.data.size > 0) {
-          log(`Recording data available: ${event.data.size} bytes`);
           localChunks.push(event.data);
         }
       });
 
       mediaRecorder.addEventListener("stop", () => {
-        log("MediaRecorder stopped, sending accumulated data");
-
         // Combine all chunks into a single blob
         const completeBlob = new Blob(localChunks, { type: "audio/webm" });
-        log(`Complete recording size: ${completeBlob.size} bytes`);
 
         if (websocket && websocket.readyState === WebSocket.OPEN) {
           // Convert Blob to ArrayBuffer and send to server
@@ -462,44 +495,23 @@ const Chat = ({
               websocket.readyState === WebSocket.OPEN
             ) {
               const buffer = reader.result;
-              log(
-                `Sending complete audio data to server: ${buffer.byteLength} bytes`
-              );
 
-              // Verify buffer has content
-              if (buffer.byteLength > 0) {
-                // Log first 10 bytes for debugging
-                const view = new Uint8Array(buffer);
-                log(
-                  `First 10 bytes of audio data: [${Array.from(
-                    view.slice(0, 10)
-                  ).join(", ")}]`
-                );
+              // Send the binary data first
+              websocket.send(buffer);
 
-                // Send the binary data first
-                websocket.send(buffer);
+              // Then signal the end of audio after a small delay to ensure the binary data is processed
+              setTimeout(() => {
+                if (websocket.readyState === WebSocket.OPEN) {
+                  websocket.send(
+                    JSON.stringify({
+                      type: "audio_end",
+                    })
+                  );
 
-                // Then signal the end of audio after a small delay to ensure the binary data is processed
-                setTimeout(() => {
-                  if (websocket.readyState === WebSocket.OPEN) {
-                    log("Sending audio_end signal");
-                    websocket.send(
-                      JSON.stringify({
-                        type: "audio_end",
-                      })
-                    );
-
-                    // Only show processing immediately after recording, before transcription
-                    startProcessingWithTimeout();
-                  }
-                }, 200);
-              } else {
-                log("Empty audio buffer, not sending");
-                // Notify user of empty recording
-                alert(
-                  "No audio was recorded. Please try again and speak into your microphone."
-                );
-              }
+                  // Only show processing immediately after recording, before transcription
+                  startProcessingWithTimeout();
+                }
+              }, 200);
             }
           };
           reader.readAsArrayBuffer(completeBlob);
@@ -513,7 +525,7 @@ const Chat = ({
       // Start visualizing audio
       visualizeAudio();
     } catch (err) {
-      log("Error accessing microphone:", err);
+      console.error("Error accessing microphone:", err);
       alert(
         "Could not access microphone. Please check your browser permissions."
       );
@@ -527,9 +539,6 @@ const Chat = ({
       mediaRecorderRef.current &&
       mediaRecorderRef.current.state !== "inactive"
     ) {
-      log(
-        "Stopping MediaRecorder - chunks will be processed in the stop event handler"
-      );
       mediaRecorderRef.current.stop();
     }
 
@@ -578,7 +587,6 @@ const Chat = ({
     } else {
       // Stop any currently playing audio before starting recording
       if (audioPlayerRef.current) {
-        log("Stopping audio playback before recording");
         audioPlayerRef.current.pause();
         audioPlayerRef.current.currentTime = 0;
         setIsPlaying(false);
@@ -587,201 +595,97 @@ const Chat = ({
     }
   };
 
-  // Helper function to detect audio format from header bytes
-  const detectAudioFormat = (firstChunk: Uint8Array): string => {
-    if (!firstChunk || firstChunk.length < 4) {
-      log(
-        "Not enough data to detect audio format, defaulting to audio/mpeg"
-      );
-      return "audio/mpeg";
-    }
-
-    // Check for MP3 header (usually starts with ID3 or first byte is 0xFF)
-    if (
-      (firstChunk[0] === 0x49 &&
-        firstChunk[1] === 0x44 &&
-        firstChunk[2] === 0x33) || // ID3
-      (firstChunk[0] === 0xff && (firstChunk[1] & 0xe0) === 0xe0) // MPEG sync word
-    ) {
-      log("Detected MP3 format");
-      return "audio/mpeg";
-    }
-
-    // Check for WAV header
-    if (
-      firstChunk[0] === 0x52 &&
-      firstChunk[1] === 0x49 &&
-      firstChunk[2] === 0x46 &&
-      firstChunk[3] === 0x46
-    ) {
-      log("Detected WAV format");
-      return "audio/wav";
-    }
-
-    // Check for Ogg/Opus/Vorbis header
-    if (
-      firstChunk[0] === 0x4f &&
-      firstChunk[1] === 0x67 &&
-      firstChunk[2] === 0x67 &&
-      firstChunk[3] === 0x53
-    ) {
-      log("Detected Ogg format");
-      return "audio/ogg";
-    }
-
-    // Default to MP3 if format is unknown
-    log("Unknown audio format, defaulting to audio/mpeg");
-    return "audio/mpeg";
-  };
-
-  // New playBufferedAudio function:
+  // Updated playBufferedAudio function:
   const playBufferedAudio = (chunks: Uint8Array[]) => {
-    if (DEBUG) log("Playing buffered audio, chunks:", chunks.length);
-
-    if (chunks.length === 0) {
-      log("No audio chunks to play");
-      return;
-    }
-
     try {
-      let mimeType = "audio/mpeg";
-      if (chunks.length > 0 && chunks[0].length > 0) {
-        mimeType = detectAudioFormat(chunks[0]);
+      if (!chunks || chunks.length === 0) {
+        console.error("❌ No audio chunks to play");
+        return;
       }
 
-      const blob = new Blob(chunks, { type: mimeType });
-      if (DEBUG)
-        log(
-          `Created audio blob with type ${mimeType}, size: ${blob.size}`
-        );
-
-      const url = URL.createObjectURL(blob);
-      if (DEBUG) log("Created URL for audio blob:", url);
-
-      // Use only the main audio player for playback
-      tryPlayWithMainAudio(url);
-    } catch (error) {
-      log("Error in playBufferedAudio:", error);
-    }
-  };
-
-  // Helper function to try playing with the main audio player
-  const tryPlayWithMainAudio = (url: string) => {
-    try {
-      log(
-        `Trying with main audio player (current mute state: ${isMuted})`
-      );
-      if (!audioPlayerRef.current) {
-        log("Audio player not initialized yet");
-        const audio = new Audio();
-        audio.autoplay = false;
-        audio.preload = "auto";
-
-        // Important: Apply the mute setting immediately to the new audio element
-        audio.muted = isMuted;
-        log(`Created new Audio element with muted=${isMuted}`);
-
-        audioPlayerRef.current = audio;
+      // Create a single buffer from all chunks
+      const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+      
+      if (totalLength === 0) {
+        console.error("❌ Total audio size is 0 bytes");
+        return;
       }
-
-      // Reset the audio element
-      try {
-        audioPlayerRef.current.pause();
-        audioPlayerRef.current.currentTime = 0;
-      } catch (e) {
-        log("Error resetting audio element:", e);
+      
+      const combined = new Uint8Array(totalLength);
+      
+      let offset = 0;
+      for (const chunk of chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.length;
       }
-
-      // Set up audio for playback
-      audioPlayerRef.current.src = url;
-      audioPlayerRef.current.preload = "auto";
-
-      // Forcefully apply the mute state before trying to play
-      audioPlayerRef.current.muted = isMuted;
-      audioPlayerRef.current.volume = 0.5;
-
-      log(
-        `Audio player setup complete: src=${url}, muted=${audioPlayerRef.current.muted}, volume=${audioPlayerRef.current.volume}`
-      );
-
-      // Let the browser know we want to play audio
-      audioPlayerRef.current.load();
-
-      log(
-        `Attempting to play with main audio player... (muted: ${isMuted}, audioPlayer.muted: ${audioPlayerRef.current.muted})`
-      );
-
-      // Add a retry mechanism
-      let retryCount = 0;
-      const maxRetries = 3;
-
-      const attemptPlay = () => {
-        // Double-check mute state right before playing
-        if (
-          audioPlayerRef.current &&
-          audioPlayerRef.current.muted !== isMuted
-        ) {
-          log(
-            `Fixing mute state discrepancy right before playing: ${isMuted} vs ${audioPlayerRef.current.muted}`
-          );
-          audioPlayerRef.current.muted = isMuted;
+      
+      // Determine content type based on header analysis
+      let contentType = "audio/mpeg"; // Default to MP3
+      
+      // Check for MP3 header
+      if (combined.length >= 3) {
+        const hasId3Header = combined[0] === 0x49 && combined[1] === 0x44 && combined[2] === 0x33; // "ID3"
+        const hasMp3FrameHeader = combined[0] === 0xFF && (combined[1] & 0xE0) === 0xE0;
+        
+        if (hasId3Header || hasMp3FrameHeader) {
+          contentType = "audio/mpeg";
         }
-
-        audioPlayerRef
-          .current!.play()
-          .then(() => {
-            log("Main audio player playback started successfully");
-
-            // One last check after play starts
-            setTimeout(() => {
-              if (
-                audioPlayerRef.current &&
-                audioPlayerRef.current.muted !== isMuted
-              ) {
-                log(
-                  `Post-playback mute correction: setting to ${isMuted}`
-                );
-                audioPlayerRef.current.muted = isMuted;
-              }
-            }, 100);
-          })
-          .catch((err) => {
-            log(
-              `Error playing with main audio player (attempt ${
-                retryCount + 1
-              }/${maxRetries}):`,
-              err
-            );
-
-            if (retryCount < maxRetries) {
-              retryCount++;
-              log(`Retrying playback in ${retryCount * 500}ms...`);
-
-              // Try again with a delay
-              setTimeout(attemptPlay, retryCount * 500);
-            } else {
-              log("Failed to play audio after multiple attempts");
-
-              // Show alert to user only on the final failure
-              if (err.name === "NotAllowedError") {
-                alert(
-                  "Audio playback was blocked. Please enable autoplay in your browser settings for this site."
-                );
-              } else if (
-                err.name === "AbortError" ||
-                err.name === "NotSupportedError"
-              ) {
-                alert(
-                  "The audio format is not supported by your browser. You may not hear responses."
-                );
-              }
-            }
+      }
+      
+      // Create blob with detected content type
+      const blob = new Blob([combined], { type: contentType });
+      const url = URL.createObjectURL(blob);
+      
+      // Create audio element
+      const audio = new Audio();
+      
+      // Set up more comprehensive event handlers
+      audio.addEventListener("canplaythrough", () => {
+        audio.play()
+          .then(() => { /* Playback started */ })
+          .catch(e => {
+            console.error("❌ Play failed:", e);
+            
+            // Try alternative approach with user interaction
+            const playOnNextClick = () => {
+              audio.play().catch(err => console.error("❌ Play on click failed:", err));
+              document.removeEventListener("click", playOnNextClick);
+            };
+            
+            document.addEventListener("click", playOnNextClick, { once: true });
           });
-      };
-
-      attemptPlay();
-    } catch (error) {
-      log("Error in tryPlayWithMainAudio:", error);
+      });
+      
+      audio.addEventListener("ended", () => {
+        URL.revokeObjectURL(url);
+      });
+      
+      audio.addEventListener("error", (e) => {
+        console.error("❌ Audio error:", e);
+        // Log the error code for debugging
+        const errorCodes = ["MEDIA_ERR_ABORTED", "MEDIA_ERR_NETWORK", "MEDIA_ERR_DECODE", "MEDIA_ERR_SRC_NOT_SUPPORTED"];
+        if (audio.error) {
+          console.error(`❌ Error code: ${errorCodes[audio.error.code - 1] || "Unknown"}`);
+        }
+        
+        // Try alternative format as fallback
+        if (contentType === "audio/mpeg") {
+          console.log("🎵 Trying fallback format: audio/mp3");
+          const fallbackBlob = new Blob([combined], { type: "audio/mp3" });
+          audio.src = URL.createObjectURL(fallbackBlob);
+          audio.load();
+        }
+      });
+      
+      // Store reference for access elsewhere
+      audioPlayerRef.current = audio;
+      
+      // Set source and load
+      audio.src = url;
+      audio.volume = 0.8; // Higher volume for TTS
+      audio.load();
+    } catch (e) {
+      console.error("❌ Critical error playing audio:", e);
     }
   };
 
@@ -801,7 +705,6 @@ const Chat = ({
   const startProcessingWithTimeout = () => {
     setIsProcessingAudio(true);
     hasStartedProcessingRef.current = true;
-    log("Audio processing started");
 
     // Clear any existing timer
     if (processingTimerRef.current) {
@@ -811,7 +714,6 @@ const Chat = ({
     // Set a timeout to clear the processing state after 20 seconds
     processingTimerRef.current = window.setTimeout(() => {
       if (isProcessingAudio) {
-        log("Audio processing timed out after 20 seconds");
         setIsProcessingAudio(false);
       }
     }, 20000);
@@ -820,7 +722,6 @@ const Chat = ({
   // Set waiting state with timeout
   const startWaitingWithTimeout = () => {
     setIsWaitingForResponse(true);
-    log("Waiting for agent response");
 
     // Clear any existing waiting timer
     if (waitingTimerRef.current) {
@@ -830,63 +731,23 @@ const Chat = ({
     // Set a timeout to clear the waiting state after 30 seconds
     waitingTimerRef.current = window.setTimeout(() => {
       if (isWaitingForResponse) {
-        log("Waiting for response timed out after 30 seconds");
         setIsWaitingForResponse(false);
       }
     }, 30000);
   };
-
-  // Add a useEffect to log state changes
-  useEffect(() => {
-    log(
-      `State change - isRecording: ${isRecording}, isProcessingAudio: ${isProcessingAudio}, isWaitingForResponse: ${isWaitingForResponse}, isThinking: ${isThinking}, isPlaying: ${isPlaying}`
-    );
-  }, [
-    isRecording,
-    isProcessingAudio,
-    isWaitingForResponse,
-    isThinking,
-    isPlaying,
-  ]);
-
-  // Force reset all states on initial render with a delay - this should fix any "stuck" states
-  useEffect(() => {
-    const forceResetTimer = setTimeout(() => {
-      log(
-        "FORCE RESET: Resetting all UI state indicators after timeout"
-      );
-      setIsRecording(false);
-      setIsProcessingAudio(false);
-      setIsWaitingForResponse(false);
-      setIsPlaying(false);
-      hasStartedProcessingRef.current = false;
-    }, 300);
-
-    return () => clearTimeout(forceResetTimer);
-  }, []);
 
   // Function to ensure active audio playback respects the current mute setting
   const applyMuteStateToAudio = () => {
     if (audioPlayerRef.current) {
       // Check if the current mute state matches what we expect
       if (audioPlayerRef.current.muted !== isMuted) {
-        log(
-          `Audio player mute state (${audioPlayerRef.current.muted}) doesn't match expected state (${isMuted}), correcting...`
-        );
         audioPlayerRef.current.muted = isMuted;
-      } else {
-        log(
-          `Audio player mute state already matches expected state (${isMuted})`
-        );
       }
     }
   };
 
   // Update audio player mute state when isMuted changes
   useEffect(() => {
-    log(
-      `isMuted state changed to: ${isMuted} - updating audio player state`
-    );
     applyMuteStateToAudio();
   }, [isMuted]);
 
@@ -894,10 +755,23 @@ const Chat = ({
   useEffect(() => {
     // If there's any message not from the user, clear the waiting state.
     if (messages.some((msg) => msg.sender !== "user")) {
-      log("Received response. Clearing waiting state.");
       setIsWaitingForResponse(false);
     }
   }, [messages]);
+
+  // Add Effect to dismiss initial wait
+  useEffect(() => {
+    // Check if wait state is active and hasn't been dismissed before
+    if (showInitialWait && !initialWaitDismissedRef.current) {
+      // Check if there's at least one non-user message
+      const hasAssistantMessage = messages.some(msg => msg.sender !== 'user');
+
+      if (hasAssistantMessage) {
+        setShowInitialWait(false);
+        initialWaitDismissedRef.current = true; // Mark as dismissed
+      }
+    }
+  }, [messages, showInitialWait]); // Depend on messages and the wait state
 
   // Determine container class based on sender
   const getContainerClass = (sender: string) => {
@@ -923,12 +797,8 @@ const Chat = ({
         if (musicElement) {
           // Element already exists, just update volume
           musicElement.volume = 0.03; // Lowered volume
-          log("Found existing music element, set volume to 0.03");
           return;
         }
-        
-        // Limit console logging
-        log("🎵 Initializing background music (once-only)");
         
         // Create a stable element outside React
         const audio = new Audio();
@@ -938,7 +808,6 @@ const Chat = ({
         audio.src = "/audio/music.ogg";
         
         // Force volume setting
-        console.log("🎵 Setting music volume to 0.03 (3%)"); // Updated log message
         
         // Set a play handler that won't trigger re-renders
         audio.oncanplaythrough = () => {
@@ -949,12 +818,12 @@ const Chat = ({
             const playPromise = audio.play();
             if (playPromise) {
               playPromise.catch((e) => {
-                log("Music autoplay error:", e);
+                console.error("Music autoplay error:", e);
                 // Don't update state here
               });
             }
           } catch (err) {
-            log("Music setup error:", err);
+            console.error("Music setup error:", err);
           }
         };
         
@@ -964,7 +833,7 @@ const Chat = ({
         // Store reference in global player using the proper accessor
         globalMusicPlayer.setAudioElement(audio);
       } catch (err) {
-        log("Fatal music init error:", err);
+        console.error("Fatal music init error:", err);
       }
     }
   }, [isMapReady]); 
@@ -992,18 +861,202 @@ const Chat = ({
             if (audioEl) audioEl.volume = 0.03; // Lowered volume
           }, 100);
         }).catch(err => {
-          log("Music toggle error:", err);
+          console.error("Music toggle error:", err);
         });
       }
     } catch (err) {
-      log("Music toggle error:", err);
+      console.error("Music toggle error:", err);
     }
   }, []);
 
+  // Add this to the Chat component to force play audio - using enhanced emergency playback
+  const forcePlayAudio = (chunks: Uint8Array[]) => {
+    
+    try {
+      // Create combined buffer
+      const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+      
+      if (totalLength === 0) {
+        console.error("⚠️ No audio data to play!");
+        return;
+      }
+      
+      const combined = new Uint8Array(totalLength);
+      
+      let offset = 0;
+      for (const chunk of chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.length;
+      }
+      
+      // Try all possible formats
+      const mimeTypes = ["audio/mpeg", "audio/mp3", "audio/ogg", "audio/webm", "audio/wav"];
+      
+      // Create direct audio element
+      const blob = new Blob([combined], { type: "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
+      
+      // Create and force-play the audio
+      const audio = new Audio();
+      audio.src = url;
+      audio.volume = 1.0;  // Maximum volume
+      audio.muted = false; // Ensure not muted
+      
+      audio.onerror = (e) => console.error("🔊 Force Play error:", e, audio.error);
+      
+      // Add to DOM to help with playback
+      document.body.appendChild(audio);
+      
+      // Force play
+      const playPromise = audio.play();
+      if (playPromise) {
+        playPromise.then(() => {
+          
+          // Store reference to control
+          audioPlayerRef.current = audio;
+          
+          // Clean up after playing
+          audio.onended = () => {
+            URL.revokeObjectURL(url);
+            if (document.body.contains(audio)) {
+              document.body.removeChild(audio);
+            }
+          };
+        }).catch(e => {
+          console.error("🔊 Force Play failed:", e);
+          
+          // Try browser interaction trick
+          const playButton = document.createElement('button');
+          playButton.innerText = '▶️ Play Audio';
+          playButton.style.position = 'fixed';
+          playButton.style.bottom = '10px';
+          playButton.style.left = '10px';
+          playButton.style.zIndex = '9999';
+          playButton.style.padding = '10px';
+          playButton.style.backgroundColor = '#ff0000';
+          playButton.style.color = 'white';
+          playButton.style.border = 'none';
+          playButton.style.borderRadius = '5px';
+          playButton.style.cursor = 'pointer';
+          
+          playButton.onclick = () => {
+            audio.play().catch(e => console.error("🔊 Manual play failed:", e));
+            playButton.remove();
+          };
+          
+          document.body.appendChild(playButton);
+          
+          // Auto-remove after 10 seconds
+          setTimeout(() => {
+            if (document.body.contains(playButton)) {
+              playButton.remove();
+            }
+          }, 10000);
+          
+          URL.revokeObjectURL(url);
+        });
+      }
+    } catch (e) {
+      console.error("❌ Critical audio play error:", e);
+    }
+  };
+
+  // Helper function to analyze audio data and log diagnostic information
+  const analyzeAudioData = (chunks: Uint8Array[]) => {
+    if (!chunks || chunks.length === 0) {
+      return false;
+    }
+    
+    // Log total size
+    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+    
+    // Combine all chunks for analysis
+    const combined = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.length;
+    }
+    
+    // Check for common audio file headers
+    const checkMp3Header = () => {
+      // MP3 files start with ID3 or with an MP3 frame header (first byte 0xFF)
+      if (combined.length < 3) return false;
+      
+      const hasId3Header = combined[0] === 0x49 && combined[1] === 0x44 && combined[2] === 0x33; // "ID3"
+      const hasMp3FrameHeader = combined[0] === 0xFF && (combined[1] & 0xE0) === 0xE0;
+      
+      if (hasId3Header) {
+        return true;
+      } else if (hasMp3FrameHeader) {
+        return true;
+      }
+      
+      return false;
+    };
+    
+    // Check for specific formats
+    const isMp3 = checkMp3Header();
+    
+    return isMp3;
+  };
+
   return (
     <div className="chat-container">
-      <div className="chat-header">
+      <div className="chat-header" style={{ position: 'relative' }}>
         <h2>Chat</h2>
+        <span 
+          style={{
+            cursor: 'pointer', 
+            fontSize: '1.0rem',
+            backgroundColor: 'rgba(0,0,0,0.5)', 
+            color: 'white', 
+            borderRadius: '50%', 
+            width: '20px',
+            height: '20px', 
+            display: 'inline-flex',
+            alignItems: 'center', 
+            justifyContent: 'center',
+            userSelect: 'none',
+            marginLeft: '8px',
+            verticalAlign: 'middle'
+          }}
+          onMouseEnter={() => setIsHelpVisible(true)}
+          onMouseLeave={() => setIsHelpVisible(false)}
+        >
+          ?
+        </span>
+        {isHelpVisible && (
+          <div style={{
+            position: 'absolute',
+            top: '25px',
+            left: '40px',
+            zIndex: 11,
+            backgroundColor: 'rgba(0,0,0,0.8)', 
+            color: 'white', 
+            padding: '10px',
+            borderRadius: '5px',
+            fontSize: '0.9rem',
+            width: '200px',
+            boxShadow: '0 2px 5px rgba(0,0,0,0.3)'
+          }}>
+            <strong>How to Play:</strong>
+            <ul style={{ margin: '5px 0 0 15px', padding: 0, listStyleType: 'disc' }}>
+              <li>Type commands like:</li>
+                <ul style={{ margin: '2px 0 0 15px', padding: 0, listStyleType: 'circle' }}>
+                  <li>"walk left 3 steps"</li>
+                  <li>"run all the way right"</li>
+                  <li>"go south" or "move down"</li>
+                  <li>"what can you see around?"</li>
+                  <li>"examine the chest"</li>
+                  <li>"pick up the key"</li>
+                  <li>"use key with chest"</li>
+                </ul>
+              <li>Click the 🎤 icon to speak commands.</li>
+              <li>Explore and interact!</li>
+            </ul>
+          </div>
+        )}
         <div
           className={`connection-status ${
             isConnected ? "connected" : "disconnected"
@@ -1014,6 +1067,14 @@ const Chat = ({
       </div>
 
       <div className="messages-container">
+        {showInitialWait && (
+          <div className="message-container system-container">
+            <div className="message system-message wait-message">
+              Wait...
+            </div>
+          </div>
+        )}
+
         {messages
           .filter(msg => !msg.content.trim().startsWith('```'))
           // Add filter to remove Json_response messages
@@ -1045,13 +1106,6 @@ const Chat = ({
             ) === index;
           })
           .map((msg, index) => {
-          // Enhanced logging to debug message rendering
-          log(`Rendering message ${index}:`, { 
-            sender: msg.sender, 
-            content: msg.content.substring(0, 30),
-            containerClass: getContainerClass(msg.sender),
-            messageClass: getMessageClass(msg.sender)
-          });
           
           // Try to parse JSON in content string
           const jsonContent = tryParseJsonInString(msg.content);
@@ -1078,8 +1132,6 @@ const Chat = ({
                             key={optIndex}
                             className="option-button"
                             onClick={() => {
-                              // Only send the message, don't update the input field
-                              // setMessage(option);
                               sendTextMessage(option);
                             }}
                           >
@@ -1094,7 +1146,69 @@ const Chat = ({
             );
           }
           
-          // Regular message rendering with explicit classes
+          // For assistant messages, split by sentences and render each in its own balloon
+          if (msg.sender !== 'user') {
+            // Split the message content into sentences
+            // Match sentence endings with period, question mark, or exclamation followed by space or end of string
+            const sentences = msg.content.split(/(?<=[.!?])\s+|(?<=[.!?])$/).filter(sentence => sentence.trim().length > 0);
+            
+            // If no sentences detected (e.g., just fragments), treat as single message
+            if (sentences.length <= 1) {
+              return (
+                <div key={`${index}-${msg.sender}-${msg.content.substring(0, 10)}`} className={`message-container ${getContainerClass(msg.sender)}`}>
+                  <div className={`message ${getMessageClass(msg.sender)} ${msg.isError ? 'error' : ''}`} data-sender={msg.sender}>
+                    {msg.content}
+                  </div>
+                  {msg.options && msg.options.length > 0 && (
+                    <div className="options-container">
+                      {msg.options.map((option, optIndex) => (
+                        <button
+                          key={optIndex}
+                          className="option-button"
+                          onClick={() => sendTextMessage(option)}
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            
+            // Render multiple balloons for multiple sentences
+            return (
+              <React.Fragment key={`${index}-${msg.sender}-multi`}>
+                {sentences.map((sentence, sentenceIndex) => (
+                  <div 
+                    key={`${index}-${msg.sender}-${sentenceIndex}`} 
+                    className={`message-container ${getContainerClass(msg.sender)}`}
+                    style={{ marginBottom: sentenceIndex < sentences.length - 1 ? '6px' : '12px' }}
+                  >
+                    <div className={`message ${getMessageClass(msg.sender)} ${msg.isError ? 'error' : ''}`} data-sender={msg.sender}>
+                      {sentence}
+                    </div>
+                    {/* Only show options on the last sentence */}
+                    {sentenceIndex === sentences.length - 1 && msg.options && msg.options.length > 0 && (
+                      <div className="options-container">
+                        {msg.options.map((option, optIndex) => (
+                          <button
+                            key={optIndex}
+                            className="option-button"
+                            onClick={() => sendTextMessage(option)}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </React.Fragment>
+            );
+          }
+          
+          // Regular user message rendering with explicit classes (no splitting for user messages)
           return (
             <div key={`${index}-${msg.sender}-${msg.content.substring(0, 10)}`} className={`message-container ${getContainerClass(msg.sender)}`}>
               <div className={`message ${getMessageClass(msg.sender)} ${msg.isError ? 'error' : ''}`} data-sender={msg.sender}>
@@ -1107,7 +1221,6 @@ const Chat = ({
                       key={optIndex}
                       className="option-button"
                       onClick={() => {
-                        // Only send the message, don't update the input field
                         sendTextMessage(option);
                       }}
                     >
@@ -1175,76 +1288,60 @@ const Chat = ({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="input-area">
+      <div className={`input-area ${!showInitialWait ? 'visible' : ''}`}>
         <form onSubmit={handleSubmit}>
           <button
             type="button"
             className={`mute-button ${isMuted ? "muted" : "unmuted"}`}
             onClick={() => {
               const newMutedState = !isMuted;
-              log(
-                `Mute button clicked: changing from ${
-                  isMuted ? "muted" : "unmuted"
-                } to ${newMutedState ? "muted" : "unmuted"}`
-              );
 
               // Update React state
               setIsMuted(newMutedState);
-
-              // Immediately apply mute setting to currently playing audio
               if (audioPlayerRef.current) {
                 // Force mute state change
                 audioPlayerRef.current.muted = newMutedState;
-                log(
-                  `Applied mute setting to audio player: ${newMutedState} (actual: ${audioPlayerRef.current.muted})`
-                );
 
                 // Force browser to recognize the mute state change by manipulating volume slightly
                 const currentVolume = audioPlayerRef.current.volume;
-                audioPlayerRef.current.volume =
-                  currentVolume > 0.5
-                    ? currentVolume - 0.01
-                    : currentVolume + 0.01;
-                audioPlayerRef.current.volume = currentVolume;
-
-                // Force a check of the player state
+                // Ensure volume is mutable (not 0 or 1)
+                if (currentVolume > 0 && currentVolume < 1) {
+                    audioPlayerRef.current.volume =
+                      currentVolume > 0.5
+                        ? currentVolume - 0.01
+                        : currentVolume + 0.01;
+                    audioPlayerRef.current.volume = currentVolume; // Restore original volume immediately
+                } else if (currentVolume === 0) {
+                    audioPlayerRef.current.volume = 0.01;
+                    audioPlayerRef.current.volume = 0;
+                } else { // volume === 1
+                    audioPlayerRef.current.volume = 0.99;
+                    audioPlayerRef.current.volume = 1;
+                }
+                
+                // Force a check of the player state after a short delay
                 setTimeout(() => {
-                  if (audioPlayerRef.current) {
+                  if (audioPlayerRef.current) { // Check again inside timeout
                     if (audioPlayerRef.current.muted !== newMutedState) {
-                      log(
-                        `Mute state mismatch after click: expected ${newMutedState}, got ${audioPlayerRef.current.muted}`
-                      );
-                      // Force it again with a different approach
+                      // Force it again if the state didn't stick
                       audioPlayerRef.current.muted = newMutedState;
-                      // Try toggling pause/play to refresh audio state if currently playing
+                      // Try toggling pause/play to refresh audio state if it was playing
                       if (!audioPlayerRef.current.paused) {
-                        const currentTime = audioPlayerRef.current.currentTime;
-                        audioPlayerRef.current.pause();
-                        setTimeout(() => {
-                          if (audioPlayerRef.current) {
-                            audioPlayerRef.current.currentTime = currentTime;
-                            audioPlayerRef
-                              .current
-                              .play()
-                              .catch((e) =>
-                                log(
-                                  "Error resuming after mute toggle:",
-                                  e
-                                )
-                              );
-                          }
-                        }, 50);
-                      }
-                    } else {
-                      log(
-                        `Mute state confirmed after click: ${audioPlayerRef.current.muted}`
-                      );
-                    }
-                  }
-                }, 50);
-              } else {
-                log("No audio player available to mute/unmute");
-              }
+                          const currentTime = audioPlayerRef.current.currentTime;
+                          audioPlayerRef.current.pause();
+                          // Use another timeout to resume play after pause
+                          setTimeout(() => {
+                              if (audioPlayerRef.current) {
+                                  audioPlayerRef.current.currentTime = currentTime;
+                                  audioPlayerRef.current.play()
+                                      .catch((e) => console.error("Error resuming after mute toggle:", e)); // Keep essential error
+                              }
+                          }, 50); // Delay before resuming play
+                      } // End if !paused
+                    } // End if muted state mismatch
+                  } // End if audioPlayerRef check inside timeout
+                }, 50); // Delay for state check
+              } // End if audioPlayerRef check
             }}
             disabled={!isConnected}
             style={{

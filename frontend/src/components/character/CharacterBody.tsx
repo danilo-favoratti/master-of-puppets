@@ -141,79 +141,79 @@ const CharacterBody = forwardRef<
           isMoving: true,
         });
       },
-      // Update move method signature here
+      // Replace the existing move method with the updated logic below
       move: (direction: string, steps: number = 1, onComplete?: () => void) => {
         movementLog(`📍 CharacterBody.move called with direction: ${direction}, steps: ${steps}`);
+        // Store the final onComplete callback to be called only when the *entire* path is traversed
         setCurrentOnComplete(() => onComplete || null);
 
-        // --- Use logical position prop for calculation --- 
-        // Instead of: const currentPos = meshRef.current.position;
         const currentLogicalX = position[0];
         const currentLogicalY = position[1];
-        const currentZ = position[2] || 0.03; // Use prop Z or default
-        
+        const currentZ = position[2] || 0.03; // Use prop Z or default Z offset
         movementLog("📍 Current logical position:", [currentLogicalX, currentLogicalY, currentZ]);
 
-        let targetX = currentLogicalX;
-        let targetY = currentLogicalY;
-        // --- End position change ---
+        const path: Position[] = [];
+        let deltaX = 0;
+        let deltaY = 0;
 
-        // Calculate target offset based on direction and steps
+        // Determine the change per step based on direction
         switch (direction.toLowerCase()) {
-          case 'up':
-            movementLog("📍 MOVE HITTING 'UP'");
-            targetY += steps;
-            break;
-          case 'down':
-            movementLog("📍 MOVE HITTING 'DOWN'");
-            targetY -= steps;
-            break;
-          case 'left':
-            movementLog("📍 MOVE HITTING 'LEFT'");
-            targetX -= steps;
-            break;
-          case 'right':
-            movementLog("📍 MOVE HITTING 'RIGHT'");
-            targetX += steps;
-            break;
+          case 'up': deltaY = 1; break;
+          case 'down': deltaY = -1; break;
+          case 'left': deltaX = -1; break;
+          case 'right': deltaX = 1; break;
           default:
             console.warn(`Unknown direction: ${direction}`);
-            setCurrentOnComplete(null);
-            onComplete?.();
+            setCurrentOnComplete(null); // Clear callback
+            onComplete?.(); // Call immediately as the command is invalid
             return;
         }
-        
-        const targetPosition = { x: targetX, y: targetY };
-        // Use currentZ for the target log
-        movementLog("📍 Final target position calculated:", [targetPosition.x, targetPosition.y, currentZ]);
 
-        const path: Position[] = [targetPosition];
+        // Generate intermediate path points for each step requested
+        for (let i = 1; i <= steps; i++) {
+            const targetX = currentLogicalX + deltaX * i;
+            const targetY = currentLogicalY + deltaY * i;
+            path.push({ x: targetX, y: targetY });
+            movementLog(`📍 Adding step ${i}/${steps} to path:`, { x: targetX, y: targetY });
+        }
 
-        // Set animation based on direction
+        movementLog("📍 Final path calculated:", path);
+
+        // If no steps were generated (steps <= 0), complete immediately
+        if (path.length === 0) {
+             movementLog("📍 Path is empty (steps <= 0?), completing immediately.");
+             setCurrentOnComplete(null); // Clear callback
+             onComplete?.(); // Call immediately
+             return;
+        }
+
+        // Set the appropriate walking animation based on direction
+        // This animation will persist for the duration of the path traversal
         let newAnimation: CharacterAnimationType;
         switch(direction.toLowerCase()) {
           case 'up': newAnimation = CharacterAnimationType.WALK_UP; break;
           case 'down': newAnimation = CharacterAnimationType.WALK_DOWN; break;
           case 'left': newAnimation = CharacterAnimationType.WALK_LEFT; break;
           case 'right': newAnimation = CharacterAnimationType.WALK_RIGHT; break;
-          default: newAnimation = CharacterAnimationType.WALK_DOWN;
+          default: newAnimation = CharacterAnimationType.WALK_DOWN; // Sensible default
         }
-        
-        // --- Store the intended animation for the whole move --- 
-        animationRef.current = newAnimation; // Update the ref directly
-        movementLog("📍 Setting animation ref to:", newAnimation);
+
+        animationRef.current = newAnimation; // Update the ref used by useFrame animation logic
+        movementLog("📍 Setting animation ref for movement:", newAnimation);
         if (setAnimation) {
-          // Also update the state to trigger immediate visual change if needed
+          // Update state to potentially trigger immediate visual change
           setAnimation(newAnimation);
         }
-        // --- End animation change ---
 
-        movementLog("📍 Setting movement state with final path:", path);
+        // Start the movement process using the generated multi-point path
+        movementLog("📍 Setting movement state with multi-step path:", path);
         setMovementState({
           path,
-          currentPathIndex: 0,
+          currentPathIndex: 0, // Start at the first step in the path
           isMoving: true,
         });
+        // onComplete is NOT called here; it's stored in currentOnComplete
+        // and will be called by useFrame when the *last* point in the path is reached.
       },
     }));
 
@@ -224,105 +224,105 @@ const CharacterBody = forwardRef<
       const currentPos = meshRef.current.position; // Still use live position for animation
       const currentPathIndex = movementState.currentPathIndex;
 
-      if (!movementState.path || currentPathIndex >= movementState.path.length) {
-        // This case should ideally be hit when path is completed
-        movementLog("📍 Movement complete - path index out of bounds or path empty");
-        setMovementState((prev) => ({ ...prev, isMoving: false }));
+      // Check if path is valid and index is within bounds BEFORE accessing path[index]
+      if (!movementState.path || currentPathIndex < 0 || currentPathIndex >= movementState.path.length) {
+        // Path completed or invalid index - Stop movement
+        movementLog("📍 Path exhausted or index invalid. Stopping movement.");
+        setMovementState((prev) => ({ ...prev, isMoving: false, currentPathIndex: 0, path: [] })); // Reset path state
 
-        // --- Call the stored onComplete callback --- 
+        // Call final completion callback if it exists
         if (currentOnComplete) {
-            movementLog("✅ Calling stored onComplete callback");
-            currentOnComplete();
-            setCurrentOnComplete(null); // Clear after calling
-        }
-        // --- End onComplete call ---
-
-        // --- Fix Idle Animation Logic --- 
-        const completedAnimation = animationRef.current;
-        let idleAnimation = CharacterAnimationType.IDLE_DOWN;
-        if (completedAnimation === CharacterAnimationType.WALK_UP) {
-          idleAnimation = CharacterAnimationType.IDLE_UP;
-        } else if (completedAnimation === CharacterAnimationType.WALK_LEFT) {
-          idleAnimation = CharacterAnimationType.IDLE_LEFT;
-        } else if (completedAnimation === CharacterAnimationType.WALK_RIGHT) {
-          idleAnimation = CharacterAnimationType.IDLE_RIGHT;
-        } // Defaults to IDLE_DOWN otherwise
-        
-        movementLog("📍 Setting idle animation:", idleAnimation);
-        // --- End Idle Animation Fix ---
-        setAnimation?.(idleAnimation);
-        
-        setCurrentFrame(0);
-        setFrameTimeAccumulator(0);
-        if (setPosition) {
-          setPosition([currentPos.x, currentPos.y, currentPos.z]);
-        }
-        return;
-      }
-
-      const target = movementState.path[currentPathIndex];
-      // Ensure Z position is maintained correctly if needed
-      const targetPos = new THREE.Vector3(target.x, target.y, currentPos.z);
-      const distance = currentPos.distanceTo(targetPos);
-
-      // Check if target is reached
-      if (distance < 0.01) {
-        movementLog("📍 Reached target", currentPathIndex, ". Final position:", [target.x, target.y, currentPos.z]);
-        // Snap to target position
-        currentPos.x = target.x;
-        currentPos.y = target.y;
-        if (setPosition) {
-          setPosition([target.x, target.y, currentPos.z]);
-        }
-        
-        setMovementState((prev) => ({ ...prev, isMoving: false }));
-
-        if (currentOnComplete) {
-          movementLog("✅ Calling stored onComplete callback after reaching target");
+          movementLog("✅ Calling stored onComplete callback (path exhausted).");
           currentOnComplete();
           setCurrentOnComplete(null);
         }
 
-        // --- Fix Idle Animation Logic (Copied from above block) --- 
+        // Set idle animation
         const completedAnimation = animationRef.current;
         let idleAnimation = CharacterAnimationType.IDLE_DOWN;
-        if (completedAnimation === CharacterAnimationType.WALK_UP) {
-          idleAnimation = CharacterAnimationType.IDLE_UP;
-        } else if (completedAnimation === CharacterAnimationType.WALK_LEFT) {
-          idleAnimation = CharacterAnimationType.IDLE_LEFT;
-        } else if (completedAnimation === CharacterAnimationType.WALK_RIGHT) {
-          idleAnimation = CharacterAnimationType.IDLE_RIGHT;
-        }
-        movementLog("📍 Setting idle animation:", idleAnimation);
-        // --- End Idle Animation Fix --- 
+        if (completedAnimation === CharacterAnimationType.WALK_UP) idleAnimation = CharacterAnimationType.IDLE_UP;
+        else if (completedAnimation === CharacterAnimationType.WALK_LEFT) idleAnimation = CharacterAnimationType.IDLE_LEFT;
+        else if (completedAnimation === CharacterAnimationType.WALK_RIGHT) idleAnimation = CharacterAnimationType.IDLE_RIGHT;
+        movementLog("📍 Setting idle animation (path exhausted):", idleAnimation);
         setAnimation?.(idleAnimation);
-        
-        setCurrentFrame(0);
-        setFrameTimeAccumulator(0);
+
+        // Update final position in store
         if (setPosition) {
           setPosition([currentPos.x, currentPos.y, currentPos.z]);
         }
-        return;
+        return; // Exit frame processing for this movement cycle
       }
 
-      // Calculate movement vector towards the single target in the path
-      const moveDirection = new THREE.Vector3()
-        .subVectors(targetPos, currentPos)
-        .normalize();
-      let movement = moveDirection.clone().multiplyScalar(speed * delta);
-      
-      if (movement.length() >= distance) {
-        movement.setLength(distance);
-      }
-      
-      const newPosition = currentPos.clone().add(movement);
-      
-      // Replace verbose movement log with conditional logging
-      movementLog(`📍 Moving character. Delta: ${delta.toFixed(4)}, Speed: ${speed}, Target: [${target.x.toFixed(2)}, ${target.y.toFixed(2)}], Dist: ${distance.toFixed(4)}, Movement:`, [movement.x.toFixed(4), movement.y.toFixed(4)], "New Pos:", [newPosition.x.toFixed(4), newPosition.y.toFixed(4)]);
-      
-      // Update state ONLY
-      if (setPosition) {
-        setPosition([newPosition.x, newPosition.y, newPosition.z]);
+      // --- Target Calculation --- 
+      const target = movementState.path[currentPathIndex];
+      const targetPos = new THREE.Vector3(target.x, target.y, currentPos.z); // Use current Z
+      const distance = currentPos.distanceTo(targetPos);
+
+      // --- Check if Current Target Reached --- 
+      if (distance < 0.01) {
+        movementLog(`📍 Reached target ${currentPathIndex}:`, target);
+        // Snap to target position
+        currentPos.x = target.x;
+        currentPos.y = target.y;
+        if (setPosition) {
+          setPosition([target.x, target.y, currentPos.z]); // Update store with exact target
+        }
+
+        // --- Advance to Next Path Index --- 
+        const nextPathIndex = currentPathIndex + 1;
+
+        // --- Check if Entire Path Completed --- 
+        if (nextPathIndex >= movementState.path.length) {
+          movementLog("🏁 Reached FINAL target in path. Stopping movement.");
+          setMovementState((prev) => ({ ...prev, isMoving: false, currentPathIndex: 0, path: [] })); // Reset path state
+
+          // Call final completion callback
+          if (currentOnComplete) {
+            movementLog("✅ Calling stored onComplete callback (final target).");
+            currentOnComplete();
+            setCurrentOnComplete(null);
+          }
+
+          // Set idle animation based on the direction of the completed walk
+          const completedAnimation = animationRef.current;
+          let idleAnimation = CharacterAnimationType.IDLE_DOWN;
+          if (completedAnimation === CharacterAnimationType.WALK_UP) idleAnimation = CharacterAnimationType.IDLE_UP;
+          else if (completedAnimation === CharacterAnimationType.WALK_LEFT) idleAnimation = CharacterAnimationType.IDLE_LEFT;
+          else if (completedAnimation === CharacterAnimationType.WALK_RIGHT) idleAnimation = CharacterAnimationType.IDLE_RIGHT;
+          movementLog("📍 Setting idle animation (final target):", idleAnimation);
+          setAnimation?.(idleAnimation);
+          
+          return; // Exit frame processing for this movement cycle
+        } else {
+          // --- More Steps Remain: Update Index and Continue --- 
+          movementLog(`📍 Advancing to next target index: ${nextPathIndex}`);
+          setMovementState((prev) => ({ ...prev, currentPathIndex: nextPathIndex }));
+          // Do NOT return here, let the next frame handle movement towards the new target
+        }
+
+      } else {
+        // --- Move Towards Current Target ---
+        const moveDirection = new THREE.Vector3()
+          .subVectors(targetPos, currentPos)
+          .normalize();
+        let movement = moveDirection.clone().multiplyScalar(speed * delta);
+
+        // Prevent overshooting the target
+        if (movement.length() >= distance) {
+          movement.setLength(distance);
+        }
+
+        const newPosition = currentPos.clone().add(movement);
+
+        movementLog(`📍 Moving towards target ${currentPathIndex} (${target.x.toFixed(2)}, ${target.y.toFixed(2)}). Dist: ${distance.toFixed(3)}`);
+
+        // Explicitly update the mesh position for this frame
+        meshRef.current.position.copy(newPosition);
+
+        // Update position state store as well (if applicable)
+        if (setPosition) {
+          setPosition([newPosition.x, newPosition.y, newPosition.z]);
+        }
       }
     });
 

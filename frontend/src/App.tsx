@@ -31,6 +31,7 @@ let connectionCount = 0;
 
 // Enable or disable verbose logging
 const VERBOSE_LOGGING = false;
+const DEBUG_WEBSOCKET = true; // Set to true to log all WebSocket messages
 
 // Helper function for conditional logging
 const log = (message: string, ...args: any[]) => {
@@ -62,6 +63,46 @@ interface QueuedCommand {
     result: string;
     params: any;
 }
+
+// Helper function for WebSocket message logging
+const logWebSocketMessage = (message: any, type: string) => {
+    if (DEBUG_WEBSOCKET) {
+        // Skip ALL binary data and audio-related messages
+        if (type === "BINARY" || 
+            (typeof message === "object" && 
+             (message.type === "audio_start" || 
+              message.type === "audio_end" ||
+              message.type === "audio_data"))) {
+          return; // Skip logging audio messages completely
+        }
+        
+        const timestamp = new Date().toISOString();
+        console.log(`[${timestamp}] App WebSocket RECEIVED ${type}:`, message);
+        
+        // For JSON messages, log detailed content
+        if (typeof message === "object") {
+            try {
+                // Log message type and important fields
+                const msgType = message.type || "unknown-type";
+                console.log(`  → Type: ${msgType}`);
+                
+                // Log different fields based on message type
+                if (msgType === "command") {
+                    console.log(`  → Command: ${message.name || "unnamed"}`);
+                    console.log(`  → Params:`, message.params || {});
+                    console.log(`  → Result: ${message.result?.substring(0, 100)}${message.result?.length > 100 ? "..." : ""}`);
+                } else if (msgType === "text" || msgType === "user_message") {
+                    console.log(`  → Content: ${message.content?.substring(0, 100)}${message.content?.length > 100 ? "..." : ""}`);
+                    console.log(`  → Sender: ${message.sender || "unknown"}`);
+                } else if (msgType === "error") {
+                    console.error(`  → ERROR: ${message.content || "No error message"}`);
+                }
+            } catch (e) {
+                console.error("Error parsing WebSocket message details:", e);
+            }
+        }
+    }
+};
 
 function App() {
     const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -149,12 +190,22 @@ function App() {
             newSocket.onmessage = (event) => {
                 // Check if binary data (audio chunks) - already handled in Chat component
                 if (event.data instanceof ArrayBuffer) {
+                    // Skip logging binary data
                     return;
                 }
 
                 try {
                     // Try to parse JSON message
                     const data = JSON.parse(event.data);
+                    
+                    // Skip logging audio-related messages
+                    if (data.type === "audio_start" || data.type === "audio_end" || data.type === "audio_data") {
+                        return;
+                    }
+                    
+                    // Log all other WebSocket messages with details
+                    logWebSocketMessage(data, "JSON");
+                    
                     if (VERBOSE_LOGGING) {
                         console.log("WEBSOCKET: Received message:", data);
                     } else if (data.type === "error") {
@@ -191,9 +242,14 @@ function App() {
                         ]);
                         setLoadingMap(false);
                     } else if (data.type === "json") {
-                        // JSON content with answers array
+                        // Handle AnswerSet format - The backend now directly provides AnswerSet objects
+                        // We can use the content directly or parse it if it's a string
                         try {
-                            const jsonContent = JSON.parse(data.content);
+                            let jsonContent = data.content;
+                            // Parse the content if it's a string
+                            if (typeof data.content === 'string') {
+                                jsonContent = JSON.parse(data.content);
+                            }
 
                             // Check if this contains thinking messages
                             const hasThinkingMessages = jsonContent.answers?.some(
@@ -211,20 +267,33 @@ function App() {
                                             const msgJson = tryParseJsonInString(msg.content);
                                             return !(msgJson?.answers?.some((a: any) => a.isThinking === true));
                                         })
-                                        .concat([{content: data.content, sender: data.sender || "character"}])
+                                        .concat([{
+                                            content: typeof data.content === 'string' 
+                                                ? data.content 
+                                                : JSON.stringify(jsonContent),
+                                            sender: data.sender || "character"
+                                        }])
                                 );
                             } else {
                                 // Regular handling for thinking messages - add them to the messages
                                 setMessages((prevMessages) => [
                                     ...prevMessages,
-                                    {content: data.content, sender: data.sender || "character"},
+                                    {
+                                        content: typeof data.content === 'string' 
+                                            ? data.content 
+                                            : JSON.stringify(jsonContent),
+                                        sender: data.sender || "character"
+                                    },
                                 ]);
                             }
                         } catch (e) {
-                            console.error("Error parsing JSON content:", e);
+                            console.error("Error processing JSON content:", e);
                             setMessages((prevMessages) => [
                                 ...prevMessages,
-                                {content: data.content, sender: data.sender || "character"},
+                                {content: typeof data.content === 'string' 
+                                    ? data.content 
+                                    : JSON.stringify(data.content),
+                                sender: data.sender || "character"},
                             ]);
                         }
                     } else if (data.type === "error") {
@@ -480,7 +549,16 @@ function App() {
     // Helper function to handle JSON messages
     const handleJsonMessage = (data: any) => {
         try {
-            const jsonContent = typeof data.content === 'string' ? JSON.parse(data.content) : data.content;
+            // Handle AnswerSet format from backend
+            let jsonContent: any;
+            
+            // Support both string content and direct object content
+            if (typeof data.content === 'string') {
+                jsonContent = JSON.parse(data.content);
+            } else {
+                // Content is already an object 
+                jsonContent = data.content;
+            }
 
             // Check if this contains thinking messages
             const hasThinkingMessages = jsonContent.answers?.some(
@@ -490,7 +568,10 @@ function App() {
             // If this has thinking messages, handle specially
             if (hasThinkingMessages) {
                 // Direct add for thinking messages
-                setMessages((prevMessages) => [...prevMessages, { content: JSON.stringify(jsonContent), sender: "assistant" }]);
+                setMessages((prevMessages) => [...prevMessages, { 
+                    content: typeof jsonContent === 'string' ? jsonContent : JSON.stringify(jsonContent), 
+                    sender: "assistant" 
+                }]);
             } else {
                 // If not thinking messages, filter out any previous thinking messages
                 setMessages((prevMessages) =>
@@ -500,7 +581,10 @@ function App() {
                             const msgJson = tryParseJsonInString(msg.content);
                             return !(msgJson?.answers?.some((a: any) => a.isThinking === true));
                         })
-                        .concat([{ content: typeof data.content === 'string' ? data.content : JSON.stringify(jsonContent), sender: "assistant" }])
+                        .concat([{ 
+                            content: typeof jsonContent === 'string' ? jsonContent : JSON.stringify(jsonContent), 
+                            sender: "assistant" 
+                        }])
                 );
             }
 
@@ -510,8 +594,12 @@ function App() {
                 setIsThinking(false);
             }
         } catch (err) {
-            console.error("Error parsing JSON message:", err);
-            addMessage(data.content, "assistant");
+            console.error("Error processing JSON message:", err);
+            // Fall back to adding the raw content
+            addMessage(
+                typeof data.content === 'string' ? data.content : JSON.stringify(data.content), 
+                "assistant"
+            );
             setIsThinking(false); // Make sure to clear thinking state on error
         }
     };

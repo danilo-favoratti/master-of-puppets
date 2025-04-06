@@ -1,11 +1,7 @@
 import {GameEntity} from "./entities";
 
-export interface Position {
-  x: number;
-  y: number;
-  z?: number;
-}
-
+// Use type alias for array format
+export type Position = [number, number] | [number, number, number]; // Allow optional z
 
 export interface Square {
   position: Position;

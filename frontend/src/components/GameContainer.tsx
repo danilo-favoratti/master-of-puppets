@@ -62,7 +62,7 @@ const GameContainer = ({
   // change debug ui to true when key is pressed
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "/") {
+      if (event.key === "F8") {
         setShowDebugUi((prev) => !prev);
       }
     };
@@ -81,6 +81,14 @@ const GameContainer = ({
         setIsLoading(false);
         setMapInitialized(true);
         log("Game initialized with valid map data from props");
+
+        // Try to find the player entity ("game-char") in the mapData entities
+        const playerEntity = mapData.entities.find(entity => entity.id === 'game-char');
+        if (playerEntity && playerEntity.position) {
+          const charInitialX = playerEntity.position[0]; // Use array index 0 for x
+          const charInitialY = playerEntity.position[1]; // Use array index 1 for y
+          console.log(`Player found in mapData. Initial Position: [${charInitialX}, ${charInitialY}]`);
+        }
       } else {
         log("Received mapData prop is missing map or entities:", mapData);
       }
