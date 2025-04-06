@@ -32,14 +32,7 @@ let connectionCount = 0;
 
 // Enable or disable verbose logging
 const VERBOSE_LOGGING = false;
-const DEBUG_WEBSOCKET = true; // Set to true to log all WebSocket messages
-
-// Helper function for conditional logging
-const log = (message: string, ...args: any[]) => {
-    if (VERBOSE_LOGGING) {
-        console.log(message, ...args);
-    }
-};
+const DEBUG_WEBSOCKET = true; // Keep this true for now if you still want basic WS message logs, or set to false
 
 // Helper function to parse JSON from string
 const tryParseJsonInString = (text: string) => {
@@ -64,46 +57,6 @@ interface QueuedCommand {
     result: string;
     params: any;
 }
-
-// Helper function for WebSocket message logging
-const logWebSocketMessage = (message: any, type: string) => {
-    if (DEBUG_WEBSOCKET) {
-        // Skip ALL binary data and audio-related messages
-        if (type === "BINARY" || 
-            (typeof message === "object" && 
-             (message.type === "audio_start" || 
-              message.type === "audio_end" ||
-              message.type === "audio_data"))) {
-          return; // Skip logging audio messages completely
-        }
-        
-        const timestamp = new Date().toISOString();
-        console.log(`[${timestamp}] App WebSocket RECEIVED ${type}:`, message);
-        
-        // For JSON messages, log detailed content
-        if (typeof message === "object") {
-            try {
-                // Log message type and important fields
-                const msgType = message.type || "unknown-type";
-                console.log(`  → Type: ${msgType}`);
-                
-                // Log different fields based on message type
-                if (msgType === "command") {
-                    console.log(`  → Command: ${message.name || "unnamed"}`);
-                    console.log(`  → Params:`, message.params || {});
-                    console.log(`  → Result: ${message.result?.substring(0, 100)}${message.result?.length > 100 ? "..." : ""}`);
-                } else if (msgType === "text" || msgType === "user_message") {
-                    console.log(`  → Content: ${message.content?.substring(0, 100)}${message.content?.length > 100 ? "..." : ""}`);
-                    console.log(`  → Sender: ${message.sender || "unknown"}`);
-                } else if (msgType === "error") {
-                    console.error(`  → ERROR: ${message.content || "No error message"}`);
-                }
-            } catch (e) {
-                console.error("Error parsing WebSocket message details:", e);
-            }
-        }
-    }
-};
 
 function App() {
     const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -155,10 +108,6 @@ function App() {
 
     // Connect to backend WebSocket
     useEffect(() => {
-        if (VERBOSE_LOGGING) {
-            console.log(`Creating WebSocket connection #${++connectionCount}`);
-        }
-        
         const connectWebSocket = () => {
             console.log("WEBSOCKET: Connecting at:", WS_URL);
             const newSocket = new WebSocket(WS_URL);
@@ -173,36 +122,27 @@ function App() {
                 console.log("WEBSOCKET: Connection closed");
                 setIsConnected(false);
                 setSocketMessage("Connection closed");
-                // Reset command queue on disconnect
                 setCommandQueue([]);
                 setIsProcessingAnimation(false);
                 if (processingTimeoutRef.current) {
                     clearTimeout(processingTimeoutRef.current);
                 }
-                // Try to reconnect after a delay
                 setTimeout(connectWebSocket, 3000);
             };
 
             newSocket.onerror = (error) => {
                 console.error("WEBSOCKET: Error:", error);
-                setSocketMessage("Error: " + JSON.stringify(error)); // Stringify error for display
+                setSocketMessage("Error: " + JSON.stringify(error));
             };
 
-            // Process incoming messages
             newSocket.onmessage = (event) => {
                 if (event.data instanceof ArrayBuffer || event.data instanceof Blob) {
-                    logWebSocketMessage(event.data, "BINARY"); // Log binary slightly differently
-                    // Audio handled in Chat
                     return;
                 }
-
                 try {
                     const data = JSON.parse(event.data);
-                    logWebSocketMessage(data, "JSON");
-                    handleServerMessage(data); // Centralized message handler
-
+                    handleServerMessage(data);
                 } catch (error) {
-                    logWebSocketMessage(event.data, "TEXT/ERROR"); // Log raw text if JSON fails
                     console.error("Error processing message:", error);
                     addMessage(`Received unparseable message: ${event.data}`, "system", true);
                     setIsThinking(false);
@@ -213,85 +153,53 @@ function App() {
                     }
                 }
             };
-
             setSocket(newSocket);
-
-            // Cleanup on unmount
-            return () => {
-                if (newSocket === globalSocket) {
-                    globalSocket = null;
-                }
-                newSocket.close();
-            };
+            return () => { newSocket.close(); };
         };
-
         connectWebSocket();
-    }, []); // Empty dependency array ensures this runs only once
+    }, []);
 
     // --- Command Queue Processing Effect ---
     useEffect(() => {
         const processNextCommand = () => {
-            if (isProcessingAnimation || commandQueue.length === 0) {
-                return;
-            }
-
+            if (isProcessingAnimation || commandQueue.length === 0) return;
             const commandToProcess = commandQueue[0];
-            log(`⚙️ Dequeuing command: ${commandToProcess.name} (ID: ${commandToProcess.id})`);
             setIsProcessingAnimation(true);
-
             const onComplete = () => {
-                log(`✅ Animation complete for command: ${commandToProcess.name} (ID: ${commandToProcess.id})`);
-                setCommandQueue((prevQueue) => 
-                    prevQueue.filter((cmd) => cmd.id !== commandToProcess.id)
-                );
+                setCommandQueue((prevQueue) => prevQueue.filter((cmd) => cmd.id !== commandToProcess.id));
                 setIsProcessingAnimation(false);
                 if (processingTimeoutRef.current) {
                     clearTimeout(processingTimeoutRef.current);
                     processingTimeoutRef.current = null;
                 }
             };
-            
             processingTimeoutRef.current = setTimeout(() => {
                 console.warn(`⌛ Animation timeout for command: ${commandToProcess.name} (ID: ${commandToProcess.id}). Forcing completion.`);
                 onComplete();
             }, ANIMATION_TIMEOUT);
-
             try {
-                executeCommand(
-                    commandToProcess.name,
-                    commandToProcess.result,
-                    commandToProcess.params,
-                    onComplete
-                );
+                executeCommand(commandToProcess.name, commandToProcess.result, commandToProcess.params, onComplete);
             } catch (error) {
                 console.error(`🔴 Error executing command ${commandToProcess.name} from queue:`, error);
                 onComplete();
             }
         };
-
         if (!isProcessingAnimation && commandQueue.length > 0) {
             processNextCommand();
         }
-
-        // Cleanup timeout on unmount or if queue state changes
         return () => {
-            if (processingTimeoutRef.current) {
-                clearTimeout(processingTimeoutRef.current);
-            }
+            if (processingTimeoutRef.current) clearTimeout(processingTimeoutRef.current);
         };
     }, [commandQueue, isProcessingAnimation]);
-    // -------------------------------------
 
     // Reset thinking state on component mount
     useEffect(() => {
-        log("Resetting thinking state on App mount");
         setIsThinking(false);
     }, []);
 
     // Update the handleServerMessage function to handle 'info' message type
     const handleServerMessage = (data: any) => {
         setIsWaitingForResponse(false);
-        log("Received server message:", data);
 
         try {
             // Handle different message types
@@ -311,42 +219,28 @@ function App() {
                     break;
 
                 case "command":
-                    // ---> Log ALL commands received
-                    log(`Received command: ${data.name}`, data);
                     setToolCalls(prev => [{ id: Date.now().toString(), name: data.name, params: data.params || {}, timestamp: Date.now(), result: (data.result && data.result.trim()) ? data.result : undefined }, ...prev].slice(0, 50));
                     if (["move", "move_step", "jump"].includes(data.name)) {
-                        log(`📬 Queuing command: ${data.name}`);
                         const newCommand: QueuedCommand = { id: `${data.name}-${Date.now()}`, name: data.name, result: data.result || "", params: data.params || {} };
                         setCommandQueue((prev) => [...prev, newCommand]);
                         if (data.name === "move" && data.result && !data.params?.continuous) addMessage(data.result, data.sender || "system");
                     } else if (data.name === "create_map") {
-                         // ---> Log specific create_map command
-                         log("Received create_map command data:", data);
                         if (data.map_data?.grid) {
-                            // ---> Log that grid exists
-                            log("Processing create_map: Found valid grid data.");
                             const newMapData: GameData = { map: { width: data.map_data.width, height: data.map_data.height, grid: data.map_data.grid }, entities: data.entities || [] };
-                            // ---> Log map data before setting state
-                            log("Setting mapData state with:", newMapData);
                             setMapData(newMapData);
                             setIsMapReady(true);
                             setIsMapCreated(true);
                             setGameStarted(true);
                             setLoadingMap(false);
-                            // ---> Show intro portal AFTER map data is set
                             setIsShowingIntroPortal(true); 
                             if (data.result) addMessage(data.result, data.sender || "system");
                         } else {
-                            // ---> Log if grid is missing
-                            log("Processing create_map: Invalid or missing grid data."); 
                             console.error("Invalid create_map data:", data);
                             setLoadingMap(false);
-                            // Don't show portal on error
                             setIsShowingIntroPortal(false); 
                             addMessage("Error: Failed processing map data.", "system", true);
                         }
                     } else {
-                        log(`🚀 Executing non-animation command: ${data.name}`);
                         if (data.result) addMessage(data.result, data.sender || "system");
                         executeCommand(data.name, data.result || "", data.params || {}, () => {});
                     }
@@ -362,17 +256,12 @@ function App() {
                     break;
 
                 case "user_message":
-                    // Handle the new user_message type (for voice input)
                     addMessage(data.content, "user");
                     setIsWaitingForResponse(false);
                     break;
 
                 case "info":
-                    log("Info message received:", data.content);
-                    // Add to messages if it's informative to the user
-                    if (data.content && data.content.includes("Map created")) {
-                        addMessage("Map created and ready for exploration!", "system");
-                    }
+                    if (data.content?.includes("Map created")) addMessage("Map created!", "system");
                     break;
 
                 case "json":
@@ -386,19 +275,17 @@ function App() {
                     break;
 
                 default:
-                    log(`Received unhandled message type: ${data.type}`);
+                    console.log(`Received unhandled message type: ${data.type}`);
                     break;
             }
         } catch (err) {
             console.error("Error processing server message:", err);
-            setIsShowingIntroPortal(false); // Ensure portal is hidden on general error
+            setIsShowingIntroPortal(false);
         } finally {
             const jsonContent = data.type === 'json' ? tryParseJsonInString(data.content) : null;
             const isStillThinking = jsonContent?.answers?.some((a: any) => a.isThinking === true);
             if (!isStillThinking) {
                  setIsThinking(false);
-                 // Consider hiding portal here too if thinking stops before map arrives?
-                 // For now, let create_map handle hiding it.
             }
         }
     };
@@ -478,7 +365,6 @@ function App() {
               content.includes("pushed") ||
               content.includes("pulled"))) || 
               content.includes("Could not move")) { // Filter move failures too
-            log("Filtered out tool message from chat:", content);
             return; // Skip adding this message to the chat
         }
 
@@ -487,63 +373,43 @@ function App() {
 
     // Update sendTextMessage to use the correct message format
     const sendTextMessage = (message: string) => {
-        if (!isConnected || !socket) {
-            console.error("Not connected to WebSocket server");
-            return;
-        }
-
-        // Add the user's message to the messages array first
+        if (!isConnected || !socket) { console.error("Not connected"); return; }
         addMessage(message, "user");
-
         setIsThinking(true);
-
-        // Use the format the backend expects
-        const data = {
-            type: "text",
-            content: message
-        };
-
-        try {
-            socket.send(JSON.stringify(data));
-        } catch (err) {
-            console.error("Error sending message:", err);
-            setIsThinking(false);
-            addMessage("Failed to send message. Please try again.", "system", true);
+        const data = { type: "text", content: message };
+        try { socket.send(JSON.stringify(data)); } 
+        catch (err) { 
+            console.error("Send error:", err);
+            setIsThinking(false); 
+            addMessage("Send failed.", "system", true); 
         }
     };
 
     // Execute a command
     const executeCommand = useCallback((commandName: string, result: string, params: any, onComplete: () => void) => {
-        log(`🚀 executeCommand called:`, { commandName, params });
-        
         if (gameCommandHandlerRef.current) {
-            try {
-                log(`🚀 Forwarding command to gameCommandHandler: ${commandName}`);
-                gameCommandHandlerRef.current(commandName, result, params, onComplete);
-                log(`🚀 Command forwarded successfully`);
-            } catch (error) {
-                console.error(`Error forwarding command ${commandName}:`, error);
-                onComplete();
+            try { 
+                gameCommandHandlerRef.current(commandName, result, params, onComplete); 
+            } catch (error) { 
+                console.error(`Forwarding error ${commandName}:`, error);
+                onComplete(); 
             }
-        } else {
-            console.warn(`No gameCommandHandler registered for command: ${commandName}. Calling onComplete immediately.`);
-            onComplete();
+        } else { 
+            console.warn(`No handler for: ${commandName}. Completing.`);
+            onComplete(); 
         }
-    }, [gameCommandHandlerRef]);
+    }, []);
 
     // Toggle chat visibility
     const toggleChat = () => {
-        log("Toggle Chat called");
     };
 
     // Send theme selection
     const sendThemeSelection = (theme: string) => {
         if (!socket || socket.readyState !== WebSocket.OPEN) { console.error('Socket not ready'); addMessage("Error: Not connected.", "system", true); setIsThinking(false); setThemeIsSelected(false); return; }
-        console.log('Sending theme:', theme);
         setIsThinking(true); 
         setLoadingMap(true); 
-        // ---> REMOVED showing portal here
-        // setIsShowingIntroPortal(true); 
+        setIsShowingIntroPortal(true); 
         const message = { type: 'set_theme', theme: theme };
         try { socket.send(JSON.stringify(message)); } 
         catch (err) { 
@@ -551,7 +417,7 @@ function App() {
             setIsThinking(false); 
             setLoadingMap(false); 
             setThemeIsSelected(false); 
-            setIsShowingIntroPortal(false); // Ensure portal hidden on error
+            setIsShowingIntroPortal(false); 
             addMessage("Error sending theme.", "system", true); 
         }
     };
@@ -566,7 +432,6 @@ function App() {
             return; 
         }
         if (socket.readyState !== WebSocket.OPEN) {
-            console.log(`Waiting for socket (state: ${socket.readyState})...`);
             addMessage("Connecting...", "system"); 
             setIsThinking(true);
             const timer = setTimeout(() => {
@@ -577,7 +442,7 @@ function App() {
                     setIsThinking(false); 
                     addMessage("Connection failed.", "system", true); 
                     setThemeIsSelected(false); 
-                    setIsShowingIntroPortal(false); // Ensure portal hidden on error
+                    setIsShowingIntroPortal(false); 
                 }
             }, 2000);
             return () => clearTimeout(timer);
@@ -592,14 +457,11 @@ function App() {
         let particleSystem: THREE.Points | null = null;
 
         const initThreeJS = () => {
-            // Initialize only when the flag is true
             if (!portalMountRef.current || !isShowingIntroPortal) return;
-            log("Initializing Three.js for Intro Portal"); // Log message updated
             const mount = portalMountRef.current;
             const scene = new THREE.Scene();
             sceneRef.current = scene;
             const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.1, 1000);
-            // Move camera closer for the smaller portal
             camera.position.z = 25; 
             cameraRef.current = camera;
             const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -615,11 +477,8 @@ function App() {
 
             // Create Portal 
             portalGroup = new THREE.Group();
-            // Shift position within the container towards top-left and slightly forward
             portalGroup.position.set(-10, 5, 0.5); 
-            // Scale the portal down
             portalGroup.scale.set(0.25, 0.25, 0.25);
-            // Set rotation back to 0 on X-axis to face forward
             portalGroup.rotation.x = 0;
             portalGroupRef.current = portalGroup;
             const portalGeometry = new THREE.TorusGeometry(15, 2, 16, 100);
@@ -688,7 +547,6 @@ function App() {
             // Animation Loop
             const animate = () => {
                 if (!portalParticlesRef.current || !portalGroupRef.current || !sceneRef.current || !cameraRef.current || !rendererRef.current) {
-                    log("Stopping portal animation - refs missing");
                     return; 
                 }
                 
@@ -705,7 +563,6 @@ function App() {
 
                 // Rotate portal group
                 portalGroupRef.current.rotation.y += 0.003;
-                // portalGroupRef.current.rotation.x += 0.001; // Removed continuous X rotation
 
                 rendererRef.current.render(sceneRef.current, cameraRef.current);
             };
@@ -715,14 +572,11 @@ function App() {
         };
 
         const cleanupThreeJS = () => {
-            log("Cleaning up Three.js Portal");
-            // Stop animation loop
             if (animationFrameIdRef.current) {
                 cancelAnimationFrame(animationFrameIdRef.current);
                 animationFrameIdRef.current = null;
             }
 
-            // Dispose geometries, materials, textures
             if (portalGroupRef.current) {
                 portalGroupRef.current.traverse((object) => {
                     if (object instanceof THREE.Mesh || object instanceof THREE.Points) {
@@ -739,15 +593,13 @@ function App() {
                 sceneRef.current?.remove(portalGroupRef.current);
                 portalGroupRef.current = null;
             }
-            portalParticlesRef.current?.dispose(); // Dispose buffer geometry
+            portalParticlesRef.current?.dispose();
             portalParticlesRef.current = null;
 
-            // Remove renderer DOM element
             if (rendererRef.current && portalMountRef.current?.contains(rendererRef.current.domElement)) {
                  portalMountRef.current.removeChild(rendererRef.current.domElement);
             }
             
-            // Dispose renderer
             rendererRef.current?.dispose();
             rendererRef.current = null;
 
@@ -756,7 +608,6 @@ function App() {
         };
 
         let resizeCleanup: (() => void) | undefined;
-        // Condition uses the renamed state
         if (isShowingIntroPortal) {
             resizeCleanup = initThreeJS();
         } else {
@@ -774,14 +625,11 @@ function App() {
     useEffect(() => {
         let hideTimeoutId: ReturnType<typeof setTimeout> | null = null;
         if (isShowingIntroPortal) {
-            log("Intro portal is visible, starting hide timer...");
             hideTimeoutId = setTimeout(() => {
-                log("Hiding intro portal after delay.");
                 setIsShowingIntroPortal(false);
-            }, 5000); // Hide after 5 seconds
+            }, 5000);
         }
 
-        // Cleanup the timeout if the component unmounts or the state changes before timeout completes
         return () => {
             if (hideTimeoutId) {
                 clearTimeout(hideTimeoutId);
@@ -792,13 +640,11 @@ function App() {
 
     // Theme selection function passed to HomeScreen
     const themeSelect = (theme: string) => {
-        log(`Selected theme: ${theme}`);
-        handleThemeSelection(theme); // Call the existing handler
+        handleThemeSelection(theme);
     };
 
     return (
         <div className="App">
-            {/* Conditionally render Three.js portal canvas based on intro state */} 
             {isShowingIntroPortal && (
                 <div 
                     ref={portalMountRef}
@@ -807,7 +653,6 @@ function App() {
                 ></div>
             )}
 
-            {/* Render GameContainer if map data exists and theme selected */} 
             {mapData && themeIsSelected ? (
                 <GameContainer
                     mapData={mapData}
@@ -818,7 +663,6 @@ function App() {
                     toolCalls={toolCalls}          
                     websocket={socket}             
                 />
-            /* Render HomeScreen if theme is NOT selected */
             ) : !themeIsSelected ? (
                 <HomeScreen 
                   themeSelect={themeSelect} 
@@ -826,15 +670,13 @@ function App() {
                   isConnected={isConnected}         
                   socketMessage={socketMessage}   
                 />
-            /* Render loading indicator if theme selected but no map yet */
             ) : themeIsSelected && !mapData ? (
-                 <div className="loading-container" style={{zIndex: 0}}> {/* Basic Loading text */}
+                 <div className="loading-container" style={{zIndex: 0}}>
                    <p>Loading Map Data...</p>
                    <div className="loading-spinner"></div>
                  </div>
             ) : null }
 
-            {/* Render Chat and ToolsMenu only when game has started (mapData exists) */}
             {mapData && (
                 <>
                     <Chat
