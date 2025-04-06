@@ -1,5 +1,5 @@
 import { Canvas } from "@react-three/fiber";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, forwardRef } from "react";
 import { ToolCall } from "../App";
 import "../LoadingSpinner.css";
 import { GameData } from "../types/game";
@@ -39,27 +39,26 @@ const log = (message: string, ...args: any[]) => {
   }
 };
 
-const GameContainer = ({
-  executeCommand,
-  registerCommandHandler,
-  mapData,
-  isMapReady,
-  characterRef,
-  websocket,
-  toolCalls,
-}: GameContainerProps) => {
+// Use forwardRef to allow passing ref to the component
+const GameContainer = forwardRef<any, GameContainerProps>((
+  {
+    executeCommand,
+    registerCommandHandler,
+    mapData,
+    isMapReady,
+    characterRef,
+    websocket,
+    toolCalls,
+  },
+  ref
+) => {
   const [ambientLightIntensity, setAmbientLightIntensity] = useState(0.1);
   const [lightIntensity, setLightIntensity] = useState(1.2);
   const [lightDistance, setLightDistance] = useState(6);
   const [lightDecay, setLightDecay] = useState(0.5);
-  const [gameData, setGameData] = useState<any>(null);
-  const [localMapData, setLocalMapData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasTriedGenerateWorld, setHasTriedGenerateWorld] = useState(false);
-  const [mapInitialized, setMapInitialized] = useState(false);
   const [showDebugUi, setShowDebugUi] = useState(false);
 
-  // change debug ui to true when key is pressed
+  // Toggle Debug UI
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "F8") {
@@ -72,193 +71,64 @@ const GameContainer = ({
     };
   }, []);
 
-  // Log mapData changes from props
+  // Log when mapData is received and valid
   useEffect(() => {
-    if (mapData && isMapReady) {
-      log("MapData prop changed and ready:", mapData);
-      if (mapData.map && mapData.entities) {
-        setGameData(mapData);
-        setIsLoading(false);
-        setMapInitialized(true);
-        log("Game initialized with valid map data from props");
-
-        // Try to find the player entity ("game-char") in the mapData entities
-        const playerEntity = mapData.entities.find(entity => entity.id === 'game-char');
-        if (playerEntity && playerEntity.position) {
-          const charInitialX = playerEntity.position[0]; // Use array index 0 for x
-          const charInitialY = playerEntity.position[1]; // Use array index 1 for y
-          console.log(`Player found in mapData. Initial Position: [${charInitialX}, ${charInitialY}]`);
-        }
-      } else {
-        log("Received mapData prop is missing map or entities:", mapData);
+    if (mapData?.map && mapData?.entities) {
+      log("GameContainer received valid mapData prop:", mapData);
+      // Try to find the player entity ("game-char") in the mapData entities
+      const playerEntity = mapData.entities.find(entity => entity.id === 'game-char');
+      if (playerEntity?.position) {
+        const charInitialX = playerEntity.position[0]; 
+        const charInitialY = playerEntity.position[1]; 
+        console.log(`Player found in mapData. Initial Position: [${charInitialX}, ${charInitialY}]`);
       }
+    } else if (mapData) {
+        log("GameContainer received mapData prop, but it's missing map or entities:", mapData);
+    } else {
+        log("GameContainer mapData prop is null.");
     }
-  }, [mapData, isMapReady]);
+  }, [mapData]);
 
-  // WebSocket handler for direct map update events
-  useEffect(() => {
-    if (websocket) {
-      const handleWebSocketMessage = (event: MessageEvent) => {
-        if (typeof event.data === "string") {
-          try {
-            const message = JSON.parse(event.data);
-            if (VERBOSE_LOGGING) {
-              log("GameContainer received message:", message);
-            }
-            if (message.type === "map_created") {
-              log("Map created event received in GameContainer:", message);
-
-              if (
-                message.environment &&
-                message.entities &&
-                !message.environment.error &&
-                message.environment.grid
-              ) {
-                const newMapData: GameData = {
-                  map: {
-                    width: message.environment.width,
-                    height: message.environment.height,
-                    grid: message.environment.grid,
-                  },
-                  entities: message.entities,
-                };
-
-                log(
-                  "Valid map data received in WebSocket event, updating game:",
-                  newMapData
-                );
-                setGameData(newMapData);
-                setIsLoading(false);
-                setMapInitialized(true);
-                setHasTriedGenerateWorld(false);
-              } else {
-                log(
-                  "Received map_created event via WebSocket missing expected properties or contains error:",
-                  message
-                );
-              }
-            }
-          } catch (error) {
-            log("GameContainer Error parsing WebSocket message:", error);
-          }
-        } else if (event.data instanceof ArrayBuffer) {
-          // Handle binary messages (audio)
-          if (VERBOSE_LOGGING) {
-            log("GameContainer: Ignoring binary WebSocket message.");
-          }
-        }
-      };
-
-      websocket.addEventListener("message", handleWebSocketMessage);
-
-      return () => {
-        websocket.removeEventListener("message", handleWebSocketMessage);
-      };
-    }
-  }, [websocket]);
-
-  // Only try to generate world if necessary and once
-  useEffect(() => {
-    // Don't do anything if we already have good map data
-    if (mapInitialized) {
-      log("Map already initialized, no need to generate world");
-      return;
-    }
-
-    if (localMapData) {
-      log("Processing localMapData:", localMapData);
-
-      if (localMapData.error) {
-        log("Map data error detected:", localMapData.error);
-
-        // Only try to generate world once to prevent infinite loops
-        if (
-          !hasTriedGenerateWorld &&
-          websocket &&
-          websocket.readyState === WebSocket.OPEN
-        ) {
-          log("Attempting to generate world (first attempt)");
-          websocket.send(
-            JSON.stringify({
-              type: "text",
-              content: "abandoned prisioner",
-            })
-          );
-          setHasTriedGenerateWorld(true);
-
-          // Since we're waiting for the server, show loading indicator
-          setIsLoading(true);
-        } else if (hasTriedGenerateWorld) {
-          log("Already attempted to generate world, showing fallback data");
-          // After one attempt, use fallback data to avoid blocking UI
-          setGameData({
-            map: { width: 0, height: 0, grid: [] },
-            entities: [],
-          });
-          setIsLoading(false);
-          setMapInitialized(true);
-        }
-      } else if (localMapData) {
-        // We have valid map data
-        log("Valid map data found in localMapData");
-        setIsLoading(false);
-        setMapInitialized(true);
-      }
-    }
-  }, [localMapData, hasTriedGenerateWorld, websocket, mapInitialized]);
-
-  // Initial world generation request - adjusted
-  useEffect(() => {
-    if (
-      !mapInitialized &&
-      !hasTriedGenerateWorld &&
-      websocket &&
-      websocket.readyState === WebSocket.OPEN
-    ) {
-      log("Initial mount - requesting map generation");
-      websocket.send(
-        JSON.stringify({
-          type: "text",
-          content: "abandoned prisioner",
-        })
-      );
-      setHasTriedGenerateWorld(true);
-      setIsLoading(true);
-    }
-  }, [websocket, hasTriedGenerateWorld, mapInitialized]);
-
-  log("gameData", gameData);
-  return (
-    <div className="relative w-full h-full">
-      {isLoading ? (
+  // Directly render based on mapData prop
+  // If mapData is null (meaning App.tsx hasn't received it yet), this component won't render anyway
+  // due to the logic in App.tsx. If it *is* rendered, we assume mapData is valid.
+  if (!mapData) {
+    // This case should ideally not happen if App.tsx logic is correct,
+    // but provides a fallback just in case.
+    log("GameContainer rendered without mapData - showing fallback/nothing.")
+    return (
         <div className="loading-container">
           <div className="loading-spinner"></div>
-          <p>Creating your adventure world...</p>
+          <p>Waiting for map data...</p>
         </div>
-      ) : (
-        <Canvas
-          style={{
-            width: "100%",
-            height: "100%",
-            position: "absolute",
-            top: 0,
-            left: 0,
-          }}
-          camera={{ position: [0, 0, 5], fov: 75 }}
-          gl={{ antialias: true }}
-        >
-          <Game
-            executeCommand={executeCommand}
-            registerCommandHandler={registerCommandHandler}
-            characterRef={characterRef}
-            gameData={gameData}
-            lightIntensity={lightIntensity}
-            lightDistance={lightDistance}
-            lightDecay={lightDecay}
-            ambientLightIntensity={ambientLightIntensity}
-          />
-        </Canvas>
-      )}
+    ); 
+  }
+
+  // Render the game canvas if mapData is present
+  return (
+    <div className="relative w-full h-full">
+      <Canvas
+        style={{
+          width: "100%",
+          height: "100%",
+          position: "absolute",
+          top: 0,
+          left: 0,
+        }}
+        camera={{ position: [0, 0, 5], fov: 75 }}
+        gl={{ antialias: true }}
+      >
+        <Game
+          executeCommand={executeCommand}
+          registerCommandHandler={registerCommandHandler}
+          characterRef={characterRef}
+          gameData={mapData}
+          lightIntensity={lightIntensity}
+          lightDistance={lightDistance}
+          lightDecay={lightDecay}
+          ambientLightIntensity={ambientLightIntensity}
+        />
+      </Canvas>
 
       {showDebugUi && (
         <GameDebugUI
@@ -276,6 +146,6 @@ const GameContainer = ({
       )}
     </div>
   );
-};
+});
 
 export default GameContainer;
