@@ -71,7 +71,7 @@ const CharacterBody = forwardRef<
     const hatRef = useRef<CharacterPartRef>(null);
 
     // Log initial prop value
-    console.log("[CharacterBody] Initial animation prop:", animation);
+    //console.log("[CharacterBody] Initial animation prop:", animation);
 
     const [currentOnComplete, setCurrentOnComplete] = useState<(() => void) | null>(null);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
@@ -80,7 +80,7 @@ const CharacterBody = forwardRef<
     const frameTimeAccumulatorRef = useRef(0);
     const animationRef = useRef(animation);
     // Log initial ref value
-    console.log("[CharacterBody] Initial animationRef.current:", animationRef.current);
+    //console.log("[CharacterBody] Initial animationRef.current:", animationRef.current);
     const [selectedCharacter, setSelectedCharacter] = useState<{
       type: CharacterBodyType;
       sprite: string;

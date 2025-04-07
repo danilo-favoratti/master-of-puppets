@@ -1713,6 +1713,34 @@ async def move(
         # Execute the steps one at a time
         result = await _internal_move(ctx, direction=direction, is_running=is_running, continuous=continuous, steps=steps)
 
+        # --- START RE-ADDITION: Send command for NON-CONTINUOUS moves ---
+        if not continuous and result and result.startswith("✅ Successfully"):
+            storyteller = getattr(story_result, '_storyteller_agent', None)
+            if storyteller and hasattr(storyteller, 'send_command_to_frontend'):
+                try:
+                    # Attempt to parse actual steps taken from the result string
+                    import re
+                    match = re.search(r" (\\d+) step", result)
+                    actual_steps_taken = int(match.group(1)) if match else steps
+
+                    command_params = {
+                        "direction": direction,
+                        "steps": actual_steps_taken,
+                        "is_running": is_running,
+                        "continuous": False
+                    }
+                    logger.info(f"🚀 TOOL (non-continuous): Sending move command to frontend: {command_params}")
+                    # Use the result string from _internal_move as the message
+                    await storyteller.send_command_to_frontend("move", command_params, result)
+                    logger.info("✅ TOOL (non-continuous): Move command sent to frontend.")
+                except Exception as e:
+                    logger.error(f"❌ TOOL (non-continuous): Error sending move command to frontend: {e}")
+            else:
+                 logger.warning("⚠️ TOOL (non-continuous): Could not access storyteller agent to send move command.")
+        # --- END RE-ADDITION ---
+
+        # Note: Continuous move commands are sent from DirectionHelper.move_continuously
+
         return result
     except Exception as e:
         logger.error(
