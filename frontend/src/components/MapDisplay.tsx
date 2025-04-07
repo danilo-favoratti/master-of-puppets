@@ -113,7 +113,7 @@ const MapDisplay: React.FC<MapDisplayProps> = ({
   }, [mapGridData, width, height]);
 
   return (
-    <group position={new Vector3(0, 0, 0)}>
+    <group position={[0, 0, -0.1]}>
       {terrainMap.map((row, y) =>
         row.map((tile, x) => {
           return (

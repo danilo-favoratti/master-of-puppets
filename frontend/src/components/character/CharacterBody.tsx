@@ -14,8 +14,10 @@ import CharacterCloak from "./CharacterCloak";
 import CharacterHair from "./CharacterHair";
 import CharacterHat from "./CharacterHat";
 import CharacterOutfit from "./CharacterOutfit";
+import CharacterFace from "./CharacterFace";
+import { CharacterPartRef } from "./CharacterCloak";
 
-// Disable verbose movement logging
+// Enable verbose movement logging
 const VERBOSE_MOVEMENT_LOGGING = false;
 
 // Helper function for conditional movement logging
@@ -34,11 +36,15 @@ export interface CharacterRefMethods {
 // Remove onMoveComplete from props definition
 interface UpdatedCharacterBodyProps extends Omit<CharacterBodyProps, 'onMoveComplete'> {}
 
+// Define the type for the mutable movement data stored in the ref
+interface MovementData {
+  path: Position[];
+  currentPathIndex: number;
+}
+
 const CharacterBody = forwardRef<
-  // Use the defined type here
   CharacterRefMethods,
-  // Use the updated props type
-  UpdatedCharacterBodyProps 
+  UpdatedCharacterBodyProps
 >(
   (
     {
@@ -47,31 +53,44 @@ const CharacterBody = forwardRef<
       rows = 8,
       cols = 8,
       animation = CharacterAnimationType.IDLE_DOWN,
-      frame = undefined, // If specified, will override the animation
-      characterType = undefined, // If not specified, will pick randomly
+      characterType = undefined,
       onAnimationComplete,
-      speed = 1, // Units per second
+      speed = 1,
       setPosition,
       setAnimation,
-      zOffset = 0.1,
+      zOffset = 0.03, 
     },
     ref
   ) => {
     const meshRef = useRef<THREE.Mesh>(null);
+    // Refs for child components
+    const outfitRef = useRef<CharacterPartRef>(null);
+    const cloakRef = useRef<CharacterPartRef>(null);
+    const faceRef = useRef<CharacterPartRef>(null);
+    const hairRef = useRef<CharacterPartRef>(null);
+    const hatRef = useRef<CharacterPartRef>(null);
+
+    // Log initial prop value
+    console.log("[CharacterBody] Initial animation prop:", animation);
+
     const [currentOnComplete, setCurrentOnComplete] = useState<(() => void) | null>(null);
     const [texture, setTexture] = useState<THREE.Texture | null>(null);
     const [currentFrame, setCurrentFrame] = useState(0);
-    const [frameTimeAccumulator, setFrameTimeAccumulator] = useState(0);
+    // Use ref for the time accumulator used within the animation useFrame
+    const frameTimeAccumulatorRef = useRef(0);
     const animationRef = useRef(animation);
+    // Log initial ref value
+    console.log("[CharacterBody] Initial animationRef.current:", animationRef.current);
     const [selectedCharacter, setSelectedCharacter] = useState<{
       type: CharacterBodyType;
       sprite: string;
     } | null>(null);
-    const [movementState, setMovementState] = useState<MovementState>({
-      path: [],
-      currentPathIndex: 0,
-      isMoving: false,
-    });
+
+    // Use useRef for mutable movement data accessed within useFrame
+    const movementRef = useRef<MovementData>({ path: [], currentPathIndex: 0 });
+    // Use useState for isMoving to trigger renders and useFrame execution
+    const [isMoving, setIsMoving] = useState(false);
+
     const [random, setRandom] = useState(Math.random());
 
     // Set random character on first render
@@ -98,15 +117,21 @@ const CharacterBody = forwardRef<
       textureLoader.load(
         selectedCharacter.sprite,
         (loadedTexture) => {
+          movementLog("✅ Base body texture loaded successfully:", selectedCharacter.sprite);
           loadedTexture.magFilter = THREE.NearestFilter;
           loadedTexture.minFilter = THREE.NearestFilter;
           loadedTexture.wrapS = loadedTexture.wrapT = THREE.RepeatWrapping;
           loadedTexture.repeat.set(1 / cols, 1 / rows);
           setTexture(loadedTexture);
         },
-        undefined,
+        undefined, // Optional progress callback
         (error) => {
-          // Silently handle error
+          // Add explicit error logging
+          console.error(
+            `🚨 Error loading base body texture: ${selectedCharacter.sprite}`,
+            error
+          );
+          setTexture(null); // Ensure texture is null on error
         }
       );
     }, [selectedCharacter, rows, cols]);
@@ -114,9 +139,9 @@ const CharacterBody = forwardRef<
     // Update animation ref when animation prop changes
     useEffect(() => {
       animationRef.current = animation;
-      // Reset frame time accumulator to start the animation from the beginning
-      setFrameTimeAccumulator(0);
-      setCurrentFrame(0);
+      // Reset frame time accumulator ref
+      frameTimeAccumulatorRef.current = 0;
+      setCurrentFrame(0); // Reset visible frame state too
     }, [animation]);
 
     // Helper function to set texture offset based on frame number
@@ -135,11 +160,11 @@ const CharacterBody = forwardRef<
     useImperativeHandle(ref, (): CharacterRefMethods => ({
       moveAlongPath: (path: Position[]) => {
         setCurrentOnComplete(null); // Clear any pending move callbacks
-        setMovementState({
-          path,
-          currentPathIndex: 0,
-          isMoving: true,
-        });
+        // Update the ref directly
+        movementRef.current = { path, currentPathIndex: 0 };
+        // Trigger movement start
+        setIsMoving(true);
+        movementLog("📍 Setting movement ref (moveAlongPath):", movementRef.current);
       },
       // Replace the existing move method with the updated logic below
       move: (direction: string, steps: number = 1, onComplete?: () => void) => {
@@ -173,8 +198,9 @@ const CharacterBody = forwardRef<
         for (let i = 1; i <= steps; i++) {
             const targetX = currentLogicalX + deltaX * i;
             const targetY = currentLogicalY + deltaY * i;
-            path.push({ x: targetX, y: targetY });
-            movementLog(`📍 Adding step ${i}/${steps} to path:`, { x: targetX, y: targetY });
+            // Use array format for Position
+            path.push([targetX, targetY]);
+            movementLog(`📍 Adding step ${i}/${steps} to path:`, [targetX, targetY]);
         }
 
         movementLog("📍 Final path calculated:", path);
@@ -205,98 +231,116 @@ const CharacterBody = forwardRef<
           setAnimation(newAnimation);
         }
 
-        // Start the movement process using the generated multi-point path
-        movementLog("📍 Setting movement state with multi-step path:", path);
-        setMovementState({
-          path,
-          currentPathIndex: 0, // Start at the first step in the path
-          isMoving: true,
-        });
-        // onComplete is NOT called here; it's stored in currentOnComplete
-        // and will be called by useFrame when the *last* point in the path is reached.
+        // Update the ref directly
+        movementRef.current = { path, currentPathIndex: 0 };
+        // Trigger movement start
+        setIsMoving(true);
+        movementLog("📍 Setting movement ref (move):", movementRef.current);
       },
     }));
 
     // Update movement in the animation frame
     useFrame((_, delta) => {
-      if (!meshRef.current || !movementState.isMoving) return;
+      // Read isMoving state to determine if loop should run
+      if (!isMoving) return;
 
-      const currentPos = meshRef.current.position; // Still use live position for animation
-      const currentPathIndex = movementState.currentPathIndex;
+      // Access mutable data via ref
+      const moveData = movementRef.current;
 
-      // Check if path is valid and index is within bounds BEFORE accessing path[index]
-      if (!movementState.path || currentPathIndex < 0 || currentPathIndex >= movementState.path.length) {
-        // Path completed or invalid index - Stop movement
+      // Add START log - Read index from ref
+      movementLog("-> Frame Start", {
+        pathLen: moveData.path?.length,
+        idx: moveData.currentPathIndex,
+      });
+
+      if (!meshRef.current) return;
+
+      const currentPos = meshRef.current.position;
+      const currentPathIndex = moveData.currentPathIndex;
+
+      // Check if path is valid and index is within bounds
+      if (
+        !moveData.path ||
+        currentPathIndex < 0 ||
+        currentPathIndex >= moveData.path.length
+      ) {
         movementLog("📍 Path exhausted or index invalid. Stopping movement.");
-        setMovementState((prev) => ({ ...prev, isMoving: false, currentPathIndex: 0, path: [] })); // Reset path state
-
-        // Call final completion callback if it exists
-        if (currentOnComplete) {
-          movementLog("✅ Calling stored onComplete callback (path exhausted).");
-          currentOnComplete();
-          setCurrentOnComplete(null);
+        // Update ref and state to stop
+        moveData.path = [];
+        moveData.currentPathIndex = 0;
+        // Only set isMoving state here if it wasn't already set by reaching final target
+        if (isMoving) { 
+            setIsMoving(false);
         }
 
-        // Set idle animation
-        const completedAnimation = animationRef.current;
-        let idleAnimation = CharacterAnimationType.IDLE_DOWN;
-        if (completedAnimation === CharacterAnimationType.WALK_UP) idleAnimation = CharacterAnimationType.IDLE_UP;
-        else if (completedAnimation === CharacterAnimationType.WALK_LEFT) idleAnimation = CharacterAnimationType.IDLE_LEFT;
-        else if (completedAnimation === CharacterAnimationType.WALK_RIGHT) idleAnimation = CharacterAnimationType.IDLE_RIGHT;
-        movementLog("📍 Setting idle animation (path exhausted):", idleAnimation);
-        setAnimation?.(idleAnimation);
+        // DO NOT call onComplete here, it was called when the final target was reached
+        // if (currentOnComplete) { ... }
+        // Reset the stored callback defensively
+        setCurrentOnComplete(null); 
 
-        // Update final position in store
-        if (setPosition) {
-          setPosition([currentPos.x, currentPos.y, currentPos.z]);
-        }
-        return; // Exit frame processing for this movement cycle
+        // Don't set idle animation again if we just finished
+        // setAnimation?.(idleAnimation); 
+
+        // Don't set position again
+        // if (setPosition) { ... } 
+
+        return; // Exit frame immediately after stopping
       }
 
       // --- Target Calculation --- 
-      const target = movementState.path[currentPathIndex];
-      const targetPos = new THREE.Vector3(target.x, target.y, currentPos.z); // Use current Z
+      const target = moveData.path[currentPathIndex];
+      const targetPos = new THREE.Vector3(target[0], target[1], currentPos.z); // Use current Z
       const distance = currentPos.distanceTo(targetPos);
+      // Add TARGET log
+      movementLog("  Targeting:", { target, dist: distance.toFixed(3) });
 
       // --- Check if Current Target Reached --- 
       if (distance < 0.01) {
         movementLog(`📍 Reached target ${currentPathIndex}:`, target);
-        // Snap to target position
-        currentPos.x = target.x;
-        currentPos.y = target.y;
+        // Snap to target position using array indexing
+        currentPos.x = target[0];
+        currentPos.y = target[1];
         if (setPosition) {
-          setPosition([target.x, target.y, currentPos.z]); // Update store with exact target
+          // Use array indexing for Position
+          setPosition([target[0], target[1], currentPos.z]); // Update store with exact target
         }
 
         // --- Advance to Next Path Index --- 
         const nextPathIndex = currentPathIndex + 1;
 
         // --- Check if Entire Path Completed --- 
-        if (nextPathIndex >= movementState.path.length) {
+        if (nextPathIndex >= moveData.path.length) {
           movementLog("🏁 Reached FINAL target in path. Stopping movement.");
-          setMovementState((prev) => ({ ...prev, isMoving: false, currentPathIndex: 0, path: [] })); // Reset path state
+          // Update ref and state to stop
+          moveData.path = [];
+          moveData.currentPathIndex = 0;
+          setIsMoving(false); // Set state to stop rendering loop
 
-          // Call final completion callback
           if (currentOnComplete) {
             movementLog("✅ Calling stored onComplete callback (final target).");
             currentOnComplete();
             setCurrentOnComplete(null);
           }
 
-          // Set idle animation based on the direction of the completed walk
           const completedAnimation = animationRef.current;
           let idleAnimation = CharacterAnimationType.IDLE_DOWN;
-          if (completedAnimation === CharacterAnimationType.WALK_UP) idleAnimation = CharacterAnimationType.IDLE_UP;
-          else if (completedAnimation === CharacterAnimationType.WALK_LEFT) idleAnimation = CharacterAnimationType.IDLE_LEFT;
-          else if (completedAnimation === CharacterAnimationType.WALK_RIGHT) idleAnimation = CharacterAnimationType.IDLE_RIGHT;
+          if (completedAnimation === CharacterAnimationType.WALK_UP)
+            idleAnimation = CharacterAnimationType.IDLE_UP;
+          else if (completedAnimation === CharacterAnimationType.WALK_LEFT)
+            idleAnimation = CharacterAnimationType.IDLE_LEFT;
+          else if (completedAnimation === CharacterAnimationType.WALK_RIGHT)
+            idleAnimation = CharacterAnimationType.IDLE_RIGHT;
           movementLog("📍 Setting idle animation (final target):", idleAnimation);
           setAnimation?.(idleAnimation);
-          
-          return; // Exit frame processing for this movement cycle
+
+          return; // Exit frame immediately after stopping and completing
         } else {
           // --- More Steps Remain: Update Index and Continue --- 
           movementLog(`📍 Advancing to next target index: ${nextPathIndex}`);
-          setMovementState((prev) => ({ ...prev, currentPathIndex: nextPathIndex }));
+          // Directly mutate the ref's current value
+          movementLog("  BEFORE mutating movementRef.current.currentPathIndex", { nextIdx: nextPathIndex });
+          moveData.currentPathIndex = nextPathIndex;
+          movementLog("  AFTER mutating movementRef.current.currentPathIndex", { currentIdx: moveData.currentPathIndex });
           // Do NOT return here, let the next frame handle movement towards the new target
         }
 
@@ -314,60 +358,72 @@ const CharacterBody = forwardRef<
 
         const newPosition = currentPos.clone().add(movement);
 
-        movementLog(`📍 Moving towards target ${currentPathIndex} (${target.x.toFixed(2)}, ${target.y.toFixed(2)}). Dist: ${distance.toFixed(3)}`);
+        // Use array indexing for Position in log
+        movementLog(`  Moving towards target ${currentPathIndex} (${target[0].toFixed(2)}, ${target[1].toFixed(2)}). Dist: ${distance.toFixed(3)}`);
+        // Add log for calculated new position
+        movementLog("    Calculated move:", { movement: { x: movement.x.toFixed(3), y: movement.y.toFixed(3) }, newPos: { x: newPosition.x.toFixed(3), y: newPosition.y.toFixed(3) } });
 
         // Explicitly update the mesh position for this frame
         meshRef.current.position.copy(newPosition);
 
         // Update position state store as well (if applicable)
         if (setPosition) {
+          // Add log BEFORE store update
+          movementLog("    BEFORE setPosition (store)", { pos: [newPosition.x, newPosition.y, newPosition.z] });
           setPosition([newPosition.x, newPosition.y, newPosition.z]);
+          // Add log AFTER store update
+          movementLog("    AFTER setPosition (store)");
         }
       }
+       // Add END log
+       movementLog("<- Frame End")
     });
 
+    // Keep the separate useFrame for texture animation
     useFrame((_, delta) => {
-      if (!texture) return;
-
-      // Handle single frame case (for specific frame or idle animations)
-      if (frame !== undefined) {
-        setTextureOffsetFromFrame(frame);
+      if (!texture) {
+        // If texture is null, don't try to animate
         return;
       }
 
-      // Get current animation config
       const animationConfig = ANIMATIONS[animationRef.current];
-      if (!animationConfig || !animationConfig.frames.length) return;
+      if (!animationConfig || !animationConfig.frames || animationConfig.frames.length === 0) {
+        movementLog(" Anim Frame: No valid config/frames for", animationRef.current);
+        // Optionally set a default static frame if config is bad
+        // setTextureOffsetFromFrame(0); 
+        return;
+      }
 
       const animationFrames = animationConfig.frames;
       const frameTiming =
-        animationConfig.frameTiming || animationFrames.map(() => 150);
-      const shouldLoop = animationConfig.loop !== false; // Default to true if not specified
+        animationConfig.frameTiming || animationFrames.map(() => 150); // Default timing if missing
+      const shouldLoop = animationConfig.loop !== false;
 
-      // For single frame animations, just show the frame
-      if (animationFrames.length <= 1) {
-        setTextureOffsetFromFrame(animationFrames[0]);
+      // If only one frame defined, just display it and return
+      if (animationFrames.length === 1) {
+        const frameToShow = animationFrames[0];
+        movementLog(" Anim Frame: Single frame", frameToShow);
+        if (currentFrame !== frameToShow) { 
+          setCurrentFrame(frameToShow);
+          setTextureOffsetFromFrame(frameToShow);
+        }
         return;
       }
 
-      // Accumulate time since last frame
-      const newAccumulator = frameTimeAccumulator + delta * 1000; // Convert to ms
-      setFrameTimeAccumulator(newAccumulator);
-
-      // Determine which frame to show based on accumulated time
+      // Accumulate time using ref
+      frameTimeAccumulatorRef.current += delta * 1000;
+      const currentAccumulator = frameTimeAccumulatorRef.current;
+      
       let timeSum = 0;
       let frameIndex = 0;
-
       const totalDuration = frameTiming.reduce((sum, time) => sum + time, 0);
 
-      // If we shouldn't loop and we've gone past the total duration,
-      // show the last frame and don't continue animation
-      if (!shouldLoop && newAccumulator > totalDuration) {
-        frameIndex = animationFrames.length - 1;
+      if (!shouldLoop && currentAccumulator >= totalDuration) {
+        frameIndex = animationFrames.length - 1; // Stay on the last frame
       } else {
         const normalizedTime = shouldLoop
-          ? newAccumulator % totalDuration
-          : Math.min(newAccumulator, totalDuration);
+          ? currentAccumulator % totalDuration
+          : currentAccumulator; // No need for Math.min if checking >= totalDuration above
 
         for (let i = 0; i < frameTiming.length; i++) {
           timeSum += frameTiming[i];
@@ -375,26 +431,39 @@ const CharacterBody = forwardRef<
             frameIndex = i;
             break;
           }
+           // Handle edge case where time lands exactly on boundary
+          if (i === frameTiming.length - 1 && normalizedTime >= timeSum) {
+            frameIndex = i;
+          }
         }
       }
 
-      // Update the frame
       const frameToShow = animationFrames[frameIndex];
-      if (currentFrame !== frameToShow) {
-        setCurrentFrame(frameToShow);
-        setTextureOffsetFromFrame(frameToShow);
-      }
+      movementLog(" Anim Frame: Calculated", { anim: animationRef.current, idx: frameIndex, frame: frameToShow, current: currentFrame, accum: currentAccumulator });
 
-      // Check if the animation is complete
+      // Update the main body texture offset FIRST
+      setTextureOffsetFromFrame(frameToShow);
+      if (texture) texture.needsUpdate = true;
+
+      // Imperatively update children 
+      outfitRef.current?.setFrame(frameToShow);
+      cloakRef.current?.setFrame(frameToShow);
+      faceRef.current?.setFrame(frameToShow);
+      hairRef.current?.setFrame(frameToShow);
+      hatRef.current?.setFrame(frameToShow);
+
       if (!shouldLoop && frameIndex === animationFrames.length - 1) {
+        movementLog(" Anim Frame: Non-loop complete", animationRef.current);
         onAnimationComplete?.(animationRef.current);
+        // No return here, let it display the last frame
       }
     });
 
+    // Base position uses zOffset prop
     const adjustedPosition: [number, number, number] = [
       position[0],
       position[1],
-      zOffset,
+      zOffset, 
     ];
 
     return (
@@ -402,22 +471,30 @@ const CharacterBody = forwardRef<
         ref={meshRef}
         position={new THREE.Vector3(...adjustedPosition)}
         scale={scale}
+        // Control visibility based on texture loaded state
+        visible={!!texture} 
       >
+        {/* --- Attach Refs to Children (remove frame prop) --- */}
+        <CharacterOutfit ref={outfitRef} animation={animationRef.current} />
+        <CharacterCloak ref={cloakRef} animation={animationRef.current} />
+        <CharacterFace ref={faceRef} animation={animationRef.current} />
         {random > 0.5 ? (
-          <CharacterHair animation={animationRef.current} />
+          <CharacterHair ref={hairRef} animation={animationRef.current} />
         ) : (
-          <CharacterHat animation={animationRef.current} />
+          <CharacterHat ref={hatRef} animation={animationRef.current} />
         )}
-
-        <CharacterOutfit animation={animationRef.current} />
-        <CharacterCloak animation={animationRef.current} />
+        
+        {/* Base Body Plane (at relative z=0 within the group) */}
         <planeGeometry args={[1, 1]} />
+        {/* Ensure ONLY the standard material is active */}
+        {/* <meshBasicMaterial color="red" side={THREE.DoubleSide} /> */}
         <meshStandardMaterial
-          map={texture}
-          transparent={true}
-          roughness={0.5}
+          map={texture}          // Base texture
+          transparent={true}     // Needed if spritesheet has alpha
+          side={THREE.DoubleSide} // Render backface if needed
+          roughness={0.5}      // Adjust appearance
           metalness={0.0}
-          side={THREE.DoubleSide}
+          // depthWrite={false} // Keep commented out
         />
       </mesh>
     );
@@ -425,5 +502,5 @@ const CharacterBody = forwardRef<
 );
 
 // Exportar tudo em uma única linha
-export type { MovementState, Position };
+export type { Position };
 export default CharacterBody;

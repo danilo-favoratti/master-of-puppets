@@ -31,10 +31,7 @@ const GameDebugUI = ({
 }: GameDebugUIProps) => {
   const position = useGameStore((state) => state.position);
   const [isMoving, setIsMoving] = useState(false);
-  const [targetPosition, setTargetPosition] = useState<Position>({
-    x: 10,
-    y: 10,
-  });
+  const [targetPosition, setTargetPosition] = useState<Position>([10, 10]);
 
   const moveToPosition = () => {
     if (isMoving || !characterRef.current) return;
@@ -54,10 +51,8 @@ const GameDebugUI = ({
   const moveDirection = (dx: number, dy: number) => {
     if (isMoving || !characterRef.current) return;
 
-    const newTarget = {
-      x: position[0] + dx,
-      y: position[1] + dy,
-    };
+    // Create newTarget in array format
+    const newTarget: Position = [position[0] + dx, position[1] + dy];
 
     setTargetPosition(newTarget);
 
@@ -101,20 +96,16 @@ const GameDebugUI = ({
         Position: ({position[0].toFixed(1)}, {position[1].toFixed(1)})
       </div>
 
-      {/* <div className="text-white text-sm">
-        Posição Atual: ({position[0]}, {position[1]})
-      </div>
-
       <div className="flex flex-col gap-2" style={{ display: "flex" }}>
         <div className="flex gap-2">
           <input
             type="number"
-            value={targetPosition.x}
+            value={targetPosition[0]}
             onChange={(e) =>
-              setTargetPosition((prev) => ({
-                ...prev,
-                x: Number(e.target.value),
-              }))
+              setTargetPosition((prev) => [
+                Number(e.target.value),
+                Array.isArray(prev) ? prev[1] : 0,
+              ])
             }
             className="w-20 p-2 rounded bg-white/10 text-white text-lg"
             placeholder="X"
@@ -122,12 +113,12 @@ const GameDebugUI = ({
           />
           <input
             type="number"
-            value={targetPosition.y}
+            value={targetPosition[1]}
             onChange={(e) =>
-              setTargetPosition((prev) => ({
-                ...prev,
-                y: Number(e.target.value),
-              }))
+              setTargetPosition((prev) => [
+                Array.isArray(prev) ? prev[0] : 0,
+                Number(e.target.value),
+              ])
             }
             className="w-20 px-2 py-1 rounded bg-white/10 text-white"
             placeholder="Y"
@@ -147,7 +138,7 @@ const GameDebugUI = ({
         >
           {isMoving ? "Movendo..." : "Mover"}
         </button>
-      </div> */}
+      </div>
 
       {/* <div className="mt-4">
         <div className="flex justify-center mb-2">
