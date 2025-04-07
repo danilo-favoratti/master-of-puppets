@@ -51,6 +51,36 @@ const Game = ({
   const [isPushing, setIsPushing] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
   const [isJumping, setIsJumping] = useState(false);
+  
+  // Movement state tracking - using useRef for immediate updates
+  const movementStateRef = useRef<{
+    lastSignature: string;
+    lastTimestamp: number;
+    continuousDirections: Record<string, boolean>;
+  }>({
+    lastSignature: "",
+    lastTimestamp: 0,
+    continuousDirections: {}
+  });
+
+  // Movement command buffering
+  const moveBuffer = useRef<{
+    active: boolean,
+    direction: string,
+    isRunning: boolean,
+    steps: number,
+    timer: ReturnType<typeof setTimeout> | null,
+    callbacks: (() => void)[],
+    execute: () => void
+  }>({
+    active: false,
+    direction: '',
+    isRunning: false,
+    steps: 0,
+    timer: null,
+    callbacks: [],
+    execute: () => {}
+  });
 
   // Use provided gameData if available, otherwise use the default from JSON
   const [gameDataState, setGameDataState] = useState<GameData>(
@@ -131,13 +161,32 @@ const Game = ({
 
   // Execute animation commands received from websocket
   useEffect(() => {
+    // Function to flush the movement buffer and execute the consolidated command
+    const flushMoveBuffer = () => {
+      if (moveBuffer.current.active && characterRef.current) {
+        const { direction, steps, isRunning, execute, callbacks } = moveBuffer.current;
+        console.log(`🔄 Executing buffered move: ${direction}, steps=${steps}, running=${isRunning}, callbacks=${callbacks.length}`);
+        execute();
+        
+        // Reset buffer
+        moveBuffer.current.active = false;
+        moveBuffer.current.steps = 0;
+        moveBuffer.current.callbacks = [];
+        
+        if (moveBuffer.current.timer) {
+          clearTimeout(moveBuffer.current.timer);
+          moveBuffer.current.timer = null;
+        }
+      }
+    };
+
     const handleCommand = (
       cmd: string,
       result: string,
       params: any,
       onComplete: () => void
     ) => {
-      //console.log(`🚀 Handling command in Game.tsx: ${cmd}`, { params });
+      console.log(`🎮 Animation command execution in Game.tsx: ${cmd}`, params);
 
       switch (cmd) {
         case "update_map":
@@ -149,56 +198,191 @@ const Game = ({
           break;
 
         case "generate_world":
-          //console.log("Handling generate_world command (no action)");
           onComplete(); // Non-animation command, complete immediately
           break;
 
         case "move":
         case "move_step":
           if (params.direction && characterRef.current) {
-            console.log(
-              `🎮 Animation command execution in Game.tsx: ${cmd}`,
-              params
-            );
             const direction = params.direction;
-            // Extract steps, default to 1 if not provided
             const steps = typeof params.steps === 'number' && params.steps > 0 ? params.steps : 1;
+            const isContinuous = params.continuous === true;
+            const isRunning = params.is_running === true;
 
-            try {
-              if (typeof characterRef.current.move === "function") {
-                console.log(
-                  `📣 Game.tsx: Calling move(${direction}, steps=${steps}) on character ref for ${cmd}, passing onComplete`
-                );
-                characterRef.current.move(direction, steps, onComplete);
-              } else {
-                console.error(
-                  "🔴 Character ref doesn't have a move method:",
-                  characterRef.current
-                );
-                onComplete(); // Complete immediately if no move method
+            // For continuous movement, execute immediately without buffering
+            if (isContinuous) {
+              if (moveBuffer.current.active) {
+                // Flush any pending buffered commands first
+                flushMoveBuffer();
               }
-            } catch (error) {
-              console.error(
-                `🔴 Error executing character move/animation for ${cmd}:`,
-                error
-              );
-              onComplete(); // Complete immediately on error
+              
+              try {
+                // Clear existing movement state reference if needed
+                if (movementStateRef.current.continuousDirections[direction] && !isContinuous) {
+                  delete movementStateRef.current.continuousDirections[direction];
+                  console.log(`🛑 Clearing continuous movement state for ${direction}`);
+                }
+                
+                // Set continuous movement state
+                movementStateRef.current.continuousDirections[direction] = true;
+                console.log(`📣 Game.tsx: Starting continuous movement in direction ${direction}`);
+                
+                // For continuous movement, use empty callback
+                characterRef.current.move(direction, steps, () => {});
+              } catch (error) {
+                console.error(`🔴 Error executing continuous movement: ${error}`);
+              }
+              onComplete();
+              return;
+            }
+
+            // CRITICAL FIX: Force move commands to execute immediately if there's only one command
+            // This ensures single commands are never delayed
+            if (!moveBuffer.current.active) {
+              // Start a new buffer
+              moveBuffer.current = {
+                active: true,
+                direction,
+                isRunning,
+                steps,
+                callbacks: [onComplete],
+                timer: setTimeout(flushMoveBuffer, 50), // 50ms buffer window
+                execute: () => {
+                  try {
+                    if (characterRef.current) {
+                      console.log(`📣 Game.tsx: Calling move(${direction}, steps=${steps}, continuous=${isContinuous})`);
+                      characterRef.current.move(direction, steps, () => {
+                        // Call all buffered callbacks after movement completes
+                        console.log(`🏁 Move completed: ${direction}, steps=${steps}`);
+                        moveBuffer.current.callbacks.forEach(cb => cb());
+                      });
+                    } else {
+                      // If character ref is missing, still call all callbacks
+                      moveBuffer.current.callbacks.forEach(cb => cb());
+                    }
+                  } catch (error) {
+                    console.error(`🔴 Error executing movement: ${error}`);
+                    moveBuffer.current.callbacks.forEach(cb => cb());
+                  }
+                }
+              };
+            } else if (moveBuffer.current.direction === direction && moveBuffer.current.isRunning === isRunning) {
+              // If we already have commands queued, force flush the buffer and execute immediately
+              // if we have more than 1 command buffered already
+              if (moveBuffer.current.callbacks.length >= 1) {
+                flushMoveBuffer();
+                
+                // Now create a new buffer with this command
+                moveBuffer.current = {
+                  active: true,
+                  direction,
+                  isRunning,
+                  steps,
+                  callbacks: [onComplete],
+                  timer: setTimeout(flushMoveBuffer, 50),
+                  execute: () => {
+                    try {
+                      if (characterRef.current) {
+                        console.log(`📣 Game.tsx: Calling move(${direction}, steps=${steps}, continuous=${isContinuous})`);
+                        characterRef.current.move(direction, steps, () => {
+                          console.log(`🏁 Move completed: ${direction}, steps=${steps}`);
+                          moveBuffer.current.callbacks.forEach(cb => cb());
+                        });
+                      } else {
+                        moveBuffer.current.callbacks.forEach(cb => cb());
+                      }
+                    } catch (error) {
+                      console.error(`🔴 Error executing movement: ${error}`);
+                      moveBuffer.current.callbacks.forEach(cb => cb());
+                    }
+                  }
+                };
+              } else {
+                // Add to existing buffer if same direction and running state
+                moveBuffer.current.steps += steps;
+                moveBuffer.current.callbacks.push(onComplete);
+                
+                // Update the execute function to use the new total
+                moveBuffer.current.execute = () => {
+                  try {
+                    if (characterRef.current) {
+                      const totalSteps = moveBuffer.current.steps;
+                      console.log(`📣 Game.tsx: Calling consolidated move(${direction}, steps=${totalSteps}, continuous=${isContinuous})`);
+                      characterRef.current.move(direction, totalSteps, () => {
+                        // Call all buffered callbacks after movement completes
+                        console.log(`🏁 Move completed: ${direction}, steps=${totalSteps}`);
+                        moveBuffer.current.callbacks.forEach(cb => cb());
+                      });
+                    } else {
+                      // If character ref is missing, still call all callbacks
+                      moveBuffer.current.callbacks.forEach(cb => cb());
+                    }
+                  } catch (error) {
+                    console.error(`🔴 Error executing consolidated movement: ${error}`);
+                    moveBuffer.current.callbacks.forEach(cb => cb());
+                  }
+                };
+                
+                // Reset the timer
+                if (moveBuffer.current.timer) {
+                  clearTimeout(moveBuffer.current.timer);
+                }
+                moveBuffer.current.timer = setTimeout(flushMoveBuffer, 30); // Use shorter time for more responsiveness
+              }
+            } else {
+              // Different direction or running state, flush current buffer and start new one
+              flushMoveBuffer();
+              
+              // Start a new buffer
+              moveBuffer.current = {
+                active: true,
+                direction,
+                isRunning,
+                steps,
+                callbacks: [onComplete],
+                timer: setTimeout(flushMoveBuffer, 50),
+                execute: () => {
+                  try {
+                    if (characterRef.current) {
+                      console.log(`📣 Game.tsx: Calling move(${direction}, steps=${steps}, continuous=${isContinuous})`);
+                      characterRef.current.move(direction, steps, () => {
+                        // Call all buffered callbacks after movement completes
+                        console.log(`🏁 Move completed: ${direction}, steps=${steps}`);
+                        moveBuffer.current.callbacks.forEach(cb => cb());
+                      });
+                    } else {
+                      // If character ref is missing, still call all callbacks
+                      moveBuffer.current.callbacks.forEach(cb => cb());
+                    }
+                  } catch (error) {
+                    console.error(`🔴 Error executing movement: ${error}`);
+                    moveBuffer.current.callbacks.forEach(cb => cb());
+                  }
+                }
+              };
             }
           } else {
-            console.warn(
-              `🟠 Animation command ${cmd} missing direction or characterRef:`,
-              { params, hasRef: !!characterRef.current }
-            );
-            onComplete(); // Complete immediately if params/ref missing
+            console.warn(`🟠 Animation command ${cmd} missing direction or characterRef:`, { params, hasRef: !!characterRef.current });
+            onComplete();
           }
           break;
 
         case "jump":
+          // Flush any buffered movement first
+          if (moveBuffer.current.active) {
+            flushMoveBuffer();
+          }
+          
           console.log("🤸 Jump command received, needs implementation in Game.tsx handleCommand");
           onComplete(); // Complete immediately for now
           break;
 
         default:
+          // Flush any buffered movement first
+          if (moveBuffer.current.active) {
+            flushMoveBuffer();
+          }
+          
           console.log(`Unknown command received in Game.tsx: ${cmd}. Calling onComplete.`);
           onComplete(); // Complete immediately for unhandled commands
       }
@@ -206,13 +390,13 @@ const Game = ({
 
     registerCommandHandler(handleCommand);
 
-    // No cleanup needed for the handler itself
-    // Return an empty function or handle specific cleanup if necessary
+    // Clean up any pending buffer on unmount
     return () => {
-      // Optional: Unregister handler if App.tsx provides a way
+      if (moveBuffer.current.timer) {
+        clearTimeout(moveBuffer.current.timer);
+      }
     };
-    // IMPORTANT: Remove executeCommand from dependencies if it causes infinite loops
-  }, [registerCommandHandler, characterRef]); // Dependencies should be stable refs/functions
+  }, [registerCommandHandler, characterRef]);
 
   // Make camera follow the character
   useEffect(() => {
