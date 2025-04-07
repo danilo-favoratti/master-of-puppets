@@ -1070,7 +1070,7 @@ const Chat = ({
         {showInitialWait && (
           <div className="message-container system-container">
             <div className="message system-message wait-message">
-              Wait...
+              Send a message to start the conversation!
             </div>
           </div>
         )}
@@ -1079,32 +1079,6 @@ const Chat = ({
           .filter(msg => !msg.content.trim().startsWith('```'))
           // Add filter to remove Json_response messages
           .filter(msg => !msg.content.trim().startsWith('Json_response'))
-          // Create a more robust deduplication algorithm
-          .filter((msg, index, self) => {
-            // First level: Use messageId for deduplication if available
-            if (msg.messageId) {
-              return self.findIndex(m => m.messageId === msg.messageId) === index;
-            }
-            
-            // Second level: For theme selections, handle case and format variations
-            const normalizedMsgContent = msg.content.toLowerCase().replace(/_/g, ' ');
-            const isThemeSelectionMsg = 
-              msg.sender === 'user' && 
-              (normalizedMsgContent.includes('abandoned prisioner') || 
-               normalizedMsgContent.includes('crash in the sea') ||
-               normalizedMsgContent.includes('lost memory'));
-            
-            if (isThemeSelectionMsg) {
-              // Find all theme selection messages and check if this is the first
-              // Check against other normalized theme messages
-              return false;
-            }
-            
-            // Third level: For messages without messageId, use content+sender combination
-            return self.findIndex(m => 
-              m.content === msg.content && m.sender === msg.sender
-            ) === index;
-          })
           .map((msg, index) => {
           
           // Try to parse JSON in content string

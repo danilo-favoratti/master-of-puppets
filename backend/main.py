@@ -282,7 +282,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             "map_data": game_data.get("environment", {}),  # Send raw dict for compatibility if needed
                             "entities": game_data.get("entities", []),  # Send raw dict for compatibility if needed
                             "narrative": game_data.get("complete_narrative", ""),
-                            "result": f"`{safe_theme_name.replace('_', ' ')}` loaded. \nWait...",
+                            "result": f"`{safe_theme_name.replace('_', ' ')}` loaded. \nSend a message to start the game.",
                             "params": {
                                 "map_name": game_data.get("theme", safe_theme_name),
                                 "map_description": game_data.get("terrain_description", "No description available.")

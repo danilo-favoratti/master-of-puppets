@@ -374,7 +374,7 @@ function App() {
     // Update sendTextMessage to use the correct message format
     const sendTextMessage = (message: string) => {
         if (!isConnected || !socket) { console.error("Not connected"); return; }
-        addMessage(message, "user");
+        // addMessage(message, "user"); // REMOVE/COMMENT OUT THIS LINE - prevents double message
         setIsThinking(true);
         const data = { type: "text", content: message };
         try { socket.send(JSON.stringify(data)); } 
