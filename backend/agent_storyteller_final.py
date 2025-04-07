@@ -1713,27 +1713,6 @@ async def move(
         # Execute the steps one at a time
         result = await _internal_move(ctx, direction=direction, is_running=is_running, continuous=continuous, steps=steps)
 
-        # DIRECT WEBSOCKET COMMAND: Send move command to frontend
-        storyteller = getattr(story_result, '_storyteller_agent', None)
-        if storyteller and hasattr(storyteller, 'send_command_to_frontend'):
-            try:
-                command_params = {
-                    "direction": direction,
-                    "is_running": is_running,
-                    "steps": steps,  # Include steps for frontend
-                    "continuous": False  # Use steps instead
-                }
-                logger.info(
-                    f"🚀 TOOL: Sending move command to frontend via websocket: direction={direction}, steps={steps}")
-                # Send the backend result message along with the command
-                await storyteller.send_command_to_frontend("move", command_params, result)
-                logger.info(f"✅ TOOL: Command sent to frontend")
-            except Exception as e:
-                logger.error(f"❌ TOOL: Error sending WebSocket command: {e}")
-        else:
-            logger.warning(
-                f"⚠️ TOOL: Could not access storyteller agent to send WebSocket command")
-
         return result
     except Exception as e:
         logger.error(

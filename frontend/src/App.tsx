@@ -285,7 +285,7 @@ function App() {
             const jsonContent = data.type === 'json' ? tryParseJsonInString(data.content) : null;
             const isStillThinking = jsonContent?.answers?.some((a: any) => a.isThinking === true);
             if (!isStillThinking) {
-                 setIsThinking(false);
+            setIsThinking(false);
             }
         }
     };
@@ -380,7 +380,7 @@ function App() {
         try { socket.send(JSON.stringify(data)); } 
         catch (err) { 
             console.error("Send error:", err);
-            setIsThinking(false); 
+            setIsThinking(false);
             addMessage("Send failed.", "system", true); 
         }
     };
@@ -388,15 +388,15 @@ function App() {
     // Execute a command
     const executeCommand = useCallback((commandName: string, result: string, params: any, onComplete: () => void) => {
         if (gameCommandHandlerRef.current) {
-            try { 
-                gameCommandHandlerRef.current(commandName, result, params, onComplete); 
-            } catch (error) { 
+            try {
+                gameCommandHandlerRef.current(commandName, result, params, onComplete);
+            } catch (error) {
                 console.error(`Forwarding error ${commandName}:`, error);
-                onComplete(); 
+                onComplete();
             }
-        } else { 
+        } else {
             console.warn(`No handler for: ${commandName}. Completing.`);
-            onComplete(); 
+            onComplete();
         }
     }, []);
 
@@ -414,8 +414,8 @@ function App() {
         try { socket.send(JSON.stringify(message)); } 
         catch (err) { 
             console.error('Send theme error:', err); 
-            setIsThinking(false); 
-            setLoadingMap(false); 
+            setIsThinking(false);
+            setLoadingMap(false);
             setThemeIsSelected(false); 
             setIsShowingIntroPortal(false); 
             addMessage("Error sending theme.", "system", true); 
@@ -425,21 +425,21 @@ function App() {
     // Handle theme selection
     const handleThemeSelection = (theme: string) => {
         setThemeIsSelected(true); 
-        if (!socket) { 
+        if (!socket) {
             console.error("Socket null"); 
             addMessage("Connecting... Try again.", "system", true); 
             setThemeIsSelected(false); 
-            return; 
+            return;
         }
         if (socket.readyState !== WebSocket.OPEN) {
             addMessage("Connecting...", "system"); 
             setIsThinking(true);
             const timer = setTimeout(() => {
                 if (socket?.readyState === WebSocket.OPEN) { 
-                    sendThemeSelection(theme); 
-                } else { 
+                    sendThemeSelection(theme);
+                } else {
                     console.error("Connect failed"); 
-                    setIsThinking(false); 
+                    setIsThinking(false);
                     addMessage("Connection failed.", "system", true); 
                     setThemeIsSelected(false); 
                     setIsShowingIntroPortal(false); 
@@ -654,14 +654,14 @@ function App() {
             )}
 
             {mapData && themeIsSelected ? (
-                <GameContainer
-                    mapData={mapData}
-                    isMapReady={isMapReady}
+            <GameContainer
+                mapData={mapData}
+                isMapReady={isMapReady}
                     registerCommandHandler={registerGameCommandHandler}
                     executeCommand={executeCommand}
-                    characterRef={characterRef}    
+                characterRef={characterRef}
                     toolCalls={toolCalls}          
-                    websocket={socket}             
+                websocket={socket}
                 />
             ) : !themeIsSelected ? (
                 <HomeScreen 
@@ -679,14 +679,14 @@ function App() {
 
             {mapData && (
                 <>
-                    <Chat
-                        messages={messages}
-                        sendTextMessage={sendTextMessage}
-                        isThinking={isThinking}
+                <Chat
+                    messages={messages}
+                    sendTextMessage={sendTextMessage}
+                    isThinking={isThinking}
                         websocket={socket} 
-                        isConnected={isConnected}
-                    />
-                    <ToolsMenu toolCalls={toolCalls} />
+                    isConnected={isConnected}
+                />
+            <ToolsMenu toolCalls={toolCalls} />
                 </>
             )}
         </div>

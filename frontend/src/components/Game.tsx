@@ -137,7 +137,7 @@ const Game = ({
       params: any,
       onComplete: () => void
     ) => {
-      console.log(`🚀 Handling command in Game.tsx: ${cmd}`, { params });
+      //console.log(`🚀 Handling command in Game.tsx: ${cmd}`, { params });
 
       switch (cmd) {
         case "update_map":
@@ -149,7 +149,7 @@ const Game = ({
           break;
 
         case "generate_world":
-          console.log("Handling generate_world command (no action)");
+          //console.log("Handling generate_world command (no action)");
           onComplete(); // Non-animation command, complete immediately
           break;
 
