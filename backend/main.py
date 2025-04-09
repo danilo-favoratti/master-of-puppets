@@ -254,42 +254,36 @@ async def websocket_endpoint(websocket: WebSocket):
                             }))
                             continue  # Wait for a valid theme
 
-                        # --- Initialize StorytellerAgent with the context ---
+                        # --- Initialize StorytellerAgent FIRST --- 
                         try:
                             storyteller_agent = StorytellerAgentFinal(
                                 complete_story_result=complete_story_result,  # Pass the validated object
                                 websocket=websocket  # Pass the websocket connection
                             )
-                            
-                            # Call setup_assistant before using the agent
-                            await storyteller_agent.setup_assistant()
-                            
-                            session_data["storyteller_agent"] = storyteller_agent
+                            session_data["storyteller_agent"] = storyteller_agent # Store the agent instance
                             session_data["copywriter_done"] = True  # Mark theme loading as complete
-                            print("StorytellerAgent initialized successfully with loaded game context.")
+                            print("StorytellerAgent initialized successfully (BEFORE start).") # Updated log
                         except Exception as agent_init_error:
-                            print(f"Error initializing StorytellerAgent: {agent_init_error}")
+                            print(f"Error initializing StorytellerAgent (before start): {agent_init_error}")
                             traceback.print_exc()
                             await websocket.send_text(json.dumps({
                                 "type": "error",
-                                "content": "Failed to initialize the character agent after loading theme.",
+                                "content": "Failed to initialize the character agent object.",
                                 "sender": "system"
                             }))
-                            # Reset state if agent init fails
                             session_data["game_context"] = None
                             session_data["copywriter_done"] = False
-                            continue
+                            continue # Skip if agent object creation failed
 
-                        # --- REMOVED storyteller_agent.set_result(...) ---
-
-                        # Send map creation command to frontend
+                        # --- Send map creation command to frontend SECOND --- 
                         map_create_command = {
                             "type": "command",
                             "name": "create_map",
-                            "map_data": game_data.get("environment", {}),  # Send raw dict for compatibility if needed
-                            "entities": game_data.get("entities", []),  # Send raw dict for compatibility if needed
+                            "map_data": game_data.get("environment", {}), 
+                            "entities": game_data.get("entities", []), 
                             "narrative": game_data.get("complete_narrative", ""),
-                            "result": f"`{safe_theme_name.replace('_', ' ')}` loaded. \nSend a message to start the game.",
+                            # Modified result message slightly
+                            "result": f"Map for '{safe_theme_name.replace('_', ' ')}' loaded. Starting game...", 
                             "params": {
                                 "map_name": game_data.get("theme", safe_theme_name),
                                 "map_description": game_data.get("terrain_description", "No description available.")
@@ -297,6 +291,24 @@ async def websocket_endpoint(websocket: WebSocket):
                             "sender": "system"
                         }
                         await websocket.send_text(json.dumps(map_create_command))
+                        print("Sent create_map command to frontend.")
+
+                        # --- Start the StorytellerAgent (init AI & send first message) THIRD --- 
+                        try:
+                            await storyteller_agent.start() # Now call start AFTER sending map
+                            print("StorytellerAgent.start() called successfully.")
+                        except Exception as agent_start_error:
+                            print(f"Error calling StorytellerAgent.start(): {agent_start_error}")
+                            traceback.print_exc()
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "content": "Failed to start the character agent processing.",
+                                "sender": "system"
+                            }))
+                            # Consider resetting state if start fails critically
+                            # session_data["storyteller_agent"] = None
+                            # session_data["copywriter_done"] = False
+                            continue # Skip further processing if start fails
 
                     elif data.get("type") == "text":
                         text_message = data["content"]

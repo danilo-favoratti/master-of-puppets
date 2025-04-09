@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from "react";
 import {Entity} from "../../types/entity";
 import {Position} from "../../types/game";
+import { getX, getY } from "../../utils/positionUtils";
 import {AnimatedSprite} from "../AnimatedSprite";
 
 interface PotSpriteProps {
@@ -34,7 +35,7 @@ export const PotSprite: React.FC<PotSpriteProps> = ({
   const [currentState, setCurrentState] = useState(state);
 
   useEffect(() => {
-    if (state === "default") {
+    if (state === "idle") {
       setCurrentState("idle");
     } else {
       setCurrentState(state);

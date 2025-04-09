@@ -1,5 +1,6 @@
 import React from "react";
 import {GameObject as GameObjectType, GameObjectConfig} from "../types/game";
+import { positionToXY, xyToPosition } from "../utils/positionUtils";
 import {AnimatedSprite} from "./AnimatedSprite";
 
 interface GameObjectProps {
@@ -20,12 +21,15 @@ const GameObject: React.FC<GameObjectProps> = ({
   onClick,
   onStateChange,
 }) => {
+  // Convert position from {x,y} object to Position tuple
+  const positionTuple = xyToPosition(position);
+  
   return (
     <AnimatedSprite
       id={config.id}
       type={config.type}
       name={config.name}
-      position={position}
+      position={positionTuple}
       imageUrl={config.imageUrl}
       spritesheetSize={config.spritesheetSize}
       animationConfig={config.animationConfig}

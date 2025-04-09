@@ -1,7 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState, useLayoutEffect} from "react";
 import * as THREE from 'three'; // <-- Import Three.js
 import "./App.css";
-import Chat from "./components/Chat";
+import Chat, { ChatRefMethods } from "./components/Chat";
 import GameContainer from "./components/GameContainer";
 import HomeScreen from "./ui/HomeScreen";
 import {GameData, Position} from "./types/game";
@@ -82,12 +82,14 @@ function App() {
     const [commandQueue, setCommandQueue] = useState<QueuedCommand[]>([]);
     const [isProcessingAnimation, setIsProcessingAnimation] = useState(false);
     const [isShowingIntroPortal, setIsShowingIntroPortal] = useState(false);
+    const [musicInitialized, setMusicInitialized] = useState(false);
     const processingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const ANIMATION_TIMEOUT = 5000; // 5 seconds timeout for animations
     const gameCommandHandlerRef = useRef<
         null | ((cmd: string, result: string, params: any, onComplete: () => void) => void)
     >(null);
     const characterRef = useRef<CharacterRefMethods | null>(null);
+    const chatRef = useRef<ChatRefMethods | null>(null);
 
     // --- Three.js Refs for Portal --- 
     const portalMountRef = useRef<HTMLDivElement>(null); 
@@ -643,6 +645,21 @@ function App() {
         handleThemeSelection(theme);
     };
 
+    // --- Effect to Initialize Music --- 
+    useEffect(() => {
+        // Check if map is ready, chat component is mounted (ref is set), and music hasn't been initialized yet
+        if (mapData && chatRef.current && !musicInitialized) {
+            console.log("✅ [App.tsx Effect] Conditions met. Calling initializeMusic().");
+            chatRef.current.initializeMusic();
+            setMusicInitialized(true); // Mark music as initialized
+        } else {
+            // Optional: Log why it didn't run, useful for debugging
+             if (!mapData) console.log("⏳ [App.tsx Effect] Waiting for mapData...");
+             if (!chatRef.current) console.log("⏳ [App.tsx Effect] Waiting for chatRef...");
+             if (musicInitialized) console.log("🚫 [App.tsx Effect] Music already initialized.");
+        }
+    }, [mapData, chatRef, musicInitialized]); // Depend on mapData, chatRef, and the initialized flag
+
     return (
         <div className="App">
             {isShowingIntroPortal && (
@@ -657,12 +674,12 @@ function App() {
             <GameContainer
                 mapData={mapData}
                 isMapReady={isMapReady}
-                    registerCommandHandler={registerGameCommandHandler}
-                    executeCommand={executeCommand}
+                registerCommandHandler={registerGameCommandHandler}
+                executeCommand={executeCommand}
                 characterRef={characterRef}
-                    toolCalls={toolCalls}          
+                toolCalls={toolCalls}          
                 websocket={socket}
-                />
+            />
             ) : !themeIsSelected ? (
                 <HomeScreen 
                   themeSelect={themeSelect} 
@@ -680,13 +697,14 @@ function App() {
             {mapData && (
                 <>
                 <Chat
+                    ref={chatRef}
                     messages={messages}
                     sendTextMessage={sendTextMessage}
                     isThinking={isThinking}
-                        websocket={socket} 
+                    websocket={socket} 
                     isConnected={isConnected}
                 />
-            <ToolsMenu toolCalls={toolCalls} />
+                <ToolsMenu toolCalls={toolCalls} />
                 </>
             )}
         </div>

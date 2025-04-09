@@ -7,6 +7,7 @@ import {useGameStore} from "../../store/gameStore";
 import {CharacterAnimationType} from "../../types/animations";
 import {CharacterBodyConfType, getRandomCharacterBody,} from "../../types/characters-body";
 import {Entity, Position} from "../../types/game";
+import { addToPosition, getX, getY, getZ, lerpPosition, positionDiff, positionToXY } from "../../utils/positionUtils";
 import CharacterBody from "../character/CharacterBody";
 
 interface NpcEntityProps {
@@ -139,18 +140,15 @@ export const NpcEntity = ({
       const currentPosition = movementRef.current.start;
       movementRef.current.elapsedTime += delta;
 
-      const currentPositionFloor = {
-        x: Math.floor(currentPosition.x),
-        y: Math.floor(currentPosition.y),
-      };
       let t = movementRef.current.elapsedTime / movementRef.current.duration;
       if (t > 1) t = 1;
 
-      // Calculate current position
-      const newPosition = {
-        x: lerp(movementRef.current.start.x, movementRef.current.end.x, t),
-        y: lerp(movementRef.current.start.y, movementRef.current.end.y, t),
-      };
+      // Calculate current position using lerpPosition utility
+      const newPosition = lerpPosition(
+        movementRef.current.start,
+        movementRef.current.end,
+        t
+      );
 
       setCurrentPosition(newPosition);
 
@@ -192,23 +190,21 @@ export const NpcEntity = ({
       const randomDirection =
         directions[Math.floor(Math.random() * directions.length)];
 
-      const newPos = {
-        x: currentPosition.x + randomDirection.dx,
-        y: currentPosition.y + randomDirection.dy,
-      };
+      const newPos = addToPosition(currentPosition, randomDirection.dx, randomDirection.dy);
 
       const entity = entities.find(
         (e) =>
-          e.position?.x === Math.floor(newPos.x) &&
-          e.position?.y === Math.floor(newPos.y)
+          e.position && 
+          Math.floor(getX(e.position)) === Math.floor(getX(newPos)) &&
+          Math.floor(getY(e.position)) === Math.floor(getY(newPos))
       );
+      
       if (entity && entity.type !== "npc") {
         return;
       }
 
-      // Checa se a nova posição está no limite de 5 tiles
-      const dx = Math.abs(newPos.x - initialPosition.current.x);
-      const dy = Math.abs(newPos.y - initialPosition.current.y);
+      // Check if the new position is within the limit of 5 tiles
+      const { dx, dy } = positionDiff(newPos, initialPosition.current);
       if (dx > 5 || dy > 5) return;
 
       // Set animation state immediately when movement starts
@@ -224,10 +220,7 @@ export const NpcEntity = ({
       // Set up movement interpolation
       movementRef.current = {
         start: currentPosition,
-        end: {
-          x: currentPosition.x + randomDirection.dx,
-          y: currentPosition.y + randomDirection.dy,
-        },
+        end: addToPosition(currentPosition, randomDirection.dx, randomDirection.dy),
         duration: 1, // 1 second movement duration
         elapsedTime: 0,
         direction: randomDirection.direction as
@@ -248,17 +241,17 @@ export const NpcEntity = ({
       <CharacterBody
         animation={currentState as CharacterAnimationType}
         position={[
-          currentPosition.x,
-          currentPosition.y,
-          currentPosition.z || 0.02,
+          getX(currentPosition),
+          getY(currentPosition),
+          getZ(currentPosition) || 0.02,
         ]}
         scale={[2, 2, 2]}
       />
       <Text
         position={[
-          currentPosition.x,
-          currentPosition.y - 0.6,
-          currentPosition.z || 0.02,
+          getX(currentPosition),
+          getY(currentPosition) - 0.6,
+          getZ(currentPosition) || 0.02,
         ]}
         fontSize={0.15}
         color="white"

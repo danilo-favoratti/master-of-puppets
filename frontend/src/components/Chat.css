@@ -95,16 +95,6 @@
   margin-bottom: 12px;
 }
 
-/* Add consecutive message grouping styles */
-.message-container.character-container + .message-container.character-container {
-  margin-top: -5px;  /* Reduce space between consecutive character messages */
-}
-
-/* Adjust visual connection between consecutive message bubbles */
-.message-container.character-container + .message-container.character-container .message {
-  border-top-left-radius: 12px;  /* Slightly less rounded for connected feel */
-}
-
 /* User container - right alignment */
 .message-container.user-container {
   align-items: flex-end !important;

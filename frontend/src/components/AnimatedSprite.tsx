@@ -3,6 +3,7 @@ import {ThreeEvent} from "@react-three/fiber";
 import React, {useEffect, useRef, useState} from "react";
 import * as THREE from "three";
 import {Position} from "../types/game";
+import { getX, getY, getZ } from "../utils/positionUtils";
 
 interface AnimatedSpriteProps {
   id: string;
@@ -166,7 +167,7 @@ export const AnimatedSprite = (props: AnimatedSpriteProps) => {
   }
 
   return (
-    <group position={[props.position[0], posY, props.zOffset || 0.01]}>
+    <group position={[getX(props.position), posY, props.zOffset || 0.01]}>
       <mesh name={props.name} onClick={props.onClick}>
         <planeGeometry args={[baseSize, baseSize * heightProportion]} />
         <meshStandardMaterial

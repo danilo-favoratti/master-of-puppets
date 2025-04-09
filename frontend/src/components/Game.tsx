@@ -11,6 +11,7 @@ import {
   PotEntity,
 } from "../types/entities";
 import { GameData, Position } from "../types/game";
+import { addToPosition, getX, getY, getZ, lerpPosition } from "../utils/positionUtils";
 import CharacterBody from "./character/CharacterBody.tsx";
 import GameEntities from "./GameEntities";
 import MapDisplay from "./MapDisplay";
@@ -129,7 +130,7 @@ const Game = ({
     else if (direction === "down") dy = -delta;
     else if (direction === "left") dx = -delta;
     else if (direction === "right") dx = delta;
-    const target: [number, number, number] = [
+    const target: Position = [
       currentPos[0] + dx,
       currentPos[1] + dy,
       currentPos[2] + dz,
@@ -148,11 +149,21 @@ const Game = ({
       movementRef.current.elapsedTime += delta;
       let t = movementRef.current.elapsedTime / movementRef.current.duration;
       if (t > 1) t = 1;
+      
+      // Use lerpPosition utility for consistent position interpolation
+      const newPosition = lerpPosition(
+        movementRef.current.start,
+        movementRef.current.end,
+        t
+      );
+      
+      // Convert to [number, number, number] if needed
       setPosition([
-        lerp(movementRef.current.start[0], movementRef.current.end[0], t),
-        lerp(movementRef.current.start[1], movementRef.current.end[1], t),
-        lerp(movementRef.current.start[2], movementRef.current.end[2], t),
+        newPosition[0],
+        newPosition[1],
+        newPosition[2] || 0,
       ]);
+      
       if (t === 1) {
         movementRef.current = null;
       }
@@ -448,9 +459,11 @@ const Game = ({
         enablePan={true}
         enableRotate={false}
         minDistance={5}
-        maxDistance={20}
+        maxDistance={10}
         target={[position[0], position[1], 0]}
         makeDefault
+        zoomSpeed={0.5}
+        panSpeed={0.5}
       />
 
       {/* Only render entities if they exist */}

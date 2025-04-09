@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useGameStore } from "../../store/gameStore";
 import { AnimalPigConfType, getRandomPig } from "../../types/animal-pig";
 import { Entity, Position } from "../../types/game";
+import { addToPosition, getX, getY, lerpPosition, positionDiff, positionToXY } from "../../utils/positionUtils";
 import AnimatedSprite from "../AnimatedSprite";
 
 interface AnimalEntityProps {
@@ -136,26 +137,19 @@ export const AnimalEntity = ({
     direction: "up" | "down" | "left" | "right";
   }>(null);
 
-  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-
   // Smoothly update position based on movementRef using useFrame
   useFrame((_, delta) => {
     if (movementRef.current) {
-      const currentPosition = movementRef.current.start;
       movementRef.current.elapsedTime += delta;
-
-      const currentPositionFloor = {
-        x: Math.floor(currentPosition.x),
-        y: Math.floor(currentPosition.y),
-      };
       let t = movementRef.current.elapsedTime / movementRef.current.duration;
       if (t > 1) t = 1;
 
       // Calculate current position
-      const newPosition = {
-        x: lerp(movementRef.current.start.x, movementRef.current.end.x, t),
-        y: lerp(movementRef.current.start.y, movementRef.current.end.y, t),
-      };
+      const newPosition = lerpPosition(
+        movementRef.current.start,
+        movementRef.current.end,
+        t
+      );
 
       setCurrentPosition(newPosition);
 
@@ -198,23 +192,21 @@ export const AnimalEntity = ({
       const randomDirection =
         directions[Math.floor(Math.random() * directions.length)];
 
-      const newPos = {
-        x: currentPosition.x + randomDirection.dx,
-        y: currentPosition.y + randomDirection.dy,
-      };
+      const newPos = addToPosition(currentPosition, randomDirection.dx, randomDirection.dy);
 
       const entity = entities.find(
         (e) =>
-          e.position?.x === Math.floor(newPos.x) &&
-          e.position?.y === Math.floor(newPos.y)
+          e.position &&
+          Math.floor(getX(e.position)) === Math.floor(getX(newPos)) &&
+          Math.floor(getY(e.position)) === Math.floor(getY(newPos))
       );
+      
       if (entity && entity.type !== "npc") {
         return;
       }
 
-      // Checa se a nova posição está no limite de 5 tiles
-      const dx = Math.abs(newPos.x - initialPosition.current.x);
-      const dy = Math.abs(newPos.y - initialPosition.current.y);
+      // Check if the new position is within the limit of 5 tiles
+      const { dx, dy } = positionDiff(newPos, initialPosition.current);
       if (dx > 5 || dy > 5) return;
 
       // Set animation state immediately when movement starts
@@ -230,10 +222,7 @@ export const AnimalEntity = ({
       // Set up movement interpolation
       movementRef.current = {
         start: currentPosition,
-        end: {
-          x: currentPosition.x + randomDirection.dx,
-          y: currentPosition.y + randomDirection.dy,
-        },
+        end: newPos,
         duration: 1, // 1 second movement duration
         elapsedTime: 0,
         direction: randomDirection.direction as
@@ -265,7 +254,7 @@ export const AnimalEntity = ({
       <Text
         fontSize={0.2}
         color="white"
-        position={[currentPosition.x, currentPosition.y - 0.6, 0.05]}
+        position={[getX(currentPosition), getY(currentPosition) - 0.6, 0.05]}
       >
         {type} - {variant} - {currentState}
       </Text>

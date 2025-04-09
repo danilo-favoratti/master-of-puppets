@@ -1,7 +1,8 @@
 import { Text } from "@react-three/drei";
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import forestSpritesheet from "../assets/spritesheets/forest/gentle forest (48x48 resize) v08.png";
+import { Position } from "../types/game";
+import { positionToXY } from "../utils/positionUtils";
 
 interface ForestTileProps {
   position?: [number, number, number];
@@ -30,14 +31,13 @@ const ForestTile = ({
   const cols = 16;
   const [showDebugUi, setShowDebugUi] = useState(false);
 
-  // Escala para o tamanho do tile
+  // Scale for tile size
   const finalScale = [size, size, scale[2]];
 
-  // Ajuste crucial: posicionar com base no tamanho do tile
-  // Multiplicamos a posição da grade pelo tamanho do tile
+  // Adjusted position should be a Position type for consistency
   const adjustedPosition: [number, number, number] = [
-    position[0] + gridX * size, // A multiplicação por size é essencial
-    position[1] + gridY * size, // A multiplicação por size é essencial
+    position[0] + gridX * size,
+    position[1] + gridY * size,
     position[2],
   ];
 
@@ -57,7 +57,8 @@ const ForestTile = ({
   // Load texture
   useEffect(() => {
     const textureLoader = new THREE.TextureLoader();
-    const spritesheet = forestSpritesheet;
+    // Use the latest version of the spritesheet with correct path
+    const spritesheet = "/src/assets/spritesheets/forest/gentle_forest_(48x48_resize)_v08.png";
     textureLoader.load(
       spritesheet,
       (loadedTexture) => {
@@ -102,13 +103,16 @@ const ForestTile = ({
   }
 
   return (
-    <mesh ref={meshRef} position={adjustedPosition} scale={finalScale}>
+    <mesh 
+      ref={meshRef} 
+      position={new THREE.Vector3(...adjustedPosition)} 
+      scale={new THREE.Vector3(...finalScale)}
+    >
       <planeGeometry args={[1, 1]} />
       <meshStandardMaterial
         map={texture}
         transparent={true}
         side={THREE.DoubleSide}
-        receiveShadow={true}
         roughness={0.8}
         metalness={0.2}
       />{" "}

@@ -2,6 +2,7 @@ import {ThreeEvent, useFrame} from "@react-three/fiber";
 import React, {useEffect, useRef, useState} from "react";
 import {Entity} from "../../types/entity";
 import {Position} from "../../types/game";
+import { addToPosition, getX, getY, lerpPosition, positionDiff, positionToXY } from "../../utils/positionUtils";
 import {AnimatedSprite} from "../AnimatedSprite";
 
 interface CharacterProps {
@@ -86,10 +87,11 @@ export const Character: React.FC<CharacterProps> = ({
       if (t > 1) t = 1;
 
       // Calculate current position
-      const newPosition = {
-        x: lerp(movementRef.current.start.x, movementRef.current.end.x, t),
-        y: lerp(movementRef.current.start.y, movementRef.current.end.y, t),
-      };
+      const newPosition = lerpPosition(
+        movementRef.current.start, 
+        movementRef.current.end, 
+        t
+      );
 
       // Update position
       setCurrentPosition(newPosition);
@@ -143,10 +145,7 @@ export const Character: React.FC<CharacterProps> = ({
       // Set up movement interpolation
       movementRef.current = {
         start: currentPosition,
-        end: {
-          x: currentPosition.x + randomDirection.dx,
-          y: currentPosition.y + randomDirection.dy,
-        },
+        end: addToPosition(currentPosition, randomDirection.dx, randomDirection.dy),
         duration: 1, // 1 second movement duration
         elapsedTime: 0,
         direction: randomDirection.direction as

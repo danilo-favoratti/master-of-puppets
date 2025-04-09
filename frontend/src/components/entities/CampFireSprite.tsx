@@ -93,7 +93,7 @@ export const CampFireSprite: React.FC<CampFireSpriteProps> = ({
   return (
     <>
       <pointLight
-        position={[position.x, position.y, 0.5]}
+        position={[position[0], position[1], 0.5]}
         intensity={lightIntensity * lightFlickerRef.current}
         distance={8}
         decay={1}

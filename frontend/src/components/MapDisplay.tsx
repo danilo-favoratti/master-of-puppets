@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { Vector3 } from "three";
 import { Entity, Position } from "../types/game";
 import { GameEntity } from "../types/entities";
+import { getX, getY } from "../utils/positionUtils";
 import ForestTile from "./ForestTile";
 
 interface MapDisplayProps {
@@ -90,7 +91,10 @@ const MapDisplay: React.FC<MapDisplayProps> = ({
         }
 
         const entity = entities.find(
-          (entity) => entity.position?.[0] === x && entity.position?.[1] === y
+          (entity) => 
+            entity.position && 
+            Math.floor(getX(entity.position)) === x && 
+            Math.floor(getY(entity.position)) === y
         );
         const isEmpty = entity === undefined;
 

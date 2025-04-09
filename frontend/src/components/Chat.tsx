@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import './Chat.css';  // Import the CSS file
 
 // Global music player singleton - outside component to prevent re-renders from affecting it
@@ -46,23 +46,27 @@ class BackgroundMusicPlayer {
 // Get the singleton instance
 const globalMusicPlayer = BackgroundMusicPlayer.getInstance();
 
+// Define methods exposed by the Chat component ref
+export interface ChatRefMethods {
+  initializeMusic: () => void;
+}
+
 interface ChatProps {
   messages: Array<{ content: string; sender: string; isError?: boolean; options?: string[]; messageId?: string}>;
   sendTextMessage: (message: string) => void;
   isThinking: boolean;
   isConnected: boolean;
   websocket: WebSocket | null; // Add WebSocket prop for direct access
-  isMapReady?: boolean; // Optional prop to know when map is ready
 }
 
-const Chat = ({
+// Use forwardRef to allow parent components (like App) to call methods on Chat
+const Chat = forwardRef<ChatRefMethods, ChatProps>(({
   messages,
   sendTextMessage,
   isThinking,
   isConnected,
   websocket,
-  isMapReady = false,
-}: ChatProps) => {
+}, ref) => {
   const [message, setMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -110,6 +114,10 @@ const Chat = ({
 
   // Add state for help panel visibility
   const [isHelpVisible, setIsHelpVisible] = useState(false);
+
+  // Keep error handling state
+  const [serverError, setServerError] = useState<string | null>(null);
+  const errorTimeoutRef = useRef<number | null>(null);
 
   // Reset all UI state indicators on component mount
   useEffect(() => {
@@ -226,6 +234,23 @@ const Chat = ({
           try {
             const data = JSON.parse(event.data);
             
+            // Handle errors
+            if (data.type === "error") {
+              console.error("WebSocket error message:", data.content);
+              setServerError(data.content);
+              setIsWaitingForResponse(false);
+              
+              // Clear error after 5 seconds
+              if (errorTimeoutRef.current) {
+                clearTimeout(errorTimeoutRef.current);
+              }
+              errorTimeoutRef.current = setTimeout(() => {
+                setServerError(null);
+              }, 5000);
+
+              return;
+            }
+
             // Skip audio-related messages
             if (data.type === "audio_start" || data.type === "audio_end" || data.type === "audio_data") {
               // Handle internally without passing up
@@ -247,11 +272,6 @@ const Chat = ({
 
             // Handle non-audio JSON messages (errors, commands etc.)
             switch (data.type) {
-              case "error":
-                console.error("WebSocket error message:", data.content);
-                setIsProcessingAudio(false);
-                setIsWaitingForResponse(false);
-                break;
               // Let App.tsx handle other message types if needed, but filter here
               default:
                 // If other message types need handling in Chat.tsx, add cases here
@@ -304,7 +324,7 @@ const Chat = ({
         const audio = new Audio();
         audio.src = url;
         audio.volume = 1.0;
-        audio.muted = false;
+        audio.muted = isMuted;
         
         audioPlayerRef.current = audio;
         document.body.appendChild(audio);
@@ -385,20 +405,11 @@ const Chat = ({
     websocket.addEventListener("message", handleMessage);
     return () => {
       websocket.removeEventListener("message", handleMessage);
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
     };
   }, [websocket]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (message.trim() === "") return;
-
-    sendTextMessage(message);
-    setMessage("");
-
-    // Start waiting for response after sending a text message
-    startWaitingWithTimeout();
-  };
 
   // Setup audio visualization
   const visualizeAudio = () => {
@@ -776,98 +787,108 @@ const Chat = ({
   // Determine container class based on sender
   const getContainerClass = (sender: string) => {
     if (sender === 'user') return 'user-container';
-    if (sender === 'character') return 'character-container'; 
+    if (sender === 'character' || sender === 'assistant') return 'character-container'; 
     return 'system-container';
   };
 
   // Determine message class based on sender
   const getMessageClass = (sender: string) => {
     if (sender === 'user') return 'user-message';
-    if (sender === 'character') return 'character-message';
+    if (sender === 'character' || sender === 'assistant') return 'character-message';
     return 'system-message';
   };
 
-  // Initialize the music player when map is ready (once)
-  useEffect(() => {
-    if (isMapReady) {
-      // Create audio element once - not tied to React state
-      try {
-        // Check if we should initialize
-        const musicElement = document.getElementById('background-music-element') as HTMLAudioElement;
-        if (musicElement) {
-          // Element already exists, just update volume
-          musicElement.volume = 0.03; // Lowered volume
-          return;
+  // --- Music Initialization Logic (moved into a function) ---
+  const initializeMusic = useCallback(() => {
+    try {
+      let musicElement = document.getElementById('background-music-element') as HTMLAudioElement | null;
+      
+      if (musicElement) {
+        musicElement.volume = 0.03;
+        if (musicElement.paused) {
+          musicElement.play().then(() => setIsMusicPlaying(true)).catch(e => console.error("[Music Init] Error re-playing existing element:", e));
+        } else {
+           setIsMusicPlaying(true); // Already playing
         }
-        
-        // Create a stable element outside React
-        const audio = new Audio();
-        audio.id = 'background-music-element';
-        audio.loop = true;
-        audio.volume = 0.03;
-        audio.src = "/audio/music.ogg";
-        
-        // Force volume setting
-        
-        // Set a play handler that won't trigger re-renders
-        audio.oncanplaythrough = () => {
-          // Try to play without updating state
-          try {
-            // Force volume setting again just before playing
-            audio.volume = 0.03; // Lowered volume
-            const playPromise = audio.play();
-            if (playPromise) {
-              playPromise.catch((e) => {
-                console.error("Music autoplay error:", e);
-                // Don't update state here
-              });
-            }
-          } catch (err) {
-            console.error("Music setup error:", err);
-          }
-        };
-        
-        // Store in document to keep it outside React lifecycle
-        document.body.appendChild(audio);
-        
-        // Store reference in global player using the proper accessor
-        globalMusicPlayer.setAudioElement(audio);
-      } catch (err) {
-        console.error("Fatal music init error:", err);
+        return; // Already initialized
       }
+      
+      const audio = new Audio();
+      audio.id = 'background-music-element';
+      audio.loop = true;
+      audio.volume = 0.03;
+      audio.src = "/audio/music.ogg";
+      
+      audio.oncanplaythrough = () => {
+        try {
+          audio.volume = 0.03;
+          const playPromise = audio.play();
+          if (playPromise) {
+            playPromise.then(() => {
+              setIsMusicPlaying(true);
+            }).catch((e) => {
+              console.error("❌ [Music Init] Music autoplay error:", e);
+              setIsMusicPlaying(false);
+            });
+          }
+        } catch (err) {
+          console.error("❌ [Music Init] Music setup error during play attempt:", err);
+          setIsMusicPlaying(false);
+        }
+      };
+      
+      audio.onerror = (e) => {
+        console.error("❌ [Music Init] Audio Element Error Event:", e, audio.error);
+        setIsMusicPlaying(false);
+      };
+
+      console.log("▶️ [Music Init] Attempting to append element to document.body...");
+      document.body.appendChild(audio);
+      console.log("✅ [Music Init] Appended new audio element to body.");
+      globalMusicPlayer.setAudioElement(audio);
+
+    } catch (err) {
+      console.error("❌ [Music Init] CRITICAL error in initializeMusic try block:", err);
+      setIsMusicPlaying(false); // Ensure state reflects failure
     }
-  }, [isMapReady]); 
+  }, []); // useCallback dependency array is empty as it doesn't depend on component state/props directly
+  // --- End Music Initialization Logic ---
+
+  // Expose the initializeMusic function via the ref
+  useImperativeHandle(ref, () => ({
+    initializeMusic,
+  }));
 
   // Music toggle function using the global player - completely decoupled
   const toggleMusic = useCallback(() => {
     try {
-      // Get actual audio element from document
       const audioEl = document.getElementById('background-music-element') as HTMLAudioElement;
-      if (!audioEl) return;
+      if (!audioEl) {
+        console.error("[Music Toggle] Audio element not found in DOM!");
+        setIsMusicPlaying(false); // Ensure state is false if element missing
+        return;
+      }
       
-      // Ensure volume is correct every time we interact with the element
-      audioEl.volume = 0.03; // Lowered volume
+      audioEl.volume = 0.03;
       
       if (!audioEl.paused) {
         audioEl.pause();
-        setIsMusicPlaying(false);
+        setIsMusicPlaying(false); // Update state
       } else {
-        // Force volume before playing
-        audioEl.volume = 0.03; // Lowered volume
+        audioEl.volume = 0.03;
         audioEl.play().then(() => {
-          setIsMusicPlaying(true);
-          // Double-check volume after successful play
-          setTimeout(() => {
-            if (audioEl) audioEl.volume = 0.03; // Lowered volume
-          }, 100);
+          setIsMusicPlaying(true); // Update state
+          setTimeout(() => { if (audioEl) audioEl.volume = 0.03; }, 100);
         }).catch(err => {
-          console.error("Music toggle error:", err);
+          console.error("[Music Toggle] Play error:", err);
+          setIsMusicPlaying(false); // Update state on error
         });
       }
     } catch (err) {
-      console.error("Music toggle error:", err);
+      console.error("[Music Toggle] Error in toggle function:", err);
+      setIsMusicPlaying(false); // Ensure state reflects error
     }
-  }, []);
+  }, []); // Dependency array empty
 
   // Add this to the Chat component to force play audio - using enhanced emergency playback
   const forcePlayAudio = (chunks: Uint8Array[]) => {
@@ -900,7 +921,7 @@ const Chat = ({
       const audio = new Audio();
       audio.src = url;
       audio.volume = 1.0;  // Maximum volume
-      audio.muted = false; // Ensure not muted
+      audio.muted = isMuted; // Respect the component's mute state
       
       audio.onerror = (e) => console.error("🔊 Force Play error:", e, audio.error);
       
@@ -999,6 +1020,16 @@ const Chat = ({
     const isMp3 = checkMp3Header();
     
     return isMp3;
+  };
+
+  // REVERT handleSubmit function to original logic
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (message.trim() === "") return;
+    sendTextMessage(message);
+    setMessage("");
+    // Start waiting for response after sending a text message
+    startWaitingWithTimeout(); 
   };
 
   return (
@@ -1120,69 +1151,45 @@ const Chat = ({
             );
           }
           
-          // For assistant messages, split by sentences and render each in its own balloon
+          // For assistant messages, split by NEWLINES and render each in its own balloon
           if (msg.sender !== 'user') {
-            // Split the message content into sentences
-            // Match sentence endings with period, question mark, or exclamation followed by space or end of string
-            const sentences = msg.content.split(/(?<=[.!?])\s+|(?<=[.!?])$/).filter(sentence => sentence.trim().length > 0);
+            // Split the message content by newline characters
+            const paragraphs = msg.content.split('\n').filter(paragraph => paragraph.trim().length > 0);
             
-            // If no sentences detected (e.g., just fragments), treat as single message
-            if (sentences.length <= 1) {
-              return (
-                <div key={`${index}-${msg.sender}-${msg.content.substring(0, 10)}`} className={`message-container ${getContainerClass(msg.sender)}`}>
-                  <div className={`message ${getMessageClass(msg.sender)} ${msg.isError ? 'error' : ''}`} data-sender={msg.sender}>
-                    {msg.content}
-                  </div>
-                  {msg.options && msg.options.length > 0 && (
-                    <div className="options-container">
-                      {msg.options.map((option, optIndex) => (
-                        <button
-                          key={optIndex}
-                          className="option-button"
-                          onClick={() => sendTextMessage(option)}
-                        >
-                          {option}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-            
-            // Render multiple balloons for multiple sentences
             return (
-              <React.Fragment key={`${index}-${msg.sender}-multi`}>
-                {sentences.map((sentence, sentenceIndex) => (
-                  <div 
-                    key={`${index}-${msg.sender}-${sentenceIndex}`} 
-                    className={`message-container ${getContainerClass(msg.sender)}`}
-                    style={{ marginBottom: sentenceIndex < sentences.length - 1 ? '6px' : '12px' }}
-                  >
-                    <div className={`message ${getMessageClass(msg.sender)} ${msg.isError ? 'error' : ''}`} data-sender={msg.sender}>
-                      {sentence}
-                    </div>
-                    {/* Only show options on the last sentence */}
-                    {sentenceIndex === sentences.length - 1 && msg.options && msg.options.length > 0 && (
-                      <div className="options-container">
-                        {msg.options.map((option, optIndex) => (
-                          <button
-                            key={optIndex}
-                            className="option-button"
-                            onClick={() => sendTextMessage(option)}
-                          >
-                            {option}
-                          </button>
-                        ))}
+              <React.Fragment key={`${index}-${msg.sender}-multi-newline`}>
+                {paragraphs.map((paragraph, paragraphIndex) => (
+                  <React.Fragment key={`${index}-${msg.sender}-${paragraphIndex}-frag`}>
+                    <div 
+                      className={`message-container ${getContainerClass(msg.sender)}`}
+                    >
+                      <div className={`message ${getMessageClass(msg.sender)} ${msg.isError ? 'error' : ''}`} data-sender={msg.sender}>
+                        {paragraph}
                       </div>
-                    )}
-                  </div>
+                      {/* Only show options on the LAST paragraph of the message */} 
+                      {paragraphIndex === paragraphs.length - 1 && msg.options && msg.options.length > 0 && (
+                        <div className="options-container">
+                          {msg.options.map((option, optIndex) => (
+                            <button
+                              key={optIndex}
+                              className="option-button"
+                              onClick={() => sendTextMessage(option)}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Add a horizontal rule between paragraphs, except for the last one */}
+                    {paragraphIndex < paragraphs.length - 1 && <hr className="paragraph-separator" />}
+                  </React.Fragment>
                 ))}
               </React.Fragment>
             );
           }
           
-          // Regular user message rendering with explicit classes (no splitting for user messages)
+          // Regular user message rendering (no splitting for user messages)
           return (
             <div key={`${index}-${msg.sender}-${msg.content.substring(0, 10)}`} className={`message-container ${getContainerClass(msg.sender)}`}>
               <div className={`message ${getMessageClass(msg.sender)} ${msg.isError ? 'error' : ''}`} data-sender={msg.sender}>
@@ -1225,7 +1232,6 @@ const Chat = ({
           </div>
         )}
 
-        {/* Only show processing before we get transcription */}
         {isProcessingAudio &&
           !isThinking &&
           !isRecording &&
@@ -1242,7 +1248,6 @@ const Chat = ({
             </div>
           )}
 
-        {/* Show waiting response indicator when appropriate */}
         {isWaitingForResponse &&
           !isThinking &&
           !isRecording &&
@@ -1254,6 +1259,21 @@ const Chat = ({
               <span>Waiting for response...</span>
             </div>
           )}
+        
+        {serverError && (
+          <div className="message-container system-container">
+            <div className="message system-message error">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '1.2em' }}>⚠️</span>
+                <span>Server Error: {
+                  serverError.includes('error_msg') 
+                    ? 'The server encountered an error. Please try again.' 
+                    : serverError
+                }</span>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Empty spacer div to ensure padding at bottom */}
         <div className="messages-end-spacer"></div>
@@ -1352,59 +1372,62 @@ const Chat = ({
             )}
           </button>
           
+          
           {/* Music toggle button - updated styling */}
-          {isMapReady && (
-            <button
-              type="button"
-              className={`mute-button ${isMusicPlaying ? "unmuted" : "muted"}`}
-              onClick={toggleMusic}
-              title={isMusicPlaying ? "Turn off music" : "Turn on music"}
-              disabled={!isConnected}
-              style={{
-                position: 'relative',
-                backgroundColor: isMusicPlaying ? '#4CAF50' : '',
-                color: isMusicPlaying ? 'white' : '',
-                ...(!isMusicPlaying ? {
-                  border: '2px solid #ff0000',
-                  overflow: 'visible'
-                } : {})
-              }}
-            >
-              <span>🎵</span>
-              {!isMusicPlaying && (
+          <button
+            type="button"
+            className={`mute-button ${isMusicPlaying ? "unmuted" : "muted"}`}
+            onClick={toggleMusic}
+            title={isMusicPlaying ? "Turn off music" : "Turn on music"}
+            disabled={!isConnected}
+            style={{
+              position: 'relative',
+              backgroundColor: isMusicPlaying ? '#4CAF50' : '',
+              color: isMusicPlaying ? 'white' : '',
+              ...(!isMusicPlaying ? {
+                border: '2px solid #ff0000',
+                overflow: 'visible'
+              } : {})
+            }}
+          >
+            <span>🎵</span>
+            {!isMusicPlaying && (
+              <div style={{
+                position: 'absolute',
+                top: '0',
+                left: '0',
+                width: '100%',
+                height: '100%',
+                pointerEvents: 'none',
+                overflow: 'hidden',
+                borderRadius: '50%' // Match the button's circular shape
+              }}>
                 <div style={{
                   position: 'absolute',
-                  top: '0',
-                  left: '0',
-                  width: '100%',
-                  height: '100%',
-                  pointerEvents: 'none',
-                  overflow: 'hidden',
-                  borderRadius: '50%' // Match the button's circular shape
-                }}>
-                  <div style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    width: '100%', // Exactly match the button's width
-                    height: '2px',
-                    backgroundColor: '#ff0000',
-                    transform: 'translateX(-50%) rotate(-45deg)',
-                    transformOrigin: 'center', // Rotate around center
-                  }}></div>
-                </div>
-              )}
-            </button>
-          )}
+                  top: '50%',
+                  left: '50%',
+                  width: '100%', // Exactly match the button's width
+                  height: '2px',
+                  backgroundColor: '#ff0000',
+                  transform: 'translateX(-50%) rotate(-45deg)',
+                  transformOrigin: 'center', // Rotate around center
+                }}></div>
+              </div>
+            )}
+          </button>
           
           <input
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type your message..."
-            disabled={!isConnected}
+            placeholder={serverError ? "Please wait a moment before trying again..." : "Type your message..."}
+            disabled={!isConnected || !!serverError}
           />
-          <button type="submit" className="send-button" disabled={!isConnected}>
+          <button 
+            type="submit" 
+            className="send-button" 
+            disabled={!isConnected || !!serverError}
+          >
             Send
           </button>
           <button
@@ -1419,6 +1442,6 @@ const Chat = ({
       </div>
     </div>
   );
-};
+});
 
 export default Chat;

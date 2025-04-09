@@ -4,6 +4,7 @@ import { ThreeEvent, useFrame } from "@react-three/fiber";
 import React, { useEffect, useRef, useState } from "react";
 import { AnimalDuckConfType, getRandomDuck } from "../../types/animal-duck";
 import { Entity, Position } from "../../types/game";
+import { addToPosition, getX, getY, lerpPosition, positionDiff, positionToXY } from "../../utils/positionUtils";
 import AnimatedSprite from "../AnimatedSprite";
 
 interface DuckSpriteProps {
@@ -136,18 +137,15 @@ export const DuckSprite = ({
       const currentPosition = movementRef.current.start;
       movementRef.current.elapsedTime += delta;
 
-      const currentPositionFloor = {
-        x: Math.floor(currentPosition.x),
-        y: Math.floor(currentPosition.y),
-      };
       let t = movementRef.current.elapsedTime / movementRef.current.duration;
       if (t > 1) t = 1;
 
-      // Calculate current position
-      const newPosition = {
-        x: lerp(movementRef.current.start.x, movementRef.current.end.x, t),
-        y: lerp(movementRef.current.start.y, movementRef.current.end.y, t),
-      };
+      // Calculate current position using position utilities
+      const newPosition = lerpPosition(
+        movementRef.current.start,
+        movementRef.current.end,
+        t
+      );
 
       setCurrentPosition(newPosition);
 
@@ -190,13 +188,10 @@ export const DuckSprite = ({
       const randomDirection =
         directions[Math.floor(Math.random() * directions.length)];
 
-      const newPos = {
-        x: Math.floor(currentPosition.x) + randomDirection.dx,
-        y: Math.floor(currentPosition.y) + randomDirection.dy,
-      };
+      const newPos = addToPosition(currentPosition, randomDirection.dx, randomDirection.dy);
 
-      const dx = Math.abs(newPos.x - initialPosition.current.x);
-      const dy = Math.abs(newPos.y - initialPosition.current.y);
+      const dx = Math.abs(getX(newPos) - getX(initialPosition.current));
+      const dy = Math.abs(getY(newPos) - getY(initialPosition.current));
       if (dx > 5 || dy > 5) return;
 
       setCurrentState(
@@ -210,10 +205,7 @@ export const DuckSprite = ({
 
       movementRef.current = {
         start: currentPosition,
-        end: {
-          x: currentPosition.x + randomDirection.dx,
-          y: currentPosition.y + randomDirection.dy,
-        },
+        end: addToPosition(currentPosition, randomDirection.dx, randomDirection.dy),
         duration: 1,
         elapsedTime: 0,
         direction: randomDirection.direction as

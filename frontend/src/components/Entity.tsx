@@ -1,6 +1,7 @@
 import React from "react";
 import * as THREE from "three";
 import {Position} from "../types/game";
+import { getX, getY, getZ } from "../utils/positionUtils";
 
 interface EntityProps {
   id: string;
@@ -35,7 +36,7 @@ export const Entity: React.FC<EntityProps> = ({
     texture.repeat.set(1 / columns, 1 / rows);
     texture.offset.set(x / columns, 1 - (y + 1) / rows);
     return (
-      <mesh position={[position.x, 0, position.y]} name={name}>
+      <mesh position={[getX(position), 0, getY(position)]} name={name}>
         <planeGeometry args={[1, 1]} />
         <meshStandardMaterial
           map={texture}
@@ -46,10 +47,8 @@ export const Entity: React.FC<EntityProps> = ({
     );
   }
 
-  const [x, y, z] = [position.x, 0, position.y];
-
   return (
-    <mesh position={[x, y, 0.05]} name={name}>
+    <mesh position={[getX(position), getY(position), 0.05]} name={name}>
       <planeGeometry args={[1, 1]} />
       <meshStandardMaterial
         map={texture}

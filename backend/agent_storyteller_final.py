@@ -5,6 +5,7 @@ import logging
 import os
 import time
 from typing import Dict, Any, Tuple, Awaitable, Callable, List, Optional, Literal
+from collections import deque # Import deque for the message queue
 
 from fastapi import WebSocket
 from pydantic import BaseModel, Field, field_validator
@@ -1998,6 +1999,9 @@ class StorytellerAgentFinal:
         self.assistant = None
         self.thread = None
         
+        # Keep track if a message is being processed
+        self.is_processing_message = False 
+        
         # Store a reference to self in the game_context for tools to access from AVAILABLE_TOOLS
         self.story_context._storyteller_agent = self
         
@@ -2009,7 +2013,10 @@ class StorytellerAgentFinal:
         try:
             from openai import AsyncOpenAI
             self.openai_client = AsyncOpenAI(api_key=self.openai_api_key)
-            logger.info("✅ Initialized AsyncOpenAI client")
+            # --- ADDED: Initialize separate client for TTS specifically ---
+            # This avoids potential conflicts if Assistant API uses client differently
+            self.openai_tts_client = AsyncOpenAI(api_key=self.openai_api_key)
+            logger.info("✅ Initialized AsyncOpenAI clients (Assistant & TTS)")
         except Exception as e:
             logger.error(f"❌ Failed to initialize OpenAI client: {e}")
             raise  # Re-raise to prevent agent init without client
@@ -2031,7 +2038,8 @@ class StorytellerAgentFinal:
         # Initialize conversation history
         self.conversation_history = []
             
-    async def setup_assistant(self):
+    # <<< START OF METHODS TO RE-INSERT >>>
+    async def initialize_assistant_and_thread(self):
         """Asynchronously sets up the OpenAI Assistant and Thread."""
         logger.info("🔧 Setting up OpenAI Assistant and Thread...")
         try:
@@ -2080,10 +2088,41 @@ class StorytellerAgentFinal:
         except Exception as e:
             logger.error(f"Error during assistant setup: {e}", exc_info=True)
             raise
+
+    async def start(self):
+        """Starts the game by initializing the assistant and thread, and sending an initial 'start' message."""
+        logger.info(f"🚀 Starting game for theme: {self.story_context.theme}")
+        
+        # Initialize assistant and thread
+        await self.initialize_assistant_and_thread() # Ensure this is called first
+        
+        # Send initial "start" message to trigger game start
+        logger.info("🚀 Sending initial 'start' message to Assistant...")
+        try:
+            # Use process_text_input to handle the full loop (send, run, get response)
+            await self.process_text_input(user_input="start", source="system_init")
+            logger.info("✅ Initial 'start' message processed.")
+        except Exception as start_err:
+            logger.error(f"❌ Error processing initial 'start' message: {start_err}", exc_info=True)
+            try:
+                await self.websocket.send_text(json.dumps({"type": "error", "content": "Failed to initialize game start."}))
+            except Exception:
+                pass # Ignore errors sending errors
+        
+        return self # Return the initialized agent instance
+    # <<< END OF METHODS TO RE-INSERT >>>
+
+    # --- Existing methods like setup_assistant (if needed), WebSocket methods, _handle_tool_calls, etc. should follow ---
+    
+    # Example: Keep the original setup_assistant if it was meant to co-exist or be called elsewhere
+    # async def setup_assistant(self): 
+    #    # ... original setup_assistant code ...
+    #    pass 
     
     # WebSocket methods
     async def send_command_to_frontend(self, command_name: str, params: Dict[str, Any], result_narrative: str = ""):
-        """Sends a command object to the frontend via WebSocket."""
+        """Sends a command object to the frontend via WebSocket.
+        """
         if not self.websocket:
             logger.error("❌ Cannot send command to frontend: WebSocket is not set.")
             return
@@ -2100,34 +2139,9 @@ class StorytellerAgentFinal:
             logger.info(f"🎮 Sending command '{command_name}' to frontend. Params: {params}")
             await self.websocket.send_text(json.dumps(cmd_data))
             logger.debug(f"✅ Command '{command_name}' sent successfully.")
+                
         except Exception as e:
             logger.error(f"❌ Error sending command '{command_name}' via WebSocket: {e}")
-    
-    async def send_audio_chunks(self, audio_iterator):
-        """Sends audio chunks with metadata via the websocket."""
-        if not self.websocket:
-            logger.error("❌ Cannot send audio: WebSocket not set.")
-            return
-        try:
-            # Send metadata on first audio chunk
-            await self.websocket.send_text(json.dumps({
-                "type": "audio_start",
-                "format": "mp3", # Assuming mp3 format from OpenAI TTS
-                "timestamp": time.time()
-            }))
-            await asyncio.sleep(0.1) # Small delay for client prep
-
-            # Stream audio chunks
-            async for chunk in audio_iterator:
-                if chunk:
-                    await self.websocket.send_bytes(chunk)
-                    await asyncio.sleep(0.01) # Slight delay between chunks
-
-            # Signal end of audio stream
-            await self.websocket.send_text(json.dumps({"type": "audio_end"}))
-            logger.debug("✅ Audio stream finished.")
-        except Exception as e:
-            logger.error(f"❌ Error sending audio stream: {e}")
     
     async def _handle_tool_calls(self, run_id: str, tool_calls: List[ToolCall]) -> Tuple[Optional[Dict[str, Any]], str]:
         """Handle tool calls from the Assistant during a run.
@@ -2218,6 +2232,7 @@ class StorytellerAgentFinal:
             tool_name = tool_info["name"]
             tool_id = tool_info["id"]
             tool_args = tool_info["args"]
+            error_msg = None  # Initialize error_msg at the start
             
             try:
                 # Check if tool exists in available tools
@@ -2273,39 +2288,68 @@ class StorytellerAgentFinal:
                         current_steps = tool_args.get("steps", 0)
                         is_running = tool_args.get("is_running", False)
                         
-                        # For continuous movements, track the state
-                        if is_continuous:
-                            # Initialize continuous movement tracking if not present
-                            if not hasattr(self, '_continuous_movement_states'):
-                                self._continuous_movement_states = {}
-                                
-                            # Update continuous movement state
-                            self._continuous_movement_states[current_direction] = is_running
-                            logger.info(f"🔄 Starting/updating continuous movement {current_direction} (running={is_running})")
+                        # Send the command
+                        await self.send_command_to_frontend(
+                            "move",
+                            {
+                                "direction": current_direction,
+                                "is_running": is_running,
+                                "continuous": is_continuous,
+                                "steps": current_steps
+                            },
+                            result
+                        )
+                        logger.info(f"🚶 Executed movement: {current_direction}_{current_steps}_{is_running}_{is_continuous}")
+                    elif tool_name == "jump":
+                        # Send jump command as-is
+                        await self.send_command_to_frontend(tool_name, tool_args, result)
+                    elif tool_name in ["move_to_object", "go_to_entity_type", "execute_movement_sequence"]:
+                        # Frontend only supports simple move and jump commands
+                        # Convert complex movement tools to basic move commands
+                        logger.info(f"Converting complex movement command '{tool_name}' to basic move for frontend")
+                        
+                        # Extract any movement information for feedback
+                        if tool_name == "move_to_object":
+                            target_x = tool_args.get("target_x", 0)
+                            target_y = tool_args.get("target_y", 0)
+                            feedback_msg = f"Moving to position ({target_x}, {target_y}): {result}"
                             
-                            # Send the command
+                            # Just send a single move in the general direction as visual feedback
+                            # Get player position to determine direction
+                            player_pos = None
+                            if hasattr(self.story_context.person, 'position'):
+                                pos = self.story_context.person.position
+                                if hasattr(pos, 'x') and hasattr(pos, 'y'):
+                                    player_pos = (pos.x, pos.y)
+                            
+                            # Default to right if we can't determine direction
+                            direction = "right" 
+                            if player_pos:
+                                # Determine primary direction to target
+                                dx = target_x - player_pos[0]
+                                dy = target_y - player_pos[1]
+                                if abs(dx) > abs(dy):
+                                    direction = "right" if dx > 0 else "left"
+                                else:
+                                    direction = "down" if dy > 0 else "up"
+                            
+                            # Send a basic move command to show visual feedback
                             await self.send_command_to_frontend(
                                 "move",
                                 {
-                                    "direction": current_direction,
-                                    "is_running": is_running,
-                                    "continuous": True,
-                                    "steps": current_steps
+                                    "direction": direction,
+                                    "is_running": False,
+                                    "continuous": False,
+                                    "steps": 1
                                 },
-                                result
+                                feedback_msg
                             )
                         else:
-                            # Clear continuous movement state for this direction if it exists
-                            if hasattr(self, '_continuous_movement_states') and current_direction in self._continuous_movement_states:
-                                del self._continuous_movement_states[current_direction]
-                                logger.info(f"🛑 Stopping continuous movement in {current_direction} due to discrete move")
-                            
-                            # Send the command
-                            await self.send_command_to_frontend(tool_name, tool_args, result)
-                            logger.info(f"🚶 Executed non-continuous movement: {current_direction}_{current_steps}_{is_running}_{is_continuous}")
-                    else:
-                        # For other movement types, send the command as is
-                        await self.send_command_to_frontend(tool_name, tool_args, result)
+                            # For other complex movement commands, just show the result without animation
+                            await self.websocket.send_text(json.dumps({
+                                "type": "info", 
+                                "content": result
+                            }))
                     
                     # Store the last command info and result
                     command_info = {"name": tool_name, "params": tool_args}
@@ -2322,7 +2366,7 @@ class StorytellerAgentFinal:
                             "tool_call_id": combined_id,
                             "output": json.dumps({"error": error_msg})
                         })
-        else:
+                else:
                     tool_outputs.append({
                         "tool_call_id": tool_id,
                         "output": json.dumps({"error": error_msg})
@@ -2340,24 +2384,38 @@ class StorytellerAgentFinal:
             
         return command_info, result_narrative
     
-    async def process_text_input(self, user_input: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> Tuple[Dict[str, Any], List[Dict[str, str]]]:
-        """Process text input using the Assistant API with proper WebSocket handling.
+    async def process_text_input(self, user_input: str, 
+                                 conversation_history: Optional[List[Dict[str, str]]] = None,
+                                 source: str = "text" # Add source parameter
+                                 ) -> Tuple[Dict[str, Any], List[Dict[str, str]]]:
+        """Process text input via Assistant.
         
         Args:
             user_input: The text input from the user
             conversation_history: Optional list of previous conversation messages
+            source: Where the message originated ('text' or 'audio')
             
         Returns:
             Tuple containing:
             - Dict containing the formatted response data
             - Updated conversation history
         """
+        # If already processing, inform the user
+        if self.is_processing_message:
+            logger.info(f"Currently processing another message. Will handle '{user_input}' after completion.")
+            info_response = {"type": "info", "content": "Currently processing another message. Please wait."}
+            await self.websocket.send_text(json.dumps(info_response))
+            return info_response, conversation_history if conversation_history else []
+        
+        # ---- Process the message ----
         logger.info(f"Processing text input: '{user_input}'")
+        self.is_processing_message = True # Mark as processing
         
         if not self.assistant or not self.thread:
             logger.error("❌ Assistant not initialized")
             error_response = {"type": "error", "content": "Assistant not ready"}
             await self.websocket.send_text(json.dumps(error_response))
+            self.is_processing_message = False # Reset flag on error
             return error_response, []
         
         try:
@@ -2373,7 +2431,7 @@ class StorytellerAgentFinal:
             )
             logger.debug(f"Added message to thread {self.thread.id}")
             
-            # Update conversation history
+            # Update conversation history (local copy)
             conversation_history.append({"role": "user", "content": user_input})
             
             # Start a run
@@ -2389,6 +2447,8 @@ class StorytellerAgentFinal:
             command_narrative = ""
             max_polls = 60  # Maximum number of polling attempts
             poll_interval = 1  # Seconds between polls
+            
+            final_response = None # Store the final response data
             
             for _ in range(max_polls):
                 # Get current run status
@@ -2412,68 +2472,130 @@ class StorytellerAgentFinal:
                         
                 elif run.status in ["failed", "cancelled", "expired"]:
                     logger.error(f"❌ Run ended with status: {run.status}")
-                    error_response = {"type": "error", "content": f"Assistant run {run.status}: {run.last_error}"}
+                    error_detail = run.last_error.message if run.last_error else "Unknown error"
+                    error_response = {"type": "error", "content": f"Assistant run {run.status}: {error_detail}"}
                     await self.websocket.send_text(json.dumps(error_response))
+                    self.is_processing_message = False # Reset flag
                     return error_response, conversation_history
                 
                 # Wait before polling again
                 await asyncio.sleep(poll_interval)
+            else:
+                 # Handle timeout case (loop finished without completion)
+                 logger.error(f"❌ Run polling timed out after {max_polls * poll_interval} seconds.")
+                 error_response = {"type": "error", "content": "Assistant took too long to respond."}
+                 await self.websocket.send_text(json.dumps(error_response))
+                 self.is_processing_message = False # Reset flag
+                 return error_response, conversation_history
             
             # Retrieve the final messages
             messages = await self.openai_client.beta.threads.messages.list(
                 thread_id=self.thread.id,
                 order="desc",
-                limit=1
+                limit=1 # Get only the latest assistant response
             )
             
-            if not messages.data:
-                error_response = {"type": "error", "content": "No response received from Assistant"}
-                await self.websocket.send_text(json.dumps(error_response))
-                return error_response, conversation_history
-            
-            last_message = messages.data[0]
-            content_parts = last_message.content
-            
-            if not content_parts:
-                error_response = {"type": "error", "content": "Received empty response from Assistant"}
-                await self.websocket.send_text(json.dumps(error_response))
-                return error_response, conversation_history
-            
-            # Handle text responses
-            response_text = ""
-            for part in content_parts:
-                if hasattr(part, 'text') and part.text and hasattr(part.text, 'value'):
-                    response_text += part.text.value
-            
-            # Update conversation history with assistant's response
-            conversation_history.append({"role": "assistant", "content": response_text})
-            
-            # Check if response contains valid JSON
-            try:
-                if response_text.strip().startswith('{') and "answers" in response_text:
-                    json_data = json.loads(response_text)
-                    response = {"type": "json", "content": json_data}
-                else:
-                    # Format as AnswerSet if not already
+            if not messages.data or messages.data[0].role != 'assistant':
+                # Check if a command was executed and use its narrative if no text response
+                if command_executed:
+                    logger.warning("No text response from Assistant, using command narrative.")
+                    response_text = command_narrative or "Action completed." # Use narrative or default
                     formatted_answer = self._format_as_answer_set(response_text)
-                    response = {"type": "json", "content": formatted_answer}
-                
-                # Send response to frontend
-                await self.websocket.send_text(json.dumps(response))
-                return response, conversation_history
-                
-            except json.JSONDecodeError:
-                # Not valid JSON, just format as AnswerSet
-                formatted_answer = self._format_as_answer_set(response_text)
-                response = {"type": "json", "content": formatted_answer}
-                await self.websocket.send_text(json.dumps(response))
-                return response, conversation_history
+                    final_response = {"type": "json", "content": formatted_answer}
+                    # Send the command narrative formatted as JSON
+                    await self.websocket.send_text(json.dumps(final_response))
+                    # Reset processing flag
+                    self.is_processing_message = False
+                    # Return the command narrative as the result
+                    return final_response if final_response else {}, conversation_history
+                else:
+                    # No command and no assistant message
+                    logger.error("No response or non-assistant message received from Assistant thread.")
+                    error_response = {"type": "error", "content": "No valid response received from Assistant"}
+                    # Send error, reset flag, and return error
+                    await self.websocket.send_text(json.dumps(error_response))
+                    self.is_processing_message = False
+                    return error_response, conversation_history
+            else:
+                # Process the assistant's text response
+                last_message = messages.data[0]
+                content_parts = last_message.content
+            
+                if not content_parts:
+                    logger.error("Received empty response content from Assistant")
+                    error_response = {"type": "error", "content": "Received empty response from Assistant"}
+                    await self.websocket.send_text(json.dumps(error_response))
+                    self.is_processing_message = False # Reset flag
+                    return error_response, conversation_history
+            
+                # Handle text responses
+                response_text = ""
+                for part in content_parts:
+                    if hasattr(part, 'text') and part.text and hasattr(part.text, 'value'):
+                        response_text += part.text.value + "\n\n"
+
+                # Add logging to inspect raw response text
+                logger.info(f"🕵️ RAW Assistant Response Text (check for newlines): {repr(response_text)}")
+
+                # Update conversation history with assistant's response
+                conversation_history.append({"role": "assistant", "content": response_text})
+            
+                # Check if response contains valid JSON
+                try:
+                    if response_text.strip().startswith('{') and "answers" in response_text:
+                        json_data = json.loads(response_text)
+                        final_response = {"type": "json", "content": json_data}
+                    else:
+                        # Format as AnswerSet if not already
+                        formatted_answer = self._format_as_answer_set(response_text)
+                        final_response = {"type": "json", "content": formatted_answer}
+
+                        logger.info(f"✅ Checking if TTS should be generated for response (source='{source}')")
+
+                        # Generate and stream TTS if the response is not empty
+                        if response_text.strip():
+                            logger.info(f"🔊 Generating TTS for response: '{response_text[:50]}...'")
+                            try:
+                                # Use the dedicated function, passing the initialized client
+                                await generate_and_stream_tts(self.websocket,
+                                                              response_text.strip(),
+                                                              client=self.openai_tts_client)
+                            except Exception as tts_error:
+                                logger.error(f"❌ Error calling generate_and_stream_tts: {tts_error}")
+
+                        # Send JSON response to frontend
+                        await self.websocket.send_text(json.dumps(final_response))
+
+                except json.JSONDecodeError:
+                    # Not valid JSON, just format as AnswerSet
+                    formatted_answer = self._format_as_answer_set(response_text)
+                    final_response = {"type": "json", "content": formatted_answer}
+
+                    # Also attempt TTS for non-JSON text responses
+                    if response_text.strip():
+                        logger.info(f"🔊 Generating TTS for non-JSON response: '{response_text[:50]}...'")
+                        try:
+                            await generate_and_stream_tts(self.websocket,
+                                                          response_text.strip(),
+                                                          client=self.openai_tts_client)
+                        except Exception as tts_error:
+                            logger.error(f"❌ Error calling generate_and_stream_tts (non-JSON path): {tts_error}")
+
+                        await self.websocket.send_text(json.dumps(final_response))
+
+                # Return the final response and history
+                return final_response if final_response else {}, conversation_history
 
         except Exception as e:
             logger.error(f"❌ Error during text processing: {e}", exc_info=True)
-            error_response = {"type": "error", "content": f"Error: {str(e)}"}
+            error_response = {"type": "error", "content": f"Error processing message: {str(e)}"}
             await self.websocket.send_text(json.dumps(error_response))
             return error_response, conversation_history
+        
+        finally:
+            # Reset processing flag when done
+            logger.debug(f"Resetting is_processing_message flag after handling '{user_input[:20]}...'")
+            self.is_processing_message = False
     
     def _format_as_answer_set(self, text: str) -> Dict[str, Any]:
         """Format a text response as an AnswerSet JSON with options.
@@ -2485,202 +2607,276 @@ class StorytellerAgentFinal:
             Dict: AnswerSet in dictionary format
         """
         try:
-            # Generate 2-4 relevant options based on the text
-            sentences = [s.strip() for s in text.split('.') if s.strip()]
-
-            # Extract key words for options
+            # 1. Split text into sentences using regex (handles ., ?, !)
             import re
-            words = re.findall(r'\b\w+\b', text.lower())
-            action_words = [w for w in words if len(w) > 3 and w not in
+            sentences = re.split(r'(?<=[.?!])\s+', text.strip()) # Split after punctuation + space
+            # Filter out any empty strings resulting from the split
+            sentences = [s.strip() for s in sentences if s.strip()]
+
+            if not sentences:
+                # Handle case where text has no sentences or is empty
+                return {"answers": [{
+                    "type": "text",
+                    "description": text[:400] if text else "...", # Show original if weird split
+                    "options": ["What next?", "Explore more"]
+                }]}
+
+            # 2. Generate options based on the *entire original text* for context
+            original_text_words = re.findall(r'\b\w+\b', text.lower())
+            action_words = [w for w in original_text_words if len(w) > 3 and w not in
                            {'this', 'that', 'with', 'from', 'have', 'what', 'when', 'where',
                             'there', 'their', 'about', 'would', 'could', 'should'}]
 
-            # Create options based on text content
-            options = []
+            generated_options = []
+            if any(word in original_text_words for word in ['move', 'walk', 'go', 'turn', 'north', 'south', 'east', 'west', 'left', 'right', 'up', 'down', 'forward', 'backward']):
+                generated_options.append("Look around")
+            if any(word in original_text_words for word in ['see', 'look', 'observe', 'watch', 'view']):
+                generated_options.append("Look closer")
+            if any(word in original_text_words for word in ['inventory', 'item', 'carry', 'holding', 'have']):
+                generated_options.append("Check inventory")
 
-            # Add movement options if relevant
-            if any(word in words for word in ['move', 'walk', 'go', 'turn', 'north', 'south', 'east', 'west', 'left', 'right', 'up', 'down', 'forward', 'backward']):
-                options.append("Look around")
-
-            # Add look option if relevant
-            if any(word in words for word in ['see', 'look', 'observe', 'watch', 'view']):
-                options.append("Look closer")
-
-            # Add inventory option if relevant
-            if any(word in words for word in ['inventory', 'item', 'carry', 'holding', 'have']):
-                options.append("Check inventory")
-
-            # Add interaction options
             if len(action_words) >= 3:
-                # Use some action words to create options
-                action_words = list(set(action_words))  # Remove duplicates
+                action_words = list(set(action_words))
                 import random
                 random.shuffle(action_words)
+                if len(generated_options) < 3 and len(action_words) >= 2:
+                    generated_options.append(f"{action_words[0].capitalize()} {action_words[1]}")
+                if len(generated_options) < 4 and len(action_words) >= 4:
+                    generated_options.append(f"{action_words[2].capitalize()} {action_words[3]}")
 
-                # Create action phrases
-                if len(options) < 3 and len(action_words) >= 2:
-                    options.append(f"{action_words[0].capitalize()} {action_words[1]}")
+            if "?" not in text and len(generated_options) < 4:
+                generated_options.append("Ask questions")
 
-                if len(options) < 4 and len(action_words) >= 4:
-                    options.append(f"{action_words[2].capitalize()} {action_words[3]}")
-
-            # Always include a question option
-            if "?" not in text and len(options) < 4:
-                options.append("Ask questions")
-
-            # If we still need options, add generic ones
             generic_options = ["Explore more", "Try something else", "What next?", "Continue"]
-            while len(options) < 2:
+            while len(generated_options) < 2:
                 if generic_options:
-                    options.append(generic_options.pop(0))
+                    generated_options.append(generic_options.pop(0))
                 else:
                     break
+            generated_options = generated_options[:4]
 
-            # Limit options to 4
-            options = options[:4]
+            # 3. Create an answer object for each sentence
+            all_answers = []
+            for i, sentence in enumerate(sentences):
+                is_last_sentence = (i == len(sentences) - 1)
+                answer = {
+                    "type": "text",
+                    "description": sentence, # Use the individual sentence
+                    "options": generated_options if is_last_sentence else [] # Options only on last
+                }
+                all_answers.append(answer)
 
-            # Create the answer object
-            answer = {
-                "type": "text",
-                "description": text[:400],  # Limit to 400 chars
-                "options": options
-            }
-
-            # Create the answer set
+            # 4. Create the final answer set
             answer_set = {
-                "answers": [answer]
+                "answers": all_answers
             }
 
             return answer_set
         except Exception as e:
-            logger.error(f"❌ Error formatting answer set: {e}")
-            # Fallback
-            fallback_answer = {
-                "answers": [{
-                    "type": "text",
-                    "description": text[:400] if text else "No response",
-                    "options": ["What next?", "Explore more"]
-                }]
-            }
-            return fallback_answer
+            logger.error(f"❌ Error formatting answer set by sentence: {e}")
     
-    async def process_audio(self, audio_data: bytes) -> Tuple[str, Optional[Dict[str, Any]]]:
-        """Process audio input from user, handling transcription, Assistant processing, and TTS response.
+    async def process_audio(self, 
+                           audio_data: bytes,
+                           on_transcription: Callable[[str], Awaitable[None]] = None,
+                           on_response: Callable[[str], Awaitable[None]] = None,
+                           on_audio: Callable[[bytes], Awaitable[None]] = None,
+                           conversation_history: Optional[List[Dict[str, str]]] = None
+                           ) -> Tuple[str, Optional[Dict[str, Any]], List[Dict[str, str]]]:
+        """Process audio: Transcribe, then process immediately.
         
         Args:
-            audio_data: Raw audio bytes from the client
+            audio_data: The binary audio data to process
+            on_transcription: Optional callback for transcription results
+            on_response: Optional callback for text responses
+            on_audio: Optional callback for audio responses
+            conversation_history: Optional conversation history
             
         Returns:
-            Tuple containing the transcribed text and any command response
+            Tuple containing transcription, command info, and updated conversation history
         """
         logger.info(f"Processing audio input: {len(audio_data)} bytes")
         
         if not self.deepgram_client:
             logger.error("❌ Cannot process audio: Deepgram client not initialized")
-            await self.websocket.send_text(json.dumps({
-                "type": "error", 
-                "content": "Speech recognition not available"
-            }))
-            return "", None
+            await self.websocket.send_text(json.dumps({"type": "error", "content": "Speech recognition not available"}))
+            return "", None, conversation_history or []
             
         if not self.openai_client or not self.assistant or not self.thread:
             logger.error("❌ Cannot process audio: OpenAI Assistant not initialized")
-            await self.websocket.send_text(json.dumps({
-                "type": "error", 
-                "content": "AI Assistant not available"
-            }))
-            return "", None
+            await self.websocket.send_text(json.dumps({"type": "error", "content": "AI Assistant not available"}))
+            return "", None, conversation_history or []
             
-        # Default return values
         transcribed_text = ""
         command_info = None
+        
+        # Initialize conversation history if not provided
+        if conversation_history is None:
+            conversation_history = []
 
         try:
             # Step 1: Transcribe using Deepgram
-            source = {'buffer': audio_data, 'mimetype': 'audio/webm'}  # Adjust mimetype if needed
+            source = {'buffer': audio_data, 'mimetype': 'audio/webm'}
             options = PrerecordedOptions(model="nova-2", smart_format=True)
-            dg_response = await self.deepgram_client.listen.prerecorded.v("1").transcribe_file(source, options)
             
-            # Get transcription text
-            transcribed_text = dg_response.results.channels[0].alternatives[0].transcript
+            # The Deepgram SDK might have changed - fix the await pattern
+            try:
+                # First try the async method (newer SDK versions)
+                dg_response = await self.deepgram_client.listen.prerecorded.v("1").transcribe_file(source, options)
+                transcribed_text = dg_response.results.channels[0].alternatives[0].transcript
+            except Exception as deepgram_err:
+                # If that fails, try the sync method or handle differently
+                logger.warning(f"⚠️ Error with async Deepgram transcription, trying alternative approach: {deepgram_err}")
+                # Try calling without await if it's not an awaitable function
+                dg_response = self.deepgram_client.listen.prerecorded.v("1").transcribe_file(source, options)
+                
+                # Properly extract transcription from the response object
+                if hasattr(dg_response, 'results') and hasattr(dg_response.results, 'channels'):
+                    transcribed_text = dg_response.results.channels[0].alternatives[0].transcript
+                else:
+                    # If structure is different, try to find transcript in the response
+                    logger.error(f"⚠️ Unexpected Deepgram response structure: {dg_response}")
+                    if isinstance(dg_response, dict) and 'results' in dg_response:
+                        # Handle dictionary response format
+                        transcribed_text = dg_response.get('results', {}).get('channels', [{}])[0].get('alternatives', [{}])[0].get('transcript', '')
+                    else:
+                        # Last resort: prevent further errors
+                        transcribed_text = ""
+                        logger.error(f"❌ Could not extract transcript from Deepgram response: {dg_response}")
+            
             logger.info(f"🎤 Transcription: '{transcribed_text}'")
             
-            # Send transcription back to client
-            await self.websocket.send_text(json.dumps({
-                "type": "transcription",
-                "content": transcribed_text
-            }))
+            # Send transcription result using callback or WebSocket
+            if on_transcription:
+                await on_transcription(transcribed_text)
+            else:
+                await self.websocket.send_text(json.dumps({"type": "transcription", "content": transcribed_text}))
 
             if not transcribed_text.strip():
                 logger.warning("⚠️ Transcription resulted in empty text")
-                await self.websocket.send_text(json.dumps({
-                    "type": "warning",
-                    "content": "I couldn't hear anything. Please try again."
-                }))
-                return "", None
+                await self.websocket.send_text(json.dumps({"type": "warning", "content": "I couldn't hear anything. Please try again."}))
+                return transcribed_text, None, conversation_history
 
-            # Step 2: Process transcribed text with the Assistant
-            response = await self.process_text_input(transcribed_text)
-            
-            # Step 3: Handle different response types
-            response_type = response.get("type", "")
-
-            if response_type == "json":
-                # Send JSON response to frontend
-                await self.websocket.send_text(json.dumps(response))
-                
-                # Extract text for TTS
-                try:
-                    # Parse response content to extract text for TTS
-                    content = response.get("content", {})
-                    if isinstance(content, str):
-                        content = json.loads(content)
-                        
-                    # Get answers from response
-                    answers = content.get("answers", [])
-                    tts_text = ""
-                    
-                    # Concatenate descriptions from answers
-                    for answer in answers:
-                        if isinstance(answer, dict) and "description" in answer:
-                            tts_text += answer["description"] + " "
-                    
-                    # Generate and stream TTS if we have text
-                    if tts_text.strip():
-                        logger.info(f"🔊 Generating TTS for: '{tts_text[:50]}...'")
-                        
-                        # Generate TTS using OpenAI
-                        speech_response = await self.openai_client.audio.speech.create(
-                            model="tts-1",
-                            voice=self.voice,
-                            input=tts_text.strip(),
-                            response_format="mp3"
-                        )
-
-                        # Stream audio chunks using our method
-                        await self.send_audio_chunks(speech_response.aiter_bytes())
-                
-                except Exception as e:
-                    logger.error(f"❌ Error during TTS processing: {e}")
-
-            elif response_type == "command":
-                # Store command for return
-                command_info = {
-                    "name": response.get("name"),
-                    "params": response.get("params")
-                }
-                logger.info(f"🎮 Command from speech input: {command_info}")
-
-            elif response_type == "error":
-                # Send error to frontend
-                await self.websocket.send_text(json.dumps(response))
+            # If agent is already processing a message, tell the user
+            if self.is_processing_message:
+                logger.info(f"Currently processing another message. Will handle audio input later.")
+                info_response = {"type": "info", "content": "Currently processing another message. Please wait."}
+                await self.websocket.send_text(json.dumps(info_response))
+                return transcribed_text, None, conversation_history
+            else:
+                # Process immediately since not busy, passing 'audio' source
+                response_data, updated_history = await self.process_text_input(transcribed_text, conversation_history, source="audio")
+                return transcribed_text, None, updated_history
 
         except Exception as e:
             logger.error(f"❌ Error in audio processing pipeline: {e}", exc_info=True)
-            # Send error to client
-            await self.websocket.send_text(json.dumps({
-                "type": "error",
-                "content": f"Error processing your audio: {str(e)}"
-            }))
+            await self.websocket.send_text(json.dumps({"type": "error", "content": f"Error processing your audio: {str(e)}"}))
             
-        return transcribed_text, command_info
+        # Return transcription, empty command info, and original conversation history on error
+        return transcribed_text, None, conversation_history
+
+    async def send_audio_chunks(self, audio_iterator):
+        """Sends audio chunks with metadata via the websocket."""
+        if not self.websocket:
+            logger.error("❌ Cannot send audio: WebSocket not set.")
+            return
+        try:
+            # Send metadata on first audio chunk
+            await self.websocket.send_text(json.dumps({
+                "type": "audio_start",
+                "format": "mp3", # Assuming mp3 format from OpenAI TTS
+                "timestamp": time.time()
+            }))
+            await asyncio.sleep(0.1) # Small delay for client prep
+
+            # Stream audio chunks
+            async for chunk in audio_iterator:
+                if chunk:
+                    await self.websocket.send_bytes(chunk)
+                    await asyncio.sleep(0.01) # Slight delay between chunks
+
+            # Signal end of audio stream
+            await self.websocket.send_text(json.dumps({"type": "audio_end"}))
+            logger.debug("✅ Audio stream finished.")
+        except Exception as e:
+            logger.error(f"❌ Error sending audio stream: {e}")
+
+# Add the generate_and_stream_tts function back
+async def generate_and_stream_tts(websocket: WebSocket, text: str, client: AsyncOpenAI, voice: str = DEFAULT_VOICE, model: str = "tts-1"):
+    """
+    Generates TTS audio using OpenAI and streams it chunk by chunk over the WebSocket.
+
+    Args:
+        websocket: The FastAPI WebSocket connection to send audio data to.
+        text: The text to convert to speech.
+        client: An initialized AsyncOpenAI client instance.
+        voice: The OpenAI TTS voice to use (e.g., 'alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer').
+        model: The TTS model to use (e.g., 'tts-1', 'tts-1-hd').
+    """
+    if not websocket:
+        logger.error("❌ Cannot stream TTS: WebSocket is not available.")
+        return
+    
+    # Check if provided client is valid
+    if not client or not isinstance(client, AsyncOpenAI):
+        logger.error("❌ Cannot stream TTS: Invalid AsyncOpenAI client provided.")
+        # Optionally send an error message back
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "content": "TTS Client Configuration Error"}))
+        except Exception: 
+            pass # Ignore errors sending errors
+        return
+        
+    logger.info(f"[TTS] Generating audio for: '{text[:30]}...' using voice '{voice}' with provided client.")
+        
+    try:
+        start_time = time.time()
+        # Use the provided client instance
+        response = await client.audio.speech.create( 
+            model=model,
+            voice=voice,
+            input=text,
+            response_format="mp3" # Specify streaming format
+        )
+        latency = time.time() - start_time
+        logger.info(f"[TTS] OpenAI speech generation latency: {latency:.2f}s")
+
+        # Send audio stream start signal
+        await websocket.send_text(json.dumps({
+            "type": "audio_start",
+            "format": "mp3",
+            "timestamp": time.time()
+        }))
+        logger.debug("[TTS] Sent audio_start signal")
+        # Small delay might help client prepare
+        await asyncio.sleep(0.05) 
+
+        # Stream the audio data chunk by chunk
+        chunk_count = 0
+        # await the coroutine to get the iterator
+        async for chunk in await response.aiter_bytes(chunk_size=4096): # Adjust chunk size if needed
+            if chunk:
+                await websocket.send_bytes(chunk)
+                chunk_count += 1
+                # Optional small delay between chunks if needed
+                # await asyncio.sleep(0.01) 
+        
+        logger.info(f"[TTS] Streamed {chunk_count} audio chunks.")
+
+        # Signal end of audio stream
+        await websocket.send_text(json.dumps({"type": "audio_end"}))
+        logger.debug("[TTS] Sent audio_end signal")
+
+    except BadRequestError as bre:
+        logger.error(f"❌ [TTS] OpenAI BadRequestError: {bre.message}")
+        # Send error details to frontend if possible
+        await websocket.send_text(json.dumps({"type": "error", "content": f"TTS Generation Error: {bre.message}"}))
+    except OpenAIError as e:
+        logger.error(f"❌ [TTS] OpenAI API error: {e}", exc_info=True)
+        # Send generic error to frontend
+        await websocket.send_text(json.dumps({"type": "error", "content": "TTS Generation Error"}))
+    except Exception as e:
+        logger.error(f"❌ [TTS] Unexpected error during TTS generation or streaming: {e}", exc_info=True)
+        # Send generic error to frontend
+        await websocket.send_text(json.dumps({"type": "error", "content": "Unexpected TTS Error"}))
+
+# --- End of generate_and_stream_tts definition ---
